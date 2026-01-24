@@ -1,0 +1,50 @@
+<?xml version='1.0' encoding='utf-8'?>
+<model>
+  <materials>
+    <material id="1" name="iron">
+      <density units="g/cm3" value="7.874"/>
+      <nuclide ao="0.05845" name="Fe54"/>
+      <nuclide ao="0.91754" name="Fe56"/>
+      <nuclide ao="0.02119" name="Fe57"/>
+      <nuclide ao="0.00282" name="Fe58"/>
+    </material>
+    <material id="2" name="tungsten">
+      <density units="g/cm3" value="19.25"/>
+      <nuclide ao="0.0012" name="W180"/>
+      <nuclide ao="0.265" name="W182"/>
+      <nuclide ao="0.1431" name="W183"/>
+      <nuclide ao="0.3064" name="W184"/>
+      <nuclide ao="0.2843" name="W186"/>
+    </material>
+  </materials>
+  <geometry>
+    <cell fill="1" id="10000" region="-10000" universe="2"/>
+    <dagmc_universe filename="dagmc.h5m" id="1"/>
+    <surface boundary="vacuum" coeffs="0.0 0.0 0.0 10000" id="10000" type="sphere"/>
+  </geometry>
+  <settings>
+    <run_mode>fixed source</run_mode>
+    <particles>10000</particles>
+    <batches>10</batches>
+    <source particle="neutron" strength="1.0" type="independent">
+      <space type="point">
+        <parameters>5 5 5</parameters>
+      </space>
+      <angle type="isotropic"/>
+    </source>
+  </settings>
+  <tallies>
+    <mesh id="1">
+      <dimension>20 10 10</dimension>
+      <lower_left>0 0 0</lower_left>
+      <upper_right>20 10 10</upper_right>
+    </mesh>
+    <filter id="1" type="mesh">
+      <bins>1</bins>
+    </filter>
+    <tally id="1" name="flux_tally">
+      <filters>1</filters>
+      <scores>flux</scores>
+    </tally>
+  </tallies>
+</model>

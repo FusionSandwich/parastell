@@ -1,10 +1,11 @@
 import numpy as np
-
+import openmc
 import parastell.parastell as ps
-
+import time  # Import the time module for timing
 
 # Define directory to export all output files to
 export_dir = ""
+
 # Define plasma equilibrium VMEC file
 vmec_file = "wout_vmec.nc"
 
@@ -20,7 +21,10 @@ wall_s = 1.08
 uniform_unit_thickness = np.ones((len(toroidal_angles), len(poloidal_angles)))
 
 radial_build_dict = {
-    "first_wall": {"thickness_matrix": uniform_unit_thickness * 5},
+    "first_wall": {
+        "thickness_matrix": uniform_unit_thickness * 5,
+        "mat_tag": "iron",
+    },
     "breeder": {
         "thickness_matrix": (
             [
@@ -34,51 +38,47 @@ radial_build_dict = {
                 [75.0, 75.0, 75.0, 75.0, 25.0, 25.0, 75.0, 75.0, 75.0],
                 [75.0, 75.0, 75.0, 25.0, 25.0, 25.0, 75.0, 75.0, 75.0],
             ]
-        )
+        ),
+        "mat_tag": "iron",
     },
-    "back_wall": {"thickness_matrix": uniform_unit_thickness * 5},
-    "shield": {"thickness_matrix": uniform_unit_thickness * 50},
+    "back_wall": {
+        "thickness_matrix": uniform_unit_thickness * 5,
+        "mat_tag": "iron",
+    },
+    "shield": {
+        "thickness_matrix": uniform_unit_thickness * 50,
+        "mat_tag": "iron",
+    },
     "vacuum_vessel": {
         "thickness_matrix": uniform_unit_thickness * 10,
-        "mat_tag": "vac_vessel",
+        "mat_tag": "iron",
     },
 }
+
+# Start timing before constructing in-vessel components
+start_time = time.perf_counter()
+
 # Construct in-vessel components
 stellarator.construct_invessel_build(
     toroidal_angles, poloidal_angles, wall_s, radial_build_dict
 )
-# Export in-vessel component files
-stellarator.export_invessel_build(
-    export_cad_to_dagmc=False, export_dir=export_dir
-)
 
-# Define build parameters for magnet coils
-coils_file = "coils.example"
-width = 40.0
-thickness = 50.0
-toroidal_extent = 90.0
-# Construct magnets
-stellarator.construct_magnets(
-    coils_file, width, thickness, toroidal_extent, sample_mod=6
-)
-# Export magnet files
-stellarator.export_magnets(
-    step_filename="magnets",
-    export_mesh=True,
-    mesh_filename="magnet_mesh",
-    export_dir=export_dir,
-)
+# Stop timing after constructing in-vessel components
+end_time = time.perf_counter()
+elapsed_time = end_time - start_time
 
-# Define source mesh parameters
-mesh_size = (11, 81, 61)
-toroidal_extent = 90.0
-# Construct source
-stellarator.construct_source_mesh(mesh_size, toroidal_extent)
-# Export source file
-stellarator.export_source_mesh(filename="source_mesh", export_dir=export_dir)
+print(f"Construction of in-vessel components completed in {elapsed_time:.2f} seconds.\n")
 
-# Build Cubit model of Parastell Components
-stellarator.build_cubit_model(skip_imprint=False, legacy_faceting=True)
+# Iterate through DAGMC surfaces and print their information
+for surf in stellarator.invessel_build.dag_model.surfaces:
+    print(f"Surface ID: {surf}")
+    print(f"Sens: {surf.surf_sense}\n")
 
-# Export DAGMC neutronics H5M file
-stellarator.export_dagmc(filename="dagmc", export_dir=export_dir)
+# Print volumes and groups
+print("Volumes in DAGMC Model:")
+for volume in stellarator.invessel_build.dag_model.volumes:
+    print(volume)
+
+print("\nGroups in DAGMC Model:")
+for group in stellarator.invessel_build.dag_model.groups:
+    print(group)

@@ -4,6 +4,12 @@ from pathlib import Path
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
+# Restored imports for pymoab-based DAGMC generation
+import pymoab
+from pymoab import core, types
+import dagmc
+
+# For geometry and meshing
 import cubit
 import cadquery as cq
 import cad_to_dagmc
@@ -19,21 +25,108 @@ from .utils import (
     m2cm,
 )
 
+###############################################################################
+#                NEW: Adaptive Refinement Helper Functions                    #
+###############################################################################
+
+def subdivide_if_needed(t1, t2, o1, o2, coords_func, max_curvature,
+                        curvature_estimate, current_level, max_level):
+    """Recursively subdivide the angle range [t1, t2] if an approximate
+    curvature is too high, up to `max_level` times."""
+    if curvature_estimate < max_curvature or current_level >= max_level:
+        # No need to subdivide further
+        return [t1, t2], [o1, o2]
+    else:
+        # Subdivide the interval
+        tm = 0.5 * (t1 + t2)
+        om = 0.5 * (o1 + o2)
+
+        # Evaluate curvature on the two new segments
+        p1 = coords_func(t1)
+        pm = coords_func(tm)
+        p2 = coords_func(t2)
+
+        v1 = pm - p1
+        length1 = np.linalg.norm(v1)
+        curv1 = 0 if length1 == 0 else 1.0 / length1
+
+        v2 = p2 - pm
+        length2 = np.linalg.norm(v2)
+        curv2 = 0 if length2 == 0 else 1.0 / length2
+
+        # Recursively subdivide each half
+        left_theta, left_offset = subdivide_if_needed(
+            t1, tm, o1, om, coords_func, max_curvature,
+            curv1, current_level + 1, max_level
+        )
+        right_theta, right_offset = subdivide_if_needed(
+            tm, t2, om, o2, coords_func, max_curvature,
+            curv2, current_level + 1, max_level
+        )
+
+        # Combine them, removing the repeated middle point from the left side:
+        return left_theta[:-1] + right_theta, left_offset[:-1] + right_offset
+
+
+def refine_angles_by_curvature(theta_list, phi, vmec_obj, s, offset_list, scale,
+                               max_curvature=0.05, max_subdivisions=3):
+    """Returns updated theta angles + offset_list, refined where curvature is high."""
+    def coords(theta):
+        # Evaluate reference (x,y,z) at this poloidal angle:
+        return scale * np.array(vmec_obj.vmec2xyz(s, theta, phi))
+
+    refined_theta = [theta_list[0]]
+    refined_offset = [offset_list[0]]
+
+    for i in range(len(theta_list) - 1):
+        t1, t2 = theta_list[i], theta_list[i+1]
+        o1, o2 = offset_list[i], offset_list[i+1]
+
+        p1 = coords(t1)
+        p2 = coords(t2)
+        segment = p2 - p1
+        length = np.linalg.norm(segment)
+
+        # Simple "curvature" measure ~ 1.0 / chord length
+        curvature_estimate = 0 if length == 0 else 1.0 / length
+
+        sub_thetas, sub_offsets = subdivide_if_needed(
+            t1, t2, o1, o2, coords, max_curvature, curvature_estimate,
+            current_level=0, max_level=max_subdivisions
+        )
+        refined_theta += sub_thetas[:-1]
+        refined_offset += sub_offsets[:-1]
+
+    refined_theta.append(theta_list[-1])
+    refined_offset.append(offset_list[-1])
+
+    return np.array(refined_theta), np.array(refined_offset)
+
+
+###############################################################################
+#                         MOAB Tri-Facet Helpers                              #
+###############################################################################
+
+def create_moab_tris_from_corners(corners, mbc, get_or_create_vertices):
+    """Create 2 MOAB triangles from 4 corner points [corners 0..3 in xyz]."""
+    # corners: [corner1, corner2, corner3, corner4] in xyz
+    tri_1_verts = get_or_create_vertices([corners[2], corners[1], corners[0]])
+    tri_2_verts = get_or_create_vertices([corners[3], corners[2], corners[0]])
+
+    tri_1 = mbc.create_element(types.MBTRI, tri_1_verts)
+    tri_2 = mbc.create_element(types.MBTRI, tri_2_verts)
+    return [tri_1, tri_2]
+
+
+###############################################################################
+#                          Geometry & Build Classes                           #
+###############################################################################
+
 export_allowed_kwargs = ["export_cad_to_dagmc", "dagmc_filename"]
 
 
 def orient_spline_surfaces(volume_id):
-    """Extracts the inner and outer surface IDs for a given ParaStell in-vessel
-    component volume in Coreform Cubit.
-
-    Arguments:
-        volume_id (int): Cubit volume ID.
-
-    Returns:
-        inner_surface_id (int): Cubit ID of in-vessel component inner surface.
-        outer_surface_id (int): Cubit ID of in-vessel component outer surface.
-    """
-
+    """Extracts the inner and outer surface IDs for a given volume in Cubit."""
     surfaces = cubit.get_relatives("volume", volume_id, "surface")
 
     spline_surfaces = []
@@ -45,7 +138,7 @@ def orient_spline_surfaces(volume_id):
         outer_surface_id = spline_surfaces[0]
         inner_surface_id = None
     else:
-        # The outer surface bounding box will have the larger maximum XY value
+        # Outer surface will have larger XY bounding box
         if (
             cubit.get_bounding_box("surface", spline_surfaces[1])[4]
             > cubit.get_bounding_box("surface", spline_surfaces[0])[4]
@@ -61,45 +154,30 @@ def orient_spline_surfaces(volume_id):
 
 class InVesselBuild(object):
     """Parametrically models fusion stellarator in-vessel components using
-    plasma equilibrium VMEC data and a user-defined radial build.
-
-    Arguments:
-        vmec_obj (object): plasma equilibrium VMEC object as defined by the
-            PyStell-UW VMEC reader. Must have a method
-            'vmec2xyz(s, theta, phi)' that returns an (x,y,z) coordinate for
-            any closed flux surface label, s, poloidal angle, theta, and
-            toroidal angle, phi.
-        radial_build (object): RadialBuild class object with all attributes
-            defined.
-        logger (object): logger object (optional, defaults to None). If no
-            logger is supplied, a default logger will be instantiated.
-
-    Optional attributes:
-        repeat (int): number of times to repeat build segment for full model
-            (defaults to 0).
-        num_ribs (int): total number of ribs over which to loft for each build
-            segment (defaults to 61). Ribs are set at toroidal angles
-            interpolated between those specified in 'toroidal_angles' if this
-            value is greater than the number of entries in 'toroidal_angles'.
-        num_rib_pts (int): total number of points defining each rib spline
-            (defaults to 67). Points are set at poloidal angles interpolated
-            between those specified in 'poloidal_angles' if this value is
-            greater than the number of entries in 'poloidal_angles'.
-        scale (float): a scaling factor between the units of VMEC and [cm]
-            (defaults to m2cm = 100).
-    """
+    plasma equilibrium VMEC data and a user-defined radial build."""
 
     def __init__(self, vmec_obj, radial_build, logger=None, **kwargs):
-
         self.logger = logger
         self.vmec_obj = vmec_obj
         self.radial_build = radial_build
 
+        # Original numeric defaults
         self.repeat = 0
         self.num_ribs = 61
         self.num_rib_pts = 67
         self.scale = m2cm
 
+        # For DAGMC (pymoab)
+        self.mbc = core.Core()
+        self.dag_model = dagmc.DAGModel(self.mbc)
+        self._vertex_map = {}  # used by MOAB for deduplication
+
+        # Adaptive refinement flags
+        self.adaptive_refinement = kwargs.get("adaptive_refinement", False)
+        self.max_curvature = kwargs.get("max_curvature", 0.05)
+        self.max_subdivisions = kwargs.get("max_subdivisions", 3)
+
+        # Overwrite defaults from kwargs if present
         for name in kwargs.keys() & (
             "repeat",
             "num_ribs",
@@ -137,22 +215,13 @@ class InVesselBuild(object):
         if (self._repeat + 1) * self.radial_build.toroidal_angles[-1] > 360.0:
             e = AssertionError(
                 "Total toroidal extent requested with repeated geometry "
-                'exceeds 360 degrees. Please examine the "repeat" parameter '
-                'and the "toroidal_angles" parameter of "radial_build".'
+                'exceeds 360 degrees. Check "repeat" and "toroidal_angles".'
             )
             self._logger.error(e.args[0])
             raise e
 
     def _interpolate_offset_matrix(self, offset_mat):
-        """Interpolates total offset for expanded angle lists using cubic spline
-        interpolation.
-        (Internal function not intended to be called externally)
-
-        Returns:
-            interpolated_offset_mat (np.ndarray(double)): expanded matrix
-                including interpolated offset values at additional rows and
-                columns [cm].
-        """
+        """Interpolates offset for expanded angle lists using pchip/cubic splines."""
         interpolator = RegularGridInterpolator(
             (
                 self.radial_build.toroidal_angles,
@@ -171,16 +240,11 @@ class InVesselBuild(object):
                 for phi in self._toroidal_angles_exp
             ]
         )
-
         return interpolated_offset_mat
 
     def populate_surfaces(self):
-        """Populates Surface class objects representing the outer surface of
-        each component specified in the radial build.
-        """
-        self._logger.info(
-            "Populating surface objects for in-vessel components..."
-        )
+        """Create Surface objects for each radial_build component."""
+        self._logger.info("Populating surface objects for in-vessel components...")
 
         self._toroidal_angles_exp = np.deg2rad(
             expand_list(self.radial_build.toroidal_angles, self.num_ribs)
@@ -203,37 +267,35 @@ class InVesselBuild(object):
                 s = self.radial_build.wall_s
 
             offset_mat += np.array(layer_data["thickness_matrix"])
-            interpolated_offset_mat = self._interpolate_offset_matrix(
-                offset_mat
-            )
+            interpolated_offset_mat = self._interpolate_offset_matrix(offset_mat)
 
-            self.Surfaces[name] = Surface(
+            surf = Surface(
                 self._vmec_obj,
                 s,
                 self._poloidal_angles_exp,
                 self._toroidal_angles_exp,
                 interpolated_offset_mat,
                 self.scale,
+                adaptive_refinement=self.adaptive_refinement,
+                max_curvature=self.max_curvature,
+                max_subdivisions=self.max_subdivisions,
             )
+            self.Surfaces[name] = surf
 
         [surface.populate_ribs() for surface in self.Surfaces.values()]
 
     def calculate_loci(self):
-        """Calls calculate_loci method in Surface class for each component
-        specified in the radial build.
-        """
+        """Compute the 3D loci for each surface's Ribs."""
         self._logger.info("Computing point cloud for in-vessel components...")
-
         [surface.calculate_loci() for surface in self.Surfaces.values()]
 
+    ###########################################################################
+    #                CadQuery-based geometry (generate_components)            #
+    ###########################################################################
     def generate_components(self):
-        """Constructs a CAD solid for each component specified in the radial
-        build by cutting the interior surface solid from the outer surface
-        solid for a given component.
-        """
-        self._logger.info(
-            "Constructing CadQuery objects for in-vessel components..."
-        )
+        """Construct a CAD solid for each component by lofting surfaces
+        and optionally cutting interior surfaces."""
+        self._logger.info("Constructing CadQuery solids for in-vessel components...")
 
         interior_surface = None
 
@@ -253,6 +315,7 @@ class InVesselBuild(object):
 
             component = segment
 
+            # fuse repeated segments if self.repeat > 0
             for angle in segment_angles:
                 rot_segment = segment.rotate((0, 0, 0), (0, 0, 1), angle)
                 component = component.fuse(rot_segment)
@@ -260,145 +323,246 @@ class InVesselBuild(object):
             self.Components[name] = component
             interior_surface = outer_surface
 
-    def get_loci(self):
-        """Returns the set of point-loci defining the outer surfaces of the
-        components specified in the radial build.
+    ###########################################################################
+    #               MOAB-based geometry (generate_components_pydagmc)         #
+    ###########################################################################
+    def generate_components_pydagmc(self):
+        """Generates all components in the DAGMC model (pymoab-based).
+        Triangulates surfaces between consecutive Ribs, sets surface senses,
+        and writes out a .h5m DAGMC file.
         """
-        return np.array(
-            [surface.get_loci() for surface in self.Surfaces.values()]
-        )
+        self._logger.info("Generating DAGMC surfaces and volumes via PyMOAB...")
 
-    def merge_layer_surfaces(self):
-        """Merges ParaStell in-vessel component surfaces in Coreform Cubit
-        based on surface IDs rather than imprinting and merging all. Assumes
-        that the radial_build dictionary is ordered radially outward. Note that
-        overlaps between magnet volumes and in-vessel components will not be
-        merged in this workflow.
-        """
-        # Tracks the surface id of the outer surface of the previous layer
-        prev_outer_surface_id = None
+        # We'll store each surface in the DAGModel
+        curved_surface_ids = []
 
-        for data in self.radial_build.radial_build.values():
+        # Step 1: Triangulate each "outer" surface in self.Surfaces
+        for i, surface in enumerate(self.Surfaces.values()):
+            # We make the new surface
+            # Triangulate using the logic from surface.generate_pydagmc_surface
+            mb_tris = []
+            # We'll connect Ribs[i] to Ribs[i+1] across poloidal angles
+            # The user had a similar function previously. Let's replicate it here:
 
-            inner_surface_id, outer_surface_id = orient_spline_surfaces(
-                data["vol_id"]
+            def get_or_create_vertices(coord_list):
+                """Helper that returns or creates MB vertices, avoiding duplicates."""
+                vert_handles = []
+                for c in coord_list:
+                    # Round to mitigate floating precision issues
+                    c_tup = tuple(np.round(c, decimals=7))
+                    if c_tup in self._vertex_map:
+                        vert_handles.append(self._vertex_map[c_tup])
+                    else:
+                        new_v = self.mbc.create_vertices([c_tup])[0]
+                        self._vertex_map[c_tup] = new_v
+                        vert_handles.append(new_v)
+                return vert_handles
+
+            # Triangulate the "loft" between adjacent ribs
+            for rib, next_rib in zip(surface.Ribs[:-1], surface.Ribs[1:]):
+                for rib_pt_index in range(len(rib.rib_loci) - 1):
+                    corner1 = rib.rib_loci[rib_pt_index]
+                    corner2 = rib.rib_loci[rib_pt_index + 1]
+                    corner3 = next_rib.rib_loci[rib_pt_index + 1]
+                    corner4 = next_rib.rib_loci[rib_pt_index]
+                    corners = [corner1, corner2, corner3, corner4]
+
+                    # Add 2 triangles from these 4 corners
+                    # If you want to reverse the winding for some surfaces, you can:
+                    # corners = corners[::-1]  # if needed
+                    mb_tris += create_moab_tris_from_corners(
+                        corners, self.mbc, get_or_create_vertices
+                    )
+
+            # Add new MOAB surface
+            surface_set = dagmc.Surface.create(self.dag_model)
+            self.mbc.add_entities(surface_set.handle, mb_tris)
+            curved_surface_ids.append(surface_set.id)
+
+        # Step 2: Optionally add "end caps" or side surfaces between surfaces
+        # (If your geometry has multiple surfaces to connect. If not needed, skip.)
+        end_cap_surface_ids = []
+        all_surfaces_list = list(self.Surfaces.values())
+        for s_idx in range(len(all_surfaces_list) - 1):
+            current_surface = all_surfaces_list[s_idx]
+            next_surface = all_surfaces_list[s_idx + 1]
+
+            # connect start ribs:
+            mb_tris = self.connect_ribs_with_tris_moab(
+                current_surface.Ribs[0], next_surface.Ribs[0], reverse=False
+            )
+            end_cap_start = dagmc.Surface.create(self.dag_model)
+            self.mbc.add_entities(end_cap_start.handle, mb_tris)
+
+            # connect end ribs:
+            mb_tris = self.connect_ribs_with_tris_moab(
+                current_surface.Ribs[-1], next_surface.Ribs[-1], reverse=True
+            )
+            end_cap_end = dagmc.Surface.create(self.dag_model)
+            self.mbc.add_entities(end_cap_end.handle, mb_tris)
+
+            end_cap_surface_ids.append(
+                list(self.dag_model.surfaces_by_id.keys())[-2:]
             )
 
-            # Conditionally skip merging (first iteration only)
-            if prev_outer_surface_id is None:
-                prev_outer_surface_id = outer_surface_id
+        # Step 3: Create Volumes for each surface (plus one extra, e.g. plasma interior)
+        total_surfaces = len(all_surfaces_list)
+        for _ in range(total_surfaces + 1):  # an extra volume
+            dagmc.Volume.create(self.dag_model)
+
+        # Step 4: Assign surface senses for the main "curved" surfaces
+        for i, sid in enumerate(curved_surface_ids):
+            if i == 0:
+                # e.g. plasma (Volume 1) to next layer (Volume 2)
+                self.dag_model.surfaces_by_id[sid].surf_sense = [
+                    self.dag_model.volumes_by_id[1],
+                    self.dag_model.volumes_by_id[2],
+                ]
+            elif i != total_surfaces - 1:
+                # Middle surfaces: Volume (i+1) to Volume (i+2)
+                self.dag_model.surfaces_by_id[sid].surf_sense = [
+                    self.dag_model.volumes_by_id[i + 1],
+                    self.dag_model.volumes_by_id[i + 2],
+                ]
             else:
-                cubit.cmd(
-                    f"merge surface {inner_surface_id} {prev_outer_surface_id}"
+                # Last surface: Volume N to None
+                self.dag_model.surfaces_by_id[sid].surf_sense = [
+                    self.dag_model.volumes_by_id[i + 1],
+                    None,
+                ]
+
+        # Step 5: Assign senses to end caps
+        volume_handles = list(self.dag_model.volumes_by_id.values())
+        for i, pair_ids in enumerate(end_cap_surface_ids):
+            for sid in pair_ids:
+                if i + 2 < len(volume_handles):
+                    self.dag_model.surfaces_by_id[sid].surf_sense = [
+                        volume_handles[i + 1],
+                        volume_handles[i + 2],
+                    ]
+                else:
+                    msg = (f"Cannot assign surf_sense for surface ID {sid}. "
+                           f"Need at least {i+2} volumes, only have {len(volume_handles)}.")
+                    self._logger.error(msg)
+                    raise IndexError(msg)
+
+        # Step 6: Apply materials to volumes
+        for vol, (layer_name, layer_data) in zip(
+            self.dag_model.volumes,
+            list(self.radial_build.radial_build.items()),
+        ):
+            mat = layer_data.get("mat_tag", layer_name)
+            group = dagmc.Group.create(self.dag_model, name="mat:" + mat)
+            group.add_set(vol)
+
+        # Optionally export to file(s) here, or let the user call dag_model.write_file()
+        self._logger.info("DAGMC surfaces & volumes built successfully.")
+
+    def connect_ribs_with_tris_moab(self, rib1, rib2, reverse=False):
+        """Helper to connect two Ribs with triangular facets in MOAB."""
+        mb_tris = []
+
+        def get_or_create_vertices(coord_list):
+            vert_handles = []
+            for c in coord_list:
+                c_tup = tuple(np.round(c, decimals=7))
+                if c_tup in self._vertex_map:
+                    vert_handles.append(self._vertex_map[c_tup])
+                else:
+                    new_v = self.mbc.create_vertices([c_tup])[0]
+                    self._vertex_map[c_tup] = new_v
+                    vert_handles.append(new_v)
+            return vert_handles
+
+        for rib_loci_index in range(len(rib1.rib_loci) - 1):
+            corner1 = rib1.rib_loci[rib_loci_index]
+            corner2 = rib1.rib_loci[rib_loci_index + 1]
+            corner3 = rib2.rib_loci[rib_loci_index + 1]
+            corner4 = rib2.rib_loci[rib_loci_index]
+            corners = [corner1, corner2, corner3, corner4]
+            if reverse:
+                mb_tris += create_moab_tris_from_corners(
+                    corners[::-1], self.mbc, get_or_create_vertices
                 )
-                prev_outer_surface_id = outer_surface_id
+            else:
+                mb_tris += create_moab_tris_from_corners(
+                    corners, self.mbc, get_or_create_vertices
+                )
+        return mb_tris
+
+    ###########################################################################
+    #                 Export & Meshing-related methods                        #
+    ###########################################################################
+    def get_loci(self):
+        return np.array([surface.get_loci() for surface in self.Surfaces.values()])
+
+    def merge_layer_surfaces(self):
+        """Merges surfaces in Cubit by ID instead of imprinting all."""
+        prev_outer_surface_id = None
+        for data in self.radial_build.radial_build.values():
+            inner_surf, outer_surf = orient_spline_surfaces(data["vol_id"])
+            if prev_outer_surface_id is None:
+                prev_outer_surface_id = outer_surf
+            else:
+                cubit.cmd(f"merge surface {inner_surf} {prev_outer_surface_id}")
+                prev_outer_surface_id = outer_surf
 
     def import_step_cubit(self):
-        """Imports STEP files from in-vessel build into Coreform Cubit."""
+        """Imports STEP files for each in-vessel component volume into Cubit."""
         for name, data in self.radial_build.radial_build.items():
             vol_id = cubit_io.import_step_cubit(name, self.export_dir)
             data["vol_id"] = vol_id
 
     def export_step(self, export_dir=""):
-        """Export CAD solids as STEP files via CadQuery.
-
-        Arguments:
-            export_dir (str): directory to which to export the STEP output files
-                (optional, defaults to empty string).
-        """
+        """Export CAD solids as STEP files via CadQuery."""
         self._logger.info("Exporting STEP files for in-vessel components...")
-
         self.export_dir = export_dir
-
         for name, component in self.Components.items():
-            export_path = Path(self.export_dir) / Path(name).with_suffix(
-                ".step"
-            )
+            export_path = Path(self.export_dir) / Path(name).with_suffix(".step")
             cq.exporters.export(component, str(export_path))
 
     def export_cad_to_dagmc(self, dagmc_filename="dagmc", export_dir=""):
-        """Exports DAGMC neutronics H5M file of ParaStell in-vessel components
-        via CAD-to-DAGMC.
-
-        Arguments:
-            dagmc_filename (str): name of DAGMC output file, excluding '.h5m'
-                extension (optional, defaults to 'dagmc').
-            export_dir (str): directory to which to export the DAGMC output file
-                (optional, defaults to empty string).
-        """
-        self._logger.info(
-            "Exporting DAGMC neutronics model of in-vessel components..."
-        )
-
+        """Exports DAGMC neutronics H5M file of in-vessel components (via CAD-to-DAGMC)."""
+        self._logger.info("Exporting DAGMC model (CAD-to-DAGMC) for in-vessel components...")
         model = cad_to_dagmc.CadToDagmc()
-
         for name, component in self.Components.items():
             model.add_cadquery_object(
                 component,
-                material_tags=[
-                    self.radial_build.radial_build[name]["mat_tag"]
-                ],
+                material_tags=[self.radial_build.radial_build[name]["mat_tag"]],
             )
-
-        export_path = Path(export_dir) / Path(dagmc_filename).with_suffix(
-            ".h5m"
-        )
-
+        export_path = Path(export_dir) / Path(dagmc_filename).with_suffix(".h5m")
         model.export_dagmc_h5m_file(filename=str(export_path))
 
-    def export_component_mesh(
-        self, components, mesh_size=5, import_dir="", export_dir=""
-    ):
-        """Creates a tetrahedral mesh of an in-vessel component volume
-        via Coreform Cubit and exports it as H5M file.
-
-        Arguments:
-            components (array of strings): array containing the name
-                of the in-vessel components to be meshed.
-            mesh_size (int): controls the size of the mesh. Takes values
-                between 1 (finer) and 10 (coarser) (optional, defaults to 5).
-            import_dir (str): directory containing the STEP file of
-                the in-vessel component (optional, defaults to empty string).
-            export_dir (str): directory to which to export the h5m
-                output file (optional, defaults to empty string).
-        """
-        for component in components:
-            vol_id = cubit_io.import_step_cubit(component, import_dir)
+    def export_component_mesh(self, components, mesh_size=5, import_dir="", export_dir=""):
+        """Creates a tetrahedral mesh in Cubit and exports it as an H5M file."""
+        for comp in components:
+            vol_id = cubit_io.import_step_cubit(comp, import_dir)
             cubit.cmd(f"volume {vol_id} scheme tetmesh")
             cubit.cmd(f"volume {vol_id} size auto factor {mesh_size}")
             cubit.cmd(f"mesh volume {vol_id}")
             cubit_io.export_mesh_cubit(
-                filename=component,
+                filename=comp,
                 export_dir=export_dir,
                 delete_upon_export=True,
             )
 
 
 class Surface(object):
-    """An object representing a surface formed by lofting across a set of
-    "ribs" located at different toroidal planes and offset from a reference
-    surface.
+    """An object representing a surface formed by lofting across Ribs at
+    different toroidal angles, offset from a reference surface."""
 
-    Arguments:
-        vmec_obj (object): plasma equilibrium VMEC object as defined by the
-            PyStell-UW VMEC reader. Must have a method
-            'vmec2xyz(s, theta, phi)' that returns an (x,y,z) coordinate for
-            any closed flux surface label, s, poloidal angle, theta, and
-            toroidal angle, phi.
-        s (float): the normalized closed flux surface label defining the point
-            of reference for offset.
-        theta_list (np.array(double)): the set of poloidal angles specified for
-            each rib [rad].
-        phi_list (np.array(double)): the set of toroidal angles defining the
-            plane in which each rib is located [rad].
-        offset_mat (np.array(double)): the set of offsets from the surface
-            defined by s for each toroidal angle, poloidal angle pair on the
-            surface [cm].
-        scale (float): a scaling factor between the units of VMEC and [cm].
-    """
-
-    def __init__(self, vmec_obj, s, theta_list, phi_list, offset_mat, scale):
-
+    def __init__(
+        self,
+        vmec_obj,
+        s,
+        theta_list,
+        phi_list,
+        offset_mat,
+        scale,
+        adaptive_refinement=False,
+        max_curvature=0.05,
+        max_subdivisions=3,
+    ):
         self.vmec_obj = vmec_obj
         self.s = s
         self.theta_list = theta_list
@@ -406,12 +570,15 @@ class Surface(object):
         self.offset_mat = offset_mat
         self.scale = scale
 
+        self.adaptive_refinement = adaptive_refinement
+        self.max_curvature = max_curvature
+        self.max_subdivisions = max_subdivisions
+
         self.surface = None
+        self.Ribs = []
 
     def populate_ribs(self):
-        """Populates Rib class objects for each toroidal angle specified in
-        the surface.
-        """
+        """Populates Rib objects for each toroidal angle in phi_list."""
         self.Ribs = [
             Rib(
                 self.vmec_obj,
@@ -420,53 +587,45 @@ class Surface(object):
                 phi,
                 self.offset_mat[i, :],
                 self.scale,
+                adaptive_refinement=self.adaptive_refinement,
+                max_curvature=self.max_curvature,
+                max_subdivisions=self.max_subdivisions,
             )
             for i, phi in enumerate(self.phi_list)
         ]
 
     def calculate_loci(self):
-        """Calls calculate_loci method in Rib class for each rib in the surface."""
+        """Compute final coordinates for each Rib."""
         [rib.calculate_loci() for rib in self.Ribs]
 
     def generate_surface(self):
-        """Constructs a surface by lofting across a set of rib splines."""
+        """Loft across Rib splines to form a CadQuery Solid."""
         if not self.surface:
             self.surface = cq.Solid.makeLoft(
                 [rib.generate_rib() for rib in self.Ribs]
             )
-
         return self.surface
 
     def get_loci(self):
-        """Returns the set of point-loci defining the ribs in the surface."""
+        """Return array of (N_ribs, N_pts, 3) for all Rib loci."""
         return np.array([rib.rib_loci for rib in self.Ribs])
 
 
 class Rib(object):
-    """An object representing a curve formed by interpolating a spline through
-    a set of points located in the same toroidal plane but differing poloidal
-    angles and offset from a reference curve.
+    """A single 'rib' in a toroidal plane at phi, offset from flux surface s."""
 
-    Arguments:
-        vmec_obj (object): plasma equilibrium VMEC object as defined by the
-            PyStell-UW VMEC reader. Must have a method
-            'vmec2xyz(s, theta, phi)' that returns an (x,y,z) coordinate for
-            any closed flux surface label, s, poloidal angle, theta, and
-            toroidal angle, phi.
-        s (float): the normalized closed flux surface label defining the point
-            of reference for offset.
-        phi (np.array(double)): the toroidal angle defining the plane in which
-            the rib is located [rad].
-        theta_list (np.array(double)): the set of poloidal angles specified for
-            the rib [rad].
-        offset_list (np.array(double)): the set of offsets from the curve
-            defined by s for each toroidal angle, poloidal angle pair in the rib
-            [cm].
-        scale (float): a scaling factor between the units of VMEC and [cm].
-    """
-
-    def __init__(self, vmec_obj, s, theta_list, phi, offset_list, scale):
-
+    def __init__(
+        self,
+        vmec_obj,
+        s,
+        theta_list,
+        phi,
+        offset_list,
+        scale,
+        adaptive_refinement=False,
+        max_curvature=0.05,
+        max_subdivisions=3,
+    ):
         self.vmec_obj = vmec_obj
         self.s = s
         self.theta_list = theta_list
@@ -474,17 +633,14 @@ class Rib(object):
         self.offset_list = offset_list
         self.scale = scale
 
-    def _vmec2xyz(self, poloidal_offset=0):
-        """Return an N x 3 NumPy array containing the Cartesian coordinates of
-        the points at this toroidal angle and N different poloidal angles, each
-        offset slightly.
-        (Internal function not intended to be called externally)
+        self.adaptive_refinement = adaptive_refinement
+        self.max_curvature = max_curvature
+        self.max_subdivisions = max_subdivisions
 
-        Arguments:
-            poloidal_offset (float) : some offset to apply to the full set of
-                poloidal angles for evaluating the location of the Cartesian
-                points (optional, defaults to 0).
-        """
+        self.rib_loci = None
+
+    def _vmec2xyz(self, poloidal_offset=0):
+        """Return Nx3 array for s, phi, over poloidal angles with an offset."""
         return self.scale * np.array(
             [
                 self.vmec_obj.vmec2xyz(self.s, theta, self.phi)
@@ -493,93 +649,44 @@ class Rib(object):
         )
 
     def _normals(self):
-        """Approximate the normal to the curve at each poloidal angle by first
-        approximating the tangent to the curve and then taking the
-        cross-product of that tangent with a vector defined as normal to the
-        plane at this toroidal angle.
-        (Internal function not intended to be called externally)
-
-        Arguments:
-            r_loci (np.array(double)): Cartesian point-loci of reference
-                surface rib [cm].
-        """
+        """Approximate normal by crossing plane normal with local tangents."""
         eps = 1e-4
         next_pt_loci = self._vmec2xyz(eps)
-
         tangent = next_pt_loci - self.rib_loci
-
         plane_norm = np.array([-np.sin(self.phi), np.cos(self.phi), 0])
-
         norm = np.cross(plane_norm, tangent)
-
         return normalize(norm)
 
     def calculate_loci(self):
-        """Generates Cartesian point-loci for stellarator rib."""
-        self.rib_loci = self._vmec2xyz()
+        """Compute final rib_loci, refining angles if adaptive_refinement is True."""
+        if self.adaptive_refinement:
+            refined_theta, refined_offset = refine_angles_by_curvature(
+                self.theta_list,
+                self.phi,
+                self.vmec_obj,
+                self.s,
+                self.offset_list,
+                self.scale,
+                max_curvature=self.max_curvature,
+                max_subdivisions=self.max_subdivisions,
+            )
+            self.theta_list = refined_theta
+            self.offset_list = refined_offset
 
+        self.rib_loci = self._vmec2xyz()
         if not np.all(self.offset_list == 0):
             self.rib_loci += self.offset_list[:, np.newaxis] * self._normals()
 
     def generate_rib(self):
-        """Constructs component rib by constructing a spline connecting all
-        specified Cartesian point-loci.
-        """
-        rib_loci = [cq.Vector(tuple(r)) for r in self.rib_loci]
-        spline = cq.Edge.makeSpline(rib_loci).close()
+        """Construct a spline (Wire) from the rib_loci points."""
+        rib_pts = [cq.Vector(tuple(r)) for r in self.rib_loci]
+        spline = cq.Edge.makeSpline(rib_pts).close()
         rib_spline = cq.Wire.assembleEdges([spline]).close()
-
         return rib_spline
 
 
 class RadialBuild(object):
-    """Parametrically defines ParaStell in-vessel component geometries.
-    In-vessel component thicknesses are defined on a grid of toroidal and
-    poloidal angles, and the first wall profile is defined by a closed flux
-    surface extrapolation.
-
-    Arguments:
-        toroidal_angles (array of float): toroidal angles at which radial build
-            is specified. This list should always begin at 0.0 and it is
-            advised not to extend beyond one stellarator period. To build a
-            geometry that extends beyond one period, make use of the 'repeat'
-            parameter [deg].
-        poloidal_angles (array of float): poloidal angles at which radial build
-            is specified. This array should always span 360 degrees [deg].
-        wall_s (float): closed flux surface label extrapolation at wall.
-        radial_build (dict): dictionary representing the three-dimensional
-            radial build of in-vessel components, including
-            {
-                'component': {
-                    'thickness_matrix': 2-D matrix defining component
-                        thickness at (toroidal angle, poloidal angle)
-                        locations. Rows represent toroidal angles, columns
-                        represent poloidal angles, and each must be in the same
-                        order provided in toroidal_angles and poloidal_angles
-                        [cm](ndarray(float)).
-                    'mat_tag': DAGMC material tag for component in DAGMC
-                        neutronics model (str, optional, defaults to None). If
-                        none is supplied, the 'component' key will be used.
-                }
-            }.
-        split_chamber (bool): if wall_s > 1.0, separate interior vacuum
-            chamber into plasma and scrape-off layer components (optional,
-            defaults to False). If an item with a 'sol' key is present in the
-            radial_build dictionary, settting this to False will not combine
-            the resultant 'chamber' with 'sol'. To include a custom scrape-off
-            layer definition for 'chamber', add an item with a 'chamber' key
-            and desired 'thickness_matrix' value to the radial_build dictionary.
-        logger (object): logger object (optional, defaults to None). If no
-            logger is supplied, a default logger will be instantiated.
-
-    Optional attributes:
-        plasma_mat_tag (str): DAGMC material tag to use for plasma if
-            split_chamber is True (defaults to 'Vacuum').
-        sol_mat_tag (str): DAGMC material tag to use for scrape-off layer if
-            split_chamber is True (defaults to 'Vacuum').
-        chamber_mat_tag (str): DAGMC material tag to use for interior vacuum
-            chamber if split_chamber is False (defaults to 'Vacuum).
-    """
+    """Parametrically defines ParaStell in-vessel component geometries."""
 
     def __init__(
         self,
@@ -591,7 +698,6 @@ class RadialBuild(object):
         logger=None,
         **kwargs,
     ):
-
         self.logger = logger
         self.toroidal_angles = toroidal_angles
         self.poloidal_angles = poloidal_angles
@@ -616,8 +722,8 @@ class RadialBuild(object):
     def toroidal_angles(self, angle_list):
         if hasattr(self, "toroidal_angles"):
             e = AttributeError(
-                '"toroidal_angles" cannot be set after class initialization. '
-                "Please create new class instance to alter this attribute."
+                '"toroidal_angles" cannot be set after init. '
+                "Create a new class instance to alter this attribute."
             )
             self._logger.error(e.args[0])
             raise e
@@ -628,7 +734,7 @@ class RadialBuild(object):
             self._logger.error(e.args[0])
             raise e
         if self._toroidal_angles[-1] > 360.0:
-            e = ValueError("Toroidal extent cannot exceed 360.0 degrees.")
+            e = ValueError("Toroidal extent cannot exceed 360.0 deg.")
             self._logger.error(e.args[0])
             raise e
 
@@ -640,17 +746,13 @@ class RadialBuild(object):
     def poloidal_angles(self, angle_list):
         if hasattr(self, "poloidal_angles"):
             e = AttributeError(
-                '"poloidal_angles" cannot be set after class initialization. '
-                "Please create new class instance to alter this attribute."
+                '"poloidal_angles" cannot be set after init.'
             )
             self._logger.error(e.args[0])
             raise e
-
         self._poloidal_angles = angle_list
         if self._poloidal_angles[-1] - self._poloidal_angles[0] > 360.0:
-            e = AssertionError(
-                "Poloidal extent must span exactly 360.0 degrees."
-            )
+            e = AssertionError("Poloidal extent must span exactly 360.0 deg.")
             self._logger.error(e.args[0])
             raise e
 
@@ -662,15 +764,14 @@ class RadialBuild(object):
     def wall_s(self, s):
         if hasattr(self, "wall_s"):
             e = AttributeError(
-                '"wall_s" cannot be set after class initialization. Please '
-                "create new class instance to alter this attribute."
+                '"wall_s" cannot be set after init. '
+                "Create new class instance to alter this attribute."
             )
             self._logger.error(e.args[0])
             raise e
-
         self._wall_s = s
         if self._wall_s < 1.0:
-            e = ValueError("wall_s must be greater than or equal to 1.0.")
+            e = ValueError("wall_s must be >= 1.0.")
             self._logger.error(e.args[0])
             raise e
 
@@ -681,35 +782,23 @@ class RadialBuild(object):
     @radial_build.setter
     def radial_build(self, build_dict):
         self._radial_build = build_dict
-
         for name, component in self._radial_build.items():
-            component["thickness_matrix"] = np.array(
-                component["thickness_matrix"]
-            )
+            component["thickness_matrix"] = np.array(component["thickness_matrix"])
             if component["thickness_matrix"].shape != (
                 len(self._toroidal_angles),
                 len(self._poloidal_angles),
             ):
                 e = AssertionError(
-                    f"The dimensions of {name}'s thickness matrix "
-                    f'{component["thickness_matrix"].shape} must match the '
-                    "dimensions defined by the toroidal and poloidal angle "
-                    "lists "
-                    f"{len(self._toroidal_angles),len(self._poloidal_angles)}, "
-                    "which define the rows and columns of the matrix, "
-                    "respectively."
+                    f"{name}'s thickness matrix shape "
+                    f"{component['thickness_matrix'].shape} must match "
+                    f"{(len(self._toroidal_angles), len(self._poloidal_angles))}."
                 )
                 self._logger.error(e.args[0])
                 raise e
-
             if np.any(component["thickness_matrix"] < 0):
-                e = ValueError(
-                    "Component thicknesses must be greater than or equal to 0. "
-                    "Check thickness inputs for negative values."
-                )
+                e = ValueError("Thickness must be >= 0. Negative found.")
                 self._logger.error(e.args[0])
                 raise e
-
             if "mat_tag" not in component:
                 self._set_mat_tag(name, name)
 
@@ -721,12 +810,10 @@ class RadialBuild(object):
     def split_chamber(self, value):
         if hasattr(self, "split_chamber"):
             e = AttributeError(
-                '"split_chamber" cannot be set after class initialization. '
-                "Please create new class instance to alter this attribute."
+                '"split_chamber" cannot be set after init.'
             )
             self._logger.error(e.args[0])
             raise e
-
         self._split_chamber = value
 
         if self._split_chamber:
@@ -798,14 +885,8 @@ class RadialBuild(object):
         self._set_mat_tag("chamber", self._chamber_mat_tag)
 
     def _set_mat_tag(self, name, mat_tag):
-        """Sets DAGMC material tag for a given component.
-        (Internal function not intended to be called externally)
-
-        Arguments:
-            name (str): name of component.
-            mat_tag (str): DAGMC material tag.
-        """
-        self.radial_build[name]["mat_tag"] = mat_tag
+        """Sets DAGMC material tag for a given component."""
+        self._radial_build[name]["mat_tag"] = mat_tag
 
 
 def parse_args():
@@ -820,20 +901,14 @@ def parse_args():
         "-e",
         "--export_dir",
         default="",
-        help=(
-            "Directory to which output files are exported (default: working "
-            "directory)"
-        ),
+        help="Directory for output files (default: working directory)",
         metavar="",
     )
     parser.add_argument(
         "-l",
         "--logger",
         default=False,
-        help=(
-            "Flag to indicate whether to instantiate a logger object (default: "
-            "False)"
-        ),
+        help="Flag to instantiate a logger object (default: False)",
         metavar="",
     )
 
@@ -846,7 +921,7 @@ def generate_invessel_build():
 
     all_data = read_yaml_config(args.filename)
 
-    if args.logger == True:
+    if args.logger in [True, "True", "true"]:
         logger = log.init()
     else:
         logger = log.NullLogger()
@@ -856,6 +931,7 @@ def generate_invessel_build():
 
     invessel_build_dict = all_data["invessel_build"]
 
+    # Create radial build
     radial_build = RadialBuild(
         invessel_build_dict["toroidal_angles"],
         invessel_build_dict["poloidal_angles"],
@@ -865,18 +941,32 @@ def generate_invessel_build():
         **invessel_build_dict,
     )
 
+    # Create InVesselBuild object (with optional adaptive refinement flags)
     invessel_build = InVesselBuild(
-        vmec_obj, radial_build, logger=logger, **invessel_build_dict
+        vmec_obj,
+        radial_build,
+        logger=logger,
+        **invessel_build_dict,
     )
 
     invessel_build.populate_surfaces()
     invessel_build.calculate_loci()
-    invessel_build.generate_components()
 
+    # Example usage:
+    # - If you want a CadQuery solid: 
+    invessel_build.generate_components()
     invessel_build.export_step(export_dir=args.export_dir)
 
-    if invessel_build_dict["export_cad_to_dagmc"]:
+    # - If you want PyMOAB-based DAGMC geometry:
+    #   (Check if "generate_components_pydagmc" is requested)
+    if invessel_build_dict.get("generate_components_pydagmc", False):
+        invessel_build.generate_components_pydagmc()
+        # Then if you want to export the resulting MB geometry:
+        invessel_build.dag_model.write_file("all_surfaces.vtk")
+        invessel_build.dag_model.write_file("dagmc.h5m")
 
+    # - If also requested to do CAD-to-DAGMC:
+    if invessel_build_dict.get("export_cad_to_dagmc", False):
         invessel_build.export_cad_to_dagmc(
             export_dir=args.export_dir,
             **(filter_kwargs(invessel_build_dict, ["dagmc_filename"])),
