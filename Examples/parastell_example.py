@@ -1,7 +1,7 @@
 import numpy as np
 import openmc
 import parastell.parastell as ps
-
+import time  # Import the time module for timing
 
 # Define directory to export all output files to
 export_dir = ""
@@ -53,6 +53,10 @@ radial_build_dict = {
         "mat_tag": "tungsten",
     },
 }
+
+# Start timing before constructing in-vessel components
+start_time = time.perf_counter()
+
 # Construct in-vessel components
 stellarator.construct_invessel_build(
     toroidal_angles,
@@ -61,6 +65,11 @@ stellarator.construct_invessel_build(
     radial_build_dict,
     use_pydagmc=True,
 )
+
+end_time = time.perf_counter()
+elapsed_time = end_time - start_time
+
+print(f"Construction of in-vessel components completed in {elapsed_time:.2f} seconds.\n")
 
 for surf in stellarator.invessel_build.dag_model.surfaces:
     print(surf)

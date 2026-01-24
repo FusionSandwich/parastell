@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
-
+import openmc
 import cubit
 import cadquery as cq
 import cad_to_dagmc
