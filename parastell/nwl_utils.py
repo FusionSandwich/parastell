@@ -470,3 +470,33 @@ def plot_nwl(
 
     export_path = Path(filename).with_suffix(".png")
     fig.savefig(export_path)
+
+
+
+def save_nwl_ascii(
+    nwl_mat,
+    area_mat,
+    toroidal_centroids,
+    poloidal_centroids,
+    filename="nwl",
+):
+    """Saves NWL as four-column ASCII:
+    toroidal_bin_deg, poloidal_bin_deg, nwl_value, area_value.
+    """
+
+    toroidal_deg = np.rad2deg(toroidal_centroids)
+    poloidal_deg = np.rad2deg(poloidal_centroids)
+
+    export_path = Path(filename).with_suffix(".txt")
+
+    with open(export_path, "w") as f:
+        f.write("# Toroidal[deg]  Poloidal[deg]    NWL[MW/m^2]      Area[m^2]\n")
+        f.write("# ----------------------------------------------------------\n")
+
+        for i, tor in enumerate(toroidal_deg):
+            for j, pol in enumerate(poloidal_deg):
+                f.write(
+                    f"{tor:14.6f}  {pol:14.6f}  {nwl_mat[i, j]:14.6e}  {area_mat[i, j]:14.6e}\n"
+                )
+
+    print(f"NWL saved to ASCII file: {export_path}")
