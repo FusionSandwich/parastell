@@ -473,30 +473,42 @@ def plot_nwl(
 
 
 
-def save_nwl_ascii(
+def save_nwl_csv(
     nwl_mat,
     area_mat,
     toroidal_centroids,
     poloidal_centroids,
     filename="nwl",
 ):
-    """Saves NWL as four-column ASCII:
+    """Saves NWL as four-column CSV using NumPy:
     toroidal_bin_deg, poloidal_bin_deg, nwl_value, area_value.
     """
 
-    toroidal_deg = np.rad2deg(toroidal_centroids)
-    poloidal_deg = np.rad2deg(poloidal_centroids)
+    # Create angle grids
+    toroidal_deg, poloidal_deg = np.meshgrid(
+        np.rad2deg(toroidal_centroids),
+        np.rad2deg(poloidal_centroids),
+        indexing='ij'
+    )
 
-    export_path = Path(filename).with_suffix(".txt")
+    # Flatten all arrays
+    tor_flat = toroidal_deg.ravel()
+    pol_flat = poloidal_deg.ravel()
+    nwl_flat = nwl_mat.ravel()
+    area_flat = area_mat.ravel()
 
-    with open(export_path, "w") as f:
-        f.write("# Toroidal[deg]  Poloidal[deg]    NWL[MW/m^2]      Area[m^2]\n")
-        f.write("# ----------------------------------------------------------\n")
-
-        for i, tor in enumerate(toroidal_deg):
-            for j, pol in enumerate(poloidal_deg):
-                f.write(
-                    f"{tor:14.6f}  {pol:14.6f}  {nwl_mat[i, j]:14.6e}  {area_mat[i, j]:14.6e}\n"
-                )
-
-    print(f"NWL saved to ASCII file: {export_path}")
+    # Stack into single array and save
+    data = np.column_stack([tor_flat, pol_flat, nwl_flat, area_flat])
+    
+    export_path = Path(filename).with_suffix(".csv")
+    
+    np.savetxt(
+        export_path,
+        data,
+        delimiter=',',
+        header='toroidal_bin_deg,poloidal_bin_deg,nwl_mw_m2,area_m2',
+        comments='',
+        fmt=['%.6f', '%.6f', '%.6e', '%.6e']
+    )
+        
+    print(f"NWL saved to CSV: {export_path}")
