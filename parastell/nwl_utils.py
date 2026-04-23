@@ -470,3 +470,45 @@ def plot_nwl(
 
     export_path = Path(filename).with_suffix(".png")
     fig.savefig(export_path)
+
+
+
+def save_nwl_csv(
+    nwl_mat,
+    area_mat,
+    toroidal_centroids,
+    poloidal_centroids,
+    filename="nwl",
+):
+    """Saves NWL as four-column CSV using NumPy:
+    toroidal_bin_deg, poloidal_bin_deg, nwl_value, area_value.
+    """
+
+    # Create angle grids
+    toroidal_deg, poloidal_deg = np.meshgrid(
+        np.rad2deg(toroidal_centroids),
+        np.rad2deg(poloidal_centroids),
+        indexing='ij'
+    )
+
+    # Flatten all arrays
+    tor_flat = toroidal_deg.ravel()
+    pol_flat = poloidal_deg.ravel()
+    nwl_flat = nwl_mat.ravel()
+    area_flat = area_mat.ravel()
+
+    # Stack into single array and save
+    data = np.column_stack([tor_flat, pol_flat, nwl_flat, area_flat])
+    
+    export_path = Path(filename).with_suffix(".csv")
+    
+    np.savetxt(
+        export_path,
+        data,
+        delimiter=',',
+        header='toroidal_bin_deg,poloidal_bin_deg,nwl_mw_m2,area_m2',
+        comments='',
+        fmt=['%.6f', '%.6f', '%.6e', '%.6e']
+    )
+        
+    print(f"NWL saved to CSV: {export_path}")
