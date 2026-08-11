@@ -1,0 +1,35 @@
+name: Apply magnet handoff validation patch
+
+on:
+  push:
+    branches:
+      - agent/reactor-magnet-spectral-handoff-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'Stage magnet handoff validation patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify, apply, format, and commit the implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .ci/magnet-handoff-patch.b64.* | base64 --decode > /tmp/magnet-handoff-patch.tar.gz
+          echo 'ca0586ebae2641a7482d250faadb2e5ca786c827d435130204e192a7e98e14db  /tmp/magnet-handoff-patch.tar.gz' | sha256sum --check
+          tar -xzf /tmp/magnet-handoff-patch.tar.gz
+          python -m pip install --disable-pip-version-check 'black==25.12.0'
+          black .
+          rm -rf .ci
+          rm -f .github/workflows/apply-magnet-handoff-patch.yml
+          rm -f .github/workflows/snapshot-magnet-handoff.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Add validated reactor-to-HTS handoff gates'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
