@@ -354,6 +354,8 @@ def run_all_gates(
     """Execute both transport gates and write a consolidated attestation."""
 
     output_dir = _fresh_directory(output_dir)
+    assets = _sector_assets(Path(assets_dir).resolve())
+    openmc.Materials.cross_sections = str(assets["cross_sections"])
     planar = run_planar_interface_gate(
         output_dir / "planar",
         particles=planar_particles,

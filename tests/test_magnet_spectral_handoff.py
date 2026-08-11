@@ -538,9 +538,13 @@ regions:
     assert handoff.regions[0].mesh.filename == str(mesh_path.resolve())
 
 
-def test_openmc_015_unstructured_mesh_dataframe_compatibility():
+def test_openmc_015_unstructured_mesh_dataframe_compatibility(monkeypatch):
+    monkeypatch.setattr(
+        openmc.UnstructuredMesh,
+        "dimension",
+        property(lambda self: (3,)),
+    )
     mesh = openmc.UnstructuredMesh("coil_mesh.h5m", "moab", mesh_id=811)
-    mesh.dimension = (3,)
     mesh_filter = openmc.MeshFilter(mesh)
 
     dataframe = _compatible_mesh_filter_dataframe(
