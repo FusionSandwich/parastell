@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Trigger direction-label export fix'
+    if: github.event.head_commit.message == 'Retry direction-label export fix'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,64 +25,54 @@ jobs:
 
           source_path = Path("parastell/magnet_spectral_handoff.py")
           source = source_path.read_text(encoding="utf-8")
-          old_start = '''def _add_derived_columns(
-              table: dict[str, np.ndarray],
-              *,
-              role: str,
-              region: MagnetRegion,
-              source_rate_per_s: float | None,
-              tally: Any,
-              row_count: int,
-          ) -> None:
-              mean_name = _find_column(table, "mean")
-          '''
-          new_start = '''def _add_derived_columns(
-              table: dict[str, np.ndarray],
-              *,
-              role: str,
-              region: MagnetRegion,
-              source_rate_per_s: float | None,
-              tally: Any,
-              row_count: int,
-          ) -> None:
-              if role == "boundary_current":
-                  _add_direction_labels(table, region)
-
-              mean_name = _find_column(table, "mean")
-          '''
-          if source.count(old_start) != 1:
-              raise SystemExit("derived-column function anchor mismatch")
-          source = source.replace(old_start, new_start)
-          old_duplicate = '''    if role == "boundary_current":
-              _add_direction_labels(table, region)
-
-              cell_volumes = None
-          '''
-          new_duplicate = '''    cell_volumes = None
-          '''
-          if source.count(old_duplicate) != 1:
-              raise SystemExit("duplicate direction-label anchor mismatch")
+          start = source.index("def _add_derived_columns(")
+          end = source.index("\ndef _add_direction_labels(", start)
+          block = source[start:end]
+          call = (
+              '    if role == "boundary_current":\n'
+              "        _add_direction_labels(table, region)\n"
+          )
+          if block.count(call) != 1:
+              raise SystemExit(
+                  f"expected one existing direction-label call, found {block.count(call)}"
+              )
+          mean_anchor = '    mean_name = _find_column(table, "mean")\n'
+          if block.count(mean_anchor) != 1:
+              raise SystemExit("mean-column anchor mismatch")
+          block = block.replace(mean_anchor, call + "\n" + mean_anchor, 1)
+          first = block.find(call)
+          second = block.find(call, first + len(call))
+          third = block.find(call, second + len(call)) if second >= 0 else -1
+          if first < 0 or second < 0 or third >= 0:
+              raise SystemExit("unexpected direction-label call count after insertion")
+          block = block[:second] + block[second + len(call) :]
+          if block.count(call) != 1 or block.find(call) > block.find(mean_anchor):
+              raise SystemExit("direction-label call was not moved before uncertainty logic")
           source_path.write_text(
-              source.replace(old_duplicate, new_duplicate),
+              source[:start] + block + source[end:],
               encoding="utf-8",
           )
 
           test_path = Path("tests/test_magnet_spectral_handoff.py")
           tests = test_path.read_text(encoding="utf-8")
-          old_import = '''from parastell.magnet_spectral_handoff import (
-              _compatible_mesh_filter_dataframe,
+          old_import = (
+              "from parastell.magnet_spectral_handoff import (\n"
+              "    _compatible_mesh_filter_dataframe,\n"
+              ")\n"
           )
-          '''
-          new_import = '''from parastell.magnet_spectral_handoff import (
-              _add_derived_columns,
-              _compatible_mesh_filter_dataframe,
+          new_import = (
+              "from parastell.magnet_spectral_handoff import (\n"
+              "    _add_derived_columns,\n"
+              "    _compatible_mesh_filter_dataframe,\n"
+              ")\n"
           )
-          '''
           if tests.count(old_import) != 1:
               raise SystemExit("test import anchor mismatch")
-          tests = tests.replace(old_import, new_import)
-          anchor = '''def test_openmc_015_unstructured_mesh_dataframe_compatibility(monkeypatch):
-          '''
+          tests = tests.replace(old_import, new_import, 1)
+          anchor = (
+              "def test_openmc_015_unstructured_mesh_dataframe_compatibility("
+              "monkeypatch):\n"
+          )
           regression = '''def test_boundary_direction_labels_do_not_require_uncertainty_column():
               handoff = MagnetSpectralHandoff.from_mapping(handoff_mapping())
               table = {
@@ -111,7 +101,7 @@ jobs:
           if tests.count(anchor) != 1:
               raise SystemExit("test insertion anchor mismatch")
           test_path.write_text(
-              tests.replace(anchor, regression + anchor),
+              tests.replace(anchor, regression + anchor, 1),
               encoding="utf-8",
           )
           PY
