@@ -33,6 +33,10 @@ jobs:
           activate-environment: parastell_env
           environment-file: environment.yml
 
+      - name: Verify MOAB Python bindings
+        run: |
+          python -c "from pymoab import core; core.Core()"
+
       - name: Install with pip
         run: pip install --no-deps .
       
