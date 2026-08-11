@@ -1,0 +1,61 @@
++        "current_partition_relative": 1.0e-12,
+         "current_match_relative": 1.0e-12,
+         "replay_balance_relative": 1.0e-12,
+     }
+@@ -282,10 +297,22 @@ def run_parastell_sector_gate(
+         "real_source_mesh_used": assets["source_mesh"].is_file(),
+         "surface_source_nonempty": phase_metrics["record_count"] > 0,
+-        "vmec_normals_are_directionally_consistent": (
+-            phase_metrics["incoming_fraction"]
+-            >= tolerances["incoming_fraction_minimum"]
+-        ),
+-        "tally_bank_current_match": current_match_error
++        "vmec_normals_are_finite": (
++            phase_metrics["finite_mu_fraction"] == 1.0
++        ),
++        "direction_labels_partition_records": (
++            partitioned_records == phase_metrics["record_count"]
++            and phase_metrics["unknown_count"] == 0
++        ),
++        "direction_labels_match_mu_sign": (
++            phase_metrics["label_sign_mismatch_count"] == 0
++        ),
++        "bidirectional_crossings_observed": (
++            phase_metrics["incoming_count"] > 0
++            and phase_metrics["outgoing_count"] > 0
++        ),
++        "boundary_current_partition": current_partition_error
++        <= tolerances["current_partition_relative"],
++        "incoming_tally_bank_current_match": current_match_error
+         <= tolerances["current_match_relative"],
+         "multilayer_balance": replay.relative_balance_error
+         <= tolerances["replay_balance_relative"],
+@@ -305,8 +329,14 @@ def run_parastell_sector_gate(
+         "checks": checks,
+         "tolerances": tolerances,
+         "metrics": {
+-            "boundary_current_per_source": current,
++            "boundary_current_per_source": {
++                "total": total_current,
++                "incoming": incoming_current,
++                "outgoing": outgoing_current,
++                "grazing": grazing_current,
++            },
+             "phase_space": phase_metrics,
++            "current_partition_relative_error": current_partition_error,
+             "current_match_relative_error": current_match_error,
+             "replay": replay.to_dict(),
+             "response_shape": response_shape,
+@@ -492,5 +521,6 @@ def _build_sector_model(
+         source_region_id="parastell-sector-first-wall",
+         magnet_id="integration-proxy",
++        surface_normal_signs={1: -1},
+         coordinate_frame=CoordinateFrame(
+             labels=("global_x", "global_y", "global_z"),
+         ),
+@@ -709,6 +739,11 @@ def _phase_space_direction_metrics(path: Path) -> dict[str, Any]:
+         mu = phase["mu_outward"][:]
+     count = len(labels)
+     incoming = int(np.count_nonzero(labels == "incoming"))
++    label_sign_mismatch = (
++        ((labels == "incoming") & ~(mu < -1.0e-12))

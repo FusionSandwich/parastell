@@ -1,0 +1,74 @@
+     return result, {
+-        "mode": "particle_energy_surface_current_conditioning",
++        "mode": "particle_energy_surface_direction_current_conditioning",
+         "tally_direction": tally_direction,
++        "record_direction": record_direction,
++        "eligible_record_count": int(np.count_nonzero(eligible_records)),
+         "bins": diagnostics,
+-        "target_current_per_source": float(sum(target_by_bin.values())),
+-        "normalised_record_current_per_source": float(np.sum(result)),
+-        "unmatched_positive_weight_records": int(
+-            np.count_nonzero(unmatched_positive)
+-        ),
++        "target_current_per_source": target_total,
++        "normalised_record_current_per_source": normalised_total,
++        "unmatched_positive_weight_records": unmatched_count,
+         "bank_record_count_is_not_an_absolute_rate": True,
+     }
+diff --git a/parastell/magnet_handoff_validation.py b/parastell/magnet_handoff_validation.py
+index d906f68..0000000 100644
+--- a/parastell/magnet_handoff_validation.py
++++ b/parastell/magnet_handoff_validation.py
+@@ -247,6 +247,6 @@ def run_parastell_sector_gate(
+         stack=stack,
+         response_library=transparent_library,
+-        tally_direction=None,
++        tally_direction="incoming",
+         record_direction="incoming",
+         x_edges_cm=x_edges,
+         y_edges_cm=y_edges,
+@@ -265,13 +265,44 @@ def run_parastell_sector_gate(
+         },
+     )
+ 
+-    current = _boundary_current_total(spectra_path, direction=None)
+-    current_match_error = abs(replay.input_current_per_source - current) / max(
+-        abs(current), np.finfo(float).tiny
++    total_current = _boundary_current_total(spectra_path, direction=None)
++    incoming_current = _boundary_current_total(
++        spectra_path,
++        direction="incoming",
++    )
++    outgoing_current = _boundary_current_total(
++        spectra_path,
++        direction="outgoing",
++    )
++    grazing_current = _boundary_current_total(
++        spectra_path,
++        direction="grazing",
++    )
++    partitioned_current = (
++        incoming_current + outgoing_current + grazing_current
++    )
++    current_partition_error = abs(total_current - partitioned_current) / max(
++        abs(total_current),
++        np.finfo(float).tiny,
++    )
++    current_match_error = abs(
++        replay.input_current_per_source - incoming_current
++    ) / max(
++        abs(incoming_current),
++        np.finfo(float).tiny,
+     )
+     response_shape = _response_shape(replay_path)
++    partitioned_records = sum(
++        phase_metrics[name]
++        for name in (
++            "incoming_count",
++            "outgoing_count",
++            "grazing_count",
++            "unknown_count",
++        )
++    )
+     tolerances = {
+-        "incoming_fraction_minimum": 0.95,

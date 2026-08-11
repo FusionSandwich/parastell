@@ -1,0 +1,78 @@
+diff --git a/environment.yml b/environment.yml
+index 045f68f..0000000 100644
+--- a/environment.yml
++++ b/environment.yml
+@@ -4,7 +4,7 @@ channels:
+ dependencies:
+   - cadquery
+   - gmsh
+-  - moab>=5.5.1[build=nompi_tempest_*]
++  - moab=5.5.1[build=nompi_tempest_py*]
+   - cad_to_dagmc>=0.9.1
+   - openmc>=0.15.1[build=dagmc_nompi_*]
+   - h5py
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 07f9a1b..0000000 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -29,6 +29,10 @@ jobs:
+           activate-environment: parastell_env
+           environment-file: environment.yml
+ 
++      - name: Verify MOAB Python bindings
++        run: |
++          python -c "from pymoab import core; core.Core()"
++
+       - name: Install with pip
+         run: pip install --no-deps .
+       
+diff --git a/parastell/hts_multilayer.py b/parastell/hts_multilayer.py
+index c9178f0..0000000 100644
+--- a/parastell/hts_multilayer.py
++++ b/parastell/hts_multilayer.py
+@@ -324,6 +324,18 @@ def replay_phase_space(
+     if not spectra_path.is_file():
+         raise FileNotFoundError(spectra_path)
+ 
++    if tally_direction is None or record_direction is None:
++        raise ValueError(
++            "multilayer replay requires an explicit tally and record "
++            "direction"
++        )
++    if tally_direction != record_direction:
++        raise ValueError(
++            "tally_direction and record_direction must match exactly so "
++            "normalization and replay select the same directional "
++            "population"
++        )
++
+     phase, phase_metadata, region_name = _read_phase_space(phase_space_path)
+     tally_name, tally = _read_boundary_tally(
+         spectra_path,
+@@ -334,6 +341,7 @@ def replay_phase_space(
+         phase,
+         tally,
+         tally_direction=tally_direction,
++        record_direction=record_direction,
+     )
+ 
+     direction = np.asarray(phase["direction_global"], dtype=float)
+@@ -352,7 +360,12 @@ def replay_phase_space(
+     record_mask = np.isfinite(record_weights) & (record_weights > 0.0)
+     record_mask &= np.isfinite(mu_inward)
+     record_mask &= mu_inward > float(minimum_incident_cosine)
+-    if record_direction is not None and "magnet_direction" in phase:
++    if record_direction is not None:
++        if "magnet_direction" not in phase:
++            raise ValueError(
++                "record_direction was requested but phase space has no "
++                "magnet_direction labels"
++            )
+         labels = _as_strings(phase["magnet_direction"])
+         record_mask &= labels == record_direction
+ 
+@@ -580,6 +592,7 @@ def _normalise_bank_to_current(
+     tally: Mapping[str, np.ndarray],
+     *,
+     tally_direction: str | None,
++    record_direction: str | None,
