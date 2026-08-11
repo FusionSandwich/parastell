@@ -942,7 +942,7 @@ def _find_column(
             character for character in candidate if character.isalnum()
         )
         for name, key in normalised.items():
-            if key == candidate_key or candidate_key in key:
+            if key == candidate_key:
                 return name
     return None
 
