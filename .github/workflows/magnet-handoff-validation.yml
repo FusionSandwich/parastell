@@ -1,0 +1,57 @@
+name: Magnet handoff validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/reactor-magnet-spectral-handoff-20260811
+
+permissions:
+  contents: read
+
+jobs:
+  focused-tests:
+    name: Focused handoff tests
+    runs-on: ubuntu-latest
+    container: ghcr.io/svalinn/parastell-ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install branch and run focused tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /opt/etc/bashrc
+          pip install --no-deps .
+          pytest -v \
+            tests/test_magnet_spectral_handoff.py \
+            tests/test_magnet_handoff_cli.py \
+            tests/test_hts_multilayer.py
+
+  scientific-gates:
+    name: Planar, real-sector, and multilayer gates
+    runs-on: ubuntu-latest
+    container: ghcr.io/svalinn/parastell-ci
+    env:
+      OMP_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run scientific validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /opt/etc/bashrc
+          pip install --no-deps .
+          python -m parastell.magnet_handoff_validation \
+            --output-dir magnet_handoff_validation \
+            --assets-dir tests/files_for_tests \
+            --planar-particles 5000 \
+            --sector-particles 2000 \
+            --threads 2
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: magnet-handoff-validation-evidence
+          path: magnet_handoff_validation
+          if-no-files-found: warn
+          retention-days: 14
