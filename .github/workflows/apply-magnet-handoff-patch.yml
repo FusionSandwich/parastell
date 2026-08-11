@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'Retry magnet handoff patch without workflow push'
+    if: github.event.head_commit.message == 'Retry source-only magnet handoff patch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +26,9 @@ jobs:
           python -m pip install --disable-pip-version-check 'black==25.12.0'
           black .
           # The default Actions token may not push workflow-file changes.
-          # Keep workflows exactly as they were at checkout; the connected
-          # GitHub control plane installs the validated workflows afterward.
+          # Discard both tracked edits and newly created workflow files. The
+          # connected GitHub control plane installs final workflows afterward.
+          git clean -fd .github/workflows
           git checkout HEAD -- .github/workflows
           rm -rf .ci
           git config user.name 'github-actions[bot]'
