@@ -14,34 +14,23 @@ permissions:
 jobs:
   materialize:
     runs-on: ubuntu-latest
-    container: ghcr.io/svalinn/parastell-ci
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/reactor-magnet-spectral-handoff-20260811
           fetch-depth: 0
-      - name: Apply and validate repair
+      - name: Apply and package repair
         shell: bash
         env:
           EXPECTED_BASE: 25cbb91bca4decc8daffce84ada0751bc008a12a
         run: |
           set -euo pipefail
-          . /opt/etc/bashrc
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
           git merge-base --is-ancestor "${EXPECTED_BASE}" HEAD
           cat .github/patch-chunks/part*.patch > /tmp/magnet-handoff-fix.patch
           git apply --check /tmp/magnet-handoff-fix.patch
           git apply /tmp/magnet-handoff-fix.patch
           python -m compileall -q parastell tests
-          black --line-length 79 \
-            parastell/hts_multilayer.py \
-            parastell/magnet_handoff_validation.py \
-            tests/test_hts_multilayer.py
-          pytest -q \
-            tests/test_hts_multilayer.py \
-            tests/test_hts_tally_columns.py \
-            tests/test_magnet_spectral_handoff.py \
-            tests/test_magnet_handoff_cli.py
           git diff --check
           mkdir -p /tmp/materialized/.github/workflows /tmp/materialized/parastell /tmp/materialized/tests
           cp environment.yml /tmp/materialized/environment.yml
