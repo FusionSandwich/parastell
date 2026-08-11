@@ -1,4 +1,4 @@
-name: Materialize audited magnet handoff repair
+name: Apply audited magnet handoff repair
 
 on:
   workflow_dispatch:
@@ -9,17 +9,18 @@ on:
       - .github/workflows/materialize-magnet-handoff-fix.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  materialize:
+  repair:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/reactor-magnet-spectral-handoff-20260811
           fetch-depth: 0
-      - name: Apply and package repair
+      - name: Apply, validate, and publish repair
         shell: bash
         env:
           EXPECTED_BASE: 25cbb91bca4decc8daffce84ada0751bc008a12a
@@ -31,16 +32,21 @@ jobs:
           git apply --check /tmp/magnet-handoff-fix.patch
           git apply /tmp/magnet-handoff-fix.patch
           python -m compileall -q parastell tests
+          python -m pip install --disable-pip-version-check -q \
+            "black==25.*" h5py numpy pytest
+          black --line-length 79 \
+            parastell/hts_multilayer.py \
+            parastell/magnet_handoff_validation.py \
+            tests/test_hts_multilayer.py
+          pytest -q \
+            tests/test_hts_multilayer.py \
+            tests/test_hts_tally_columns.py
+          rm -rf \
+            .github/patch-chunks \
+            .github/workflows/materialize-magnet-handoff-fix.yml
           git diff --check
-          mkdir -p /tmp/materialized/.github/workflows /tmp/materialized/parastell /tmp/materialized/tests
-          cp environment.yml /tmp/materialized/environment.yml
-          cp .github/workflows/build.yml /tmp/materialized/.github/workflows/build.yml
-          cp parastell/hts_multilayer.py /tmp/materialized/parastell/hts_multilayer.py
-          cp parastell/magnet_handoff_validation.py /tmp/materialized/parastell/magnet_handoff_validation.py
-          cp tests/test_hts_multilayer.py /tmp/materialized/tests/test_hts_multilayer.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: magnet-handoff-repair-materialized
-          path: /tmp/materialized
-          if-no-files-found: error
-          retention-days: 1
+          git config user.name "FusionSandwich"
+          git config user.email "145234893+FusionSandwich@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix direction-conditioned HTS replay and build environment"
+          git push origin HEAD:agent/reactor-magnet-spectral-handoff-20260811
