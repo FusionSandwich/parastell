@@ -10,13 +10,13 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'Stage magnet handoff validation patch'
+    if: github.event.head_commit.message == 'Retry magnet handoff patch without workflow push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify, apply, format, and commit the implementation
+      - name: Verify, apply, format, and commit source changes
         shell: bash
         run: |
           set -euo pipefail
@@ -25,11 +25,13 @@ jobs:
           tar -xzf /tmp/magnet-handoff-patch.tar.gz
           python -m pip install --disable-pip-version-check 'black==25.12.0'
           black .
+          # The default Actions token may not push workflow-file changes.
+          # Keep workflows exactly as they were at checkout; the connected
+          # GitHub control plane installs the validated workflows afterward.
+          git checkout HEAD -- .github/workflows
           rm -rf .ci
-          rm -f .github/workflows/apply-magnet-handoff-patch.yml
-          rm -f .github/workflows/snapshot-magnet-handoff.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Add validated reactor-to-HTS handoff gates'
+          git commit -m 'Apply formatted reactor-to-HTS handoff implementation'
           git push origin "HEAD:${GITHUB_REF_NAME}"
