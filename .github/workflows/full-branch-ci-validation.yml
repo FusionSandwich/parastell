@@ -1,28 +1,27 @@
-name: Full branch CI validation
+name: Open-source ParaStell regression suite
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - agent/reactor-magnet-spectral-handoff-20260811
-    paths:
-      - .github/workflows/full-branch-ci-validation.yml
+      - reactor-magnet-spectral-handoff-20260811
 
 permissions:
   contents: read
 
 jobs:
-  full-tests:
-    name: Full ParaStell suite without licensed Cubit calls
+  open-source-tests:
+    name: Full suite without licensed Cubit calls
     runs-on: ubuntu-latest
     container: ghcr.io/svalinn/parastell-ci
     steps:
       - uses: actions/checkout@v4
-      - name: Populate environment and run tests
+      - name: Install branch and run the open-source suite
         shell: bash
         run: |
           set -euo pipefail
           . /opt/etc/bashrc
+          unset PYTHONPATH
           pip install --no-deps .
           cd tests
           pytest -v .

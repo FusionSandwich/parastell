@@ -1,20 +1,19 @@
 name: Test packaging and installing
 
 on:
-  # allows us to run workflows manually
   workflow_dispatch:
   push:
     branches:
-      - agent/reactor-magnet-spectral-handoff-20260811
+      - reactor-magnet-spectral-handoff-20260811
   pull_request:
     paths-ignore:
       - 'Dockerfile'
       - '.github/workflows/docker_publish.yml'
 
 defaults:
-    run:
-      shell: bash -l {0}
-      
+  run:
+    shell: bash -l {0}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,8 +23,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
-      - name: set up python ${{ matrix.python-version }} and conda environment
+
+      - name: Set up Python ${{ matrix.python-version }} and conda environment
         uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
@@ -35,18 +34,18 @@ jobs:
 
       - name: Verify MOAB Python bindings
         run: |
-          python -c "from pymoab import core; core.Core()"
+          python -c "import pkg_resources; from pymoab import core; core.Core()"
 
       - name: Install with pip
         run: pip install --no-deps .
-      
-      - name: Test building wheels
+
+      - name: Test building distributions
         run: python -m build --sdist --wheel
 
-      - name: Test command line utility.
+      - name: Test command-line utility
         run: parastell -h
 
-      - name: Test running as executable module
+      - name: Test executable module
         run: python -m parastell -h
 
       - name: Test Python import
