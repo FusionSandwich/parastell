@@ -20,7 +20,7 @@ jobs:
         with:
           ref: reactor-magnet-spectral-handoff-20260811
           fetch-depth: 0
-      - name: Apply, validate, and publish model package
+      - name: Apply, validate, and publish source package
         shell: bash
         env:
           EXPECTED_BASE: c917259202062d7cda0ab46f9eda0aa240c08747
@@ -68,8 +68,10 @@ jobs:
           test -s /tmp/comsol-generation-summary.json
           test "$(find /tmp/generated_comsol_fusion_magnets \
             -name model_manifest.json | wc -l)" -eq 4
-          rm -rf \
-            .github/comsol-model-patch \
+          rm -rf .github/comsol-model-patch
+          rm -f .github/workflows/comsol-fusion-magnet-models.yml
+          git restore -- \
+            .github/workflows/build.yml \
             .github/workflows/materialize-comsol-fusion-magnets.yml
           git diff --check
           git config user.name "FusionSandwich"
