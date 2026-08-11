@@ -13,25 +13,16 @@ permissions:
 
 jobs:
   full-tests:
-    name: Full ParaStell test suite
+    name: Full ParaStell suite without licensed Cubit calls
     runs-on: ubuntu-latest
     container: ghcr.io/svalinn/parastell-ci
     steps:
       - uses: actions/checkout@v4
-      - name: Populate environment and run all tests
+      - name: Populate environment and run tests
         shell: bash
-        env:
-          EMAIL_SECRET: ${{ secrets.LICENSE_EMAIL }}
-          PASSWORD_SECRET: ${{ secrets.LICENSE_PASSWORD }}
         run: |
           set -euo pipefail
           . /opt/etc/bashrc
           pip install --no-deps .
-          /opt/Coreform-Cubit-2025.8/bin/rlm_activate \
-            --login "${EMAIL_SECRET}" "${PASSWORD_SECRET}"
           cd tests
           pytest -v .
-      - name: Free Cubit license seat
-        if: always()
-        shell: bash
-        run: /opt/Coreform-Cubit-2025.8/bin/rlm_activate --logout
