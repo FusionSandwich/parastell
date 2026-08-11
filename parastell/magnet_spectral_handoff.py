@@ -456,9 +456,7 @@ class MagnetRegion:
                     "cell_volumes_cm3 keys must appear in cell_ids"
                 )
             if not np.isfinite(volume) or volume <= 0.0:
-                raise ValueError(
-                    "cell volumes must be finite and positive"
-                )
+                raise ValueError("cell volumes must be finite and positive")
             cell_volumes[cell_id] = volume
         object.__setattr__(self, "cell_volumes_cm3", cell_volumes)
 
@@ -489,9 +487,7 @@ class MagnetRegion:
         object.__setattr__(self, "surface_normal_signs", signs)
 
         outward_normals: dict[int, tuple[float, float, float]] = {}
-        for surface_id, normal in (
-            self.surface_outward_normals_global.items()
-        ):
+        for surface_id, normal in self.surface_outward_normals_global.items():
             surface_id = int(surface_id)
             if surface_id not in surface_ids:
                 raise ValueError(
@@ -575,8 +571,7 @@ class MagnetRegion:
             "phase_space_cell_id": self.phase_space_cell_id,
             "volume_cm3": self.volume_cm3,
             "cell_volumes_cm3": {
-                str(key): value
-                for key, value in self.cell_volumes_cm3.items()
+                str(key): value for key, value in self.cell_volumes_cm3.items()
             },
             "surface_areas_cm2": {
                 str(key): value
@@ -588,9 +583,7 @@ class MagnetRegion:
             },
             "surface_outward_normals_global": {
                 str(key): list(value)
-                for key, value in (
-                    self.surface_outward_normals_global.items()
-                )
+                for key, value in (self.surface_outward_normals_global.items())
             },
             "coordinate_frame": self.coordinate_frame.to_dict(),
             "mesh": self.mesh.to_dict() if self.mesh else None,
@@ -732,8 +725,7 @@ class MagnetSpectralHandoff:
 
         return cls(
             regions=tuple(
-                MagnetRegion.from_mapping(region)
-                for region in data["regions"]
+                MagnetRegion.from_mapping(region) for region in data["regions"]
             ),
             energy_bounds_eV=energy_bounds,
             energy_group_structure=energy_structure,
@@ -762,9 +754,7 @@ class MagnetSpectralHandoff:
                 tally_data.get("boundary_current", True)
             ),
             include_heating=bool(tally_data.get("heating", True)),
-            include_damage_energy=bool(
-                tally_data.get("damage_energy", True)
-            ),
+            include_damage_energy=bool(tally_data.get("damage_energy", True)),
             gas_production_scores=gas_scores,
             metadata=dict(data.get("metadata", {})),
         )
@@ -950,9 +940,7 @@ class MagnetSpectralHandoff:
             if duplicate_ids:
                 details.append(
                     "ids="
-                    + ",".join(
-                        str(value) for value in sorted(duplicate_ids)
-                    )
+                    + ",".join(str(value) for value in sorted(duplicate_ids))
                 )
             raise ValueError(
                 "model already contains handoff tally identifiers: "
@@ -1211,6 +1199,8 @@ class MagnetSpectralHandoff:
         *,
         region_name: str,
         selection: str,
+        record_outward_normals_global: np.ndarray | None = None,
+        record_normal_basis: str = "external_per_record_outward_normal",
     ) -> Path:
         """Convert native OpenMC source banks to a local-frame HDF5 file."""
         selection = selection.lower()
@@ -1258,9 +1248,11 @@ class MagnetSpectralHandoff:
         region_identifier = (
             region.source_region_id
             if region.source_region_id is not None
-            else region.magnet_id
-            if region.magnet_id is not None
-            else _slugify(region.name)
+            else (
+                region.magnet_id
+                if region.magnet_id is not None
+                else _slugify(region.name)
+            )
         )
         bank["source_region_id"] = np.full(
             record_count, str(region_identifier), dtype=object
@@ -1294,8 +1286,10 @@ class MagnetSpectralHandoff:
         local_direction = region.coordinate_frame.transform_directions(
             bank["direction_global"]
         )
-        outward_global, outward_local, mu_outward = (
-            _surface_normal_columns(bank, region)
+        outward_global, outward_local, mu_outward = _surface_normal_columns(
+            bank,
+            region,
+            record_outward_normals_global=record_outward_normals_global,
         )
         phase_space_table = dict(bank)
         phase_space_table["position_local_cm"] = local_position
@@ -1303,8 +1297,15 @@ class MagnetSpectralHandoff:
         phase_space_table["surface_outward_normal_global"] = outward_global
         phase_space_table["surface_outward_normal_local"] = outward_local
         phase_space_table["mu_outward"] = mu_outward
+        geometric_basis = (
+            record_normal_basis
+            if record_outward_normals_global is not None
+            else "configured_outward_normal"
+        )
         magnet_direction, direction_basis = _phase_space_direction_columns(
-            mu_outward, selection
+            mu_outward,
+            selection,
+            geometric_basis=geometric_basis,
         )
         phase_space_table["magnet_direction"] = magnet_direction
         phase_space_table["direction_label_basis"] = direction_basis
@@ -1347,6 +1348,7 @@ class MagnetSpectralHandoff:
                     "source_rate_per_s": self.source_rate_per_s,
                     "direction_validation": direction_validation,
                     "coordinate_frame": region.coordinate_frame.to_dict(),
+                    "record_normal_basis": geometric_basis,
                     "particle_code_contract": (
                         "particle_code_raw preserves the source file; "
                         "particle_name and particle_pdg are normalized across "
@@ -1396,9 +1398,7 @@ def _compatible_mesh_filter_dataframe(
         labels = ("element",)
         index_start = 0
     else:
-        labels = tuple(
-            getattr(mesh, "axis_labels", ("x", "y", "z"))
-        )
+        labels = tuple(getattr(mesh, "axis_labels", ("x", "y", "z")))
         index_start = 1
 
     dimensions = tuple(int(value) for value in mesh.dimension)
@@ -1425,9 +1425,7 @@ def _tally_dataframe(tally: Any) -> Any:
         return tally.get_pandas_dataframe(paths=False)
 
     original = openmc.MeshFilter.get_pandas_dataframe
-    openmc.MeshFilter.get_pandas_dataframe = (
-        _compatible_mesh_filter_dataframe
-    )
+    openmc.MeshFilter.get_pandas_dataframe = _compatible_mesh_filter_dataframe
     try:
         return tally.get_pandas_dataframe(paths=False)
     finally:
@@ -1479,9 +1477,7 @@ def _find_column(
     return None
 
 
-def _safe_divide(
-    numerator: np.ndarray, denominator: np.ndarray
-) -> np.ndarray:
+def _safe_divide(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
     numerator = np.asarray(numerator, dtype=float)
     denominator = np.asarray(denominator, dtype=float)
     return np.divide(
@@ -1584,9 +1580,8 @@ def _add_derived_columns(
     energy_low_name = _find_column(table, "energy_low_ev")
     energy_high_name = _find_column(table, "energy_high_ev")
     if energy_low_name and energy_high_name:
-        width = (
-            np.asarray(table[energy_high_name], dtype=float)
-            - np.asarray(table[energy_low_name], dtype=float)
+        width = np.asarray(table[energy_high_name], dtype=float) - np.asarray(
+            table[energy_low_name], dtype=float
         )
         table["energy_width_eV"] = width
         table["mean_per_eV"] = _safe_divide(mean, width)
@@ -1611,9 +1606,7 @@ def _add_derived_columns(
         flux_std = _safe_divide(std_dev, cell_volumes)
         table["flux_per_source_cm_2"] = flux
         table["flux_std_dev_per_source_cm_2"] = flux_std
-        _add_differential_column(
-            table, "flux_per_source_cm_2", flux, width
-        )
+        _add_differential_column(table, "flux_per_source_cm_2", flux, width)
         _add_differential_column(
             table, "flux_std_dev_per_source_cm_2", flux_std, width
         )
@@ -1678,14 +1671,12 @@ def _add_derived_columns(
         table["damage_energy_eV_cm_3_per_source"] = _safe_divide(
             mean, cell_volumes
         )
-        table["damage_energy_std_dev_eV_cm_3_per_source"] = (
-            _safe_divide(std_dev, cell_volumes)
+        table["damage_energy_std_dev_eV_cm_3_per_source"] = _safe_divide(
+            std_dev, cell_volumes
         )
 
     elif role == "gas_production" and cell_volumes is not None:
-        table["production_cm_3_per_source"] = _safe_divide(
-            mean, cell_volumes
-        )
+        table["production_cm_3_per_source"] = _safe_divide(mean, cell_volumes)
         table["production_std_dev_cm_3_per_source"] = _safe_divide(
             std_dev, cell_volumes
         )
@@ -1700,27 +1691,21 @@ def _add_derived_columns(
 
     if role in {"cell_flux", "mesh_flux"}:
         volume_name = (
-            "cell_volume_cm3"
-            if role == "cell_flux"
-            else "mesh_volume_cm3"
+            "cell_volume_cm3" if role == "cell_flux" else "mesh_volume_cm3"
         )
         if volume_name in table:
             flux = _safe_divide(rate, table[volume_name])
             flux_std = _safe_divide(rate_std_dev, table[volume_name])
             table["flux_cm_2_s_1"] = flux
             table["flux_std_dev_cm_2_s_1"] = flux_std
-            _add_differential_column(
-                table, "flux_cm_2_s_1", flux, width
-            )
+            _add_differential_column(table, "flux_cm_2_s_1", flux, width)
             _add_differential_column(
                 table, "flux_std_dev_cm_2_s_1", flux_std, width
             )
 
     elif role == "boundary_current" and "surface_area_cm2" in table:
         current = _safe_divide(rate, table["surface_area_cm2"])
-        current_std = _safe_divide(
-            rate_std_dev, table["surface_area_cm2"]
-        )
+        current_std = _safe_divide(rate_std_dev, table["surface_area_cm2"])
         table["current_density_cm_2_s_1"] = current
         table["current_density_std_dev_cm_2_s_1"] = current_std
         _add_differential_column(
@@ -1738,25 +1723,19 @@ def _add_derived_columns(
         table["heating_W"] = power
         table["heating_std_dev_W"] = rate_std_dev * EV_TO_J
         if cell_volumes is not None:
-            table["heating_W_cm_3"] = _safe_divide(
-                power, cell_volumes
-            )
+            table["heating_W_cm_3"] = _safe_divide(power, cell_volumes)
             table["heating_std_dev_W_cm_3"] = _safe_divide(
                 rate_std_dev * EV_TO_J, cell_volumes
             )
 
     elif role == "damage_energy" and cell_volumes is not None:
-        table["damage_energy_eV_cm_3_s_1"] = _safe_divide(
-            rate, cell_volumes
-        )
+        table["damage_energy_eV_cm_3_s_1"] = _safe_divide(rate, cell_volumes)
         table["damage_energy_std_dev_eV_cm_3_s_1"] = _safe_divide(
             rate_std_dev, cell_volumes
         )
 
     elif role == "gas_production" and cell_volumes is not None:
-        table["production_cm_3_s_1"] = _safe_divide(
-            rate, cell_volumes
-        )
+        table["production_cm_3_s_1"] = _safe_divide(rate, cell_volumes)
         table["production_std_dev_cm_3_s_1"] = _safe_divide(
             rate_std_dev, cell_volumes
         )
@@ -1798,7 +1777,10 @@ def _add_direction_labels(
 
 
 def _phase_space_direction_columns(
-    mu_outward: np.ndarray, selection: str
+    mu_outward: np.ndarray,
+    selection: str,
+    *,
+    geometric_basis: str = "configured_outward_normal",
 ) -> tuple[np.ndarray, np.ndarray]:
     mu = np.asarray(mu_outward, dtype=float)
     labels = np.full(mu.shape, "unknown", dtype=object)
@@ -1807,7 +1789,7 @@ def _phase_space_direction_columns(
     labels[known & (mu < -1.0e-12)] = "incoming"
     labels[known & (mu > 1.0e-12)] = "outgoing"
     labels[known & (np.abs(mu) <= 1.0e-12)] = "grazing"
-    basis[known] = "configured_outward_normal"
+    basis[known] = geometric_basis
 
     if selection in {"incoming", "outgoing"}:
         inferred = ~known
@@ -1826,23 +1808,17 @@ def _phase_space_direction_validation(
         for label in ("incoming", "outgoing", "grazing", "unknown")
     }
     basis_counts = {
-        label: int(np.count_nonzero(basis == label))
-        for label in (
-            "configured_outward_normal",
-            "openmc_cell_selection",
-            "unavailable",
-        )
+        str(label): int(np.count_nonzero(basis == label))
+        for label in np.unique(basis)
     }
     expected = None
     mismatches = 0
     if selection in {"incoming", "outgoing"}:
         expected = selection
-        geometric = basis == "configured_outward_normal"
+        geometric = ~np.isin(basis, ("openmc_cell_selection", "unavailable"))
         directional = np.isin(labels, ("incoming", "outgoing"))
         mismatches = int(
-            np.count_nonzero(
-                geometric & directional & (labels != selection)
-            )
+            np.count_nonzero(geometric & directional & (labels != selection))
         )
     return {
         "selection": selection,
@@ -1860,17 +1836,35 @@ def _phase_space_direction_validation(
 
 
 def _surface_normal_columns(
-    bank: Mapping[str, np.ndarray], region: MagnetRegion
+    bank: Mapping[str, np.ndarray],
+    region: MagnetRegion,
+    *,
+    record_outward_normals_global: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     count = len(bank["surface_id"])
     outward_global = np.full((count, 3), np.nan, dtype=float)
-    for surface_id, normal in (
-        region.surface_outward_normals_global.items()
-    ):
-        mask = np.abs(
-            np.asarray(bank["surface_id"], dtype=int)
-        ) == surface_id
-        outward_global[mask] = normal
+    if record_outward_normals_global is not None:
+        supplied = np.asarray(record_outward_normals_global, dtype=float)
+        if supplied.shape != (count, 3):
+            raise ValueError(
+                "record_outward_normals_global must have shape "
+                f"({count}, 3), got {supplied.shape}"
+            )
+        norms = np.linalg.norm(supplied, axis=1)
+        if not np.all(np.isfinite(supplied)) or np.any(norms <= 0.0):
+            raise ValueError(
+                "record_outward_normals_global contains invalid vectors"
+            )
+        outward_global = supplied / norms[:, None]
+    if record_outward_normals_global is None:
+        for (
+            surface_id,
+            normal,
+        ) in region.surface_outward_normals_global.items():
+            mask = (
+                np.abs(np.asarray(bank["surface_id"], dtype=int)) == surface_id
+            )
+            outward_global[mask] = normal
 
     outward_local = region.coordinate_frame.transform_directions(
         outward_global
@@ -1914,8 +1908,7 @@ def _read_source_bank(
             raise ValueError(f"{path} does not contain a source_bank dataset")
         bank = source["source_bank"][()]
         attributes = {
-            str(key): _jsonable(value)
-            for key, value in source.attrs.items()
+            str(key): _jsonable(value) for key, value in source.attrs.items()
         }
 
     required = {

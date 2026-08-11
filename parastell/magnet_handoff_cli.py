@@ -198,9 +198,7 @@ def _prepare(args: argparse.Namespace) -> dict[str, Any]:
         result["tally_handoff"] = str(tally_output)
 
         if region_name is not None:
-            source_paths = _fresh_surface_sources(
-                output_dir, source_snapshot
-            )
+            source_paths = _fresh_surface_sources(output_dir, source_snapshot)
             if not source_paths:
                 raise RuntimeError(
                     "OpenMC completed without a new or updated HDF5 "

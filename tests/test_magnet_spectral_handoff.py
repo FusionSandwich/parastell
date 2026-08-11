@@ -82,7 +82,6 @@ def test_accepts_named_openmc_energy_group_structure():
     assert handoff.energy_bounds_eV == (0.0, 0.625, 2.0e7)
 
 
-
 def test_builds_directional_and_spatial_tallies():
     handoff = MagnetSpectralHandoff.from_mapping(handoff_mapping())
     tallies = handoff.build_tallies()
@@ -96,9 +95,7 @@ def test_builds_directional_and_spatial_tallies():
         "pstl_magnet_coil_a_winding_pack_damage_energy",
     }
 
-    boundary = by_name[
-        "pstl_magnet_coil_a_winding_pack_boundary_current"
-    ]
+    boundary = by_name["pstl_magnet_coil_a_winding_pack_boundary_current"]
     assert boundary.scores == ["current"]
     assert boundary.estimator == "analog"
     assert any(
@@ -116,9 +113,7 @@ def test_builds_directional_and_spatial_tallies():
     )
     assert tuple(mesh_filter.mesh.dimension) == (2, 2, 2)
 
-    damage = by_name[
-        "pstl_magnet_coil_a_winding_pack_damage_energy"
-    ]
+    damage = by_name["pstl_magnet_coil_a_winding_pack_damage_energy"]
     assert damage.nuclides == ["Cu63", "Cu65"]
 
 
@@ -182,12 +177,8 @@ def test_coordinate_frame_is_right_handed():
         )
 
 
-def _write_source_file(
-    path: Path, particle_codes=(2112, 22)
-):
-    vector_dtype = np.dtype(
-        [("x", "<f8"), ("y", "<f8"), ("z", "<f8")]
-    )
+def _write_source_file(path: Path, particle_codes=(2112, 22)):
+    vector_dtype = np.dtype([("x", "<f8"), ("y", "<f8"), ("z", "<f8")])
     source_dtype = np.dtype(
         [
             ("r", vector_dtype),
@@ -238,9 +229,7 @@ def test_exports_surface_source_in_local_coordinates(tmp_path):
         assert np.allclose(
             phase_space["position_local_cm"][0], [2.0, 0.0, 3.0]
         )
-        assert np.allclose(
-            phase_space["direction_local"][0], [0.0, -1.0, 0.0]
-        )
+        assert np.allclose(phase_space["direction_local"][0], [0.0, -1.0, 0.0])
         assert phase_space["particle_pdg"][:].tolist() == [2112, 22]
         assert phase_space["particle_code_raw"][:].tolist() == [2112, 22]
         assert phase_space["particle_name"].asstr()[:].tolist() == [
@@ -288,7 +277,6 @@ def test_normalizes_openmc_015_particle_codes(tmp_path):
             metadata["source_files"][0]["particle_code_encoding"]
             == "openmc_0.15_enum"
         )
-
 
 
 def test_rejects_empty_cell_ids():
@@ -360,12 +348,11 @@ def test_manifest_records_handoff_contract():
 
     assert manifest["minimum_openmc_version"] == "0.15.1"
     assert manifest["tally_switches"]["boundary_current"] is True
-    assert "history_id" in manifest[
-        "native_surface_source_fields_unavailable"
-    ]
-    assert "mu_outward" in manifest[
-        "phase_space_output_fields_added_by_parastell"
-    ]
+    assert "history_id" in manifest["native_surface_source_fields_unavailable"]
+    assert (
+        "mu_outward"
+        in manifest["phase_space_output_fields_added_by_parastell"]
+    )
 
 
 class FakeTally:
@@ -483,11 +470,8 @@ def test_exports_volume_normalized_mesh_flux(monkeypatch, tmp_path):
     with h5py.File(output_path, "r") as output:
         group = output["tallies"][tally_name]
         assert np.allclose(group["mesh_volume_cm3"][:], [2.0, 2.0])
-        assert np.allclose(
-            group["flux_per_source_cm_2"][:], [2.0, 3.0]
-        )
+        assert np.allclose(group["flux_per_source_cm_2"][:], [2.0, 3.0])
         assert np.allclose(group["flux_cm_2_s_1"][:], [200.0, 300.0])
-
 
 
 def test_maps_mu_bins_to_magnet_direction(monkeypatch, tmp_path):
@@ -600,3 +584,55 @@ def test_direction_is_inferred_from_cell_selection_without_normals(
             "openmc_cell_selection",
             "openmc_cell_selection",
         ]
+
+
+def test_exports_per_record_surface_normals(tmp_path):
+    data = handoff_mapping()
+    data["regions"][0].pop("surface_outward_normals_global")
+    source_path = tmp_path / "surface_source.h5"
+    output_path = tmp_path / "magnet_phase_space.h5"
+    _write_source_file(source_path)
+    handoff = MagnetSpectralHandoff.from_mapping(data)
+    normals = np.asarray(
+        [
+            [-1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+        ]
+    )
+
+    handoff.export_surface_source(
+        source_path,
+        output_path,
+        region_name="coil A winding pack",
+        selection="all",
+        record_outward_normals_global=normals,
+        record_normal_basis="test_per_record_normals",
+    )
+
+    with h5py.File(output_path, "r") as output:
+        phase = output["phase_space"]
+        assert np.allclose(phase["surface_outward_normal_global"][:], normals)
+        assert np.allclose(phase["mu_outward"][:], [-1.0, -1.0])
+        assert phase["magnet_direction"].asstr()[:].tolist() == [
+            "incoming",
+            "incoming",
+        ]
+        assert phase["direction_label_basis"].asstr()[:].tolist() == [
+            "test_per_record_normals",
+            "test_per_record_normals",
+        ]
+
+
+def test_rejects_invalid_per_record_surface_normals(tmp_path):
+    source_path = tmp_path / "surface_source.h5"
+    _write_source_file(source_path)
+    handoff = MagnetSpectralHandoff.from_mapping(handoff_mapping())
+
+    with pytest.raises(ValueError, match="must have shape"):
+        handoff.export_surface_source(
+            source_path,
+            tmp_path / "output.h5",
+            region_name="coil A winding pack",
+            selection="all",
+            record_outward_normals_global=np.asarray([[1.0, 0.0, 0.0]]),
+        )

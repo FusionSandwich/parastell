@@ -124,6 +124,16 @@ parastell-magnet-handoff postprocess \
 
 The exported products include normalized energy/direction-resolved tallies, local-coordinate phase-space records, uncertainty columns, and a versioned manifest. See [the full magnet spectral handoff guide](docs/magnet_spectral_handoff.md) for configuration, normalization, limitations, and validation requirements.
 
+Run the branch's end-to-end planar, real-DAGMC-sector, and explicit HTS-layer validation gates with:
+
+```bash
+parastell-magnet-handoff-validate \
+  --output-dir magnet_handoff_validation \
+  --assets-dir tests/files_for_tests
+```
+
+The deterministic replay preserves the sampled position, direction, particle, and energy correlations while normalizing the bank to the companion OpenMC boundary-current tally. Its current implementation is an exact uncollided/removal thin-layer operator, not a substitute for a later scattering and PKA-response solver.
+
 ## Citing
 If referencing ParaStell in a document or presentation, please cite the following publication:
 

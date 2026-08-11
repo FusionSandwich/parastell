@@ -280,22 +280,54 @@ handoff.export_surface_source(
 )
 ```
 
-## Validation before production use
+## Executable scientific validation gates
 
-The implementation should be validated in increasing order of complexity:
+The branch includes an executable, fail-closed validation sequence rather than
+only unit-level arithmetic checks:
 
-1. A planar slab with an analytic or tightly controlled angular source.
-2. Closure between energy/mu-resolved boundary current and weighted bank
-   statistics.
-3. Replay of the exported boundary field into a simple thin-layer model.
-4. Spatial and energy-group convergence of the local solution.
-5. A ParaStell sector with a real source mesh and magnet interface.
-6. Full-device or periodic-sector source-rate normalization.
+```bash
+parastell-magnet-handoff-validate \
+  --output-dir magnet_handoff_validation \
+  --assets-dir tests/files_for_tests \
+  --planar-particles 5000 \
+  --sector-particles 2000 \
+  --threads 2
+```
 
-The current branch includes unit tests for configuration validation, tally
-construction, normalization arithmetic, direction mapping, particle-code
-compatibility, and HDF5 conversion. It has not yet completed a production
-OpenMC/DAGMC reactor run or deterministic replay benchmark.
+The sequence performs three coupled checks:
+
+1. **Planar interface closure.** A monodirectional 14.1 MeV neutron source
+   crosses an exactly planar void interface. OpenMC's direction-resolved
+   current tally, native surface-source bank, and ParaStell HDF5 export must
+   close to one crossing per source particle.
+2. **Real ParaStell sector.** The repository's DAGMC sector asset,
+   tetrahedral source mesh, source strengths, VMEC equilibrium, and test
+   cross-section library are used in an actual OpenMC run. The first-wall
+   surface is explicitly classified as a magnet-interface software proxy; it
+   is not represented as a resolved magnet.
+3. **Explicit multilayer replay.** The weighted boundary measure is replayed
+   through separately represented copper, silver, REBCO, buffer, Hastelloy,
+   copper, solder, and insulation layers. The output axes are
+   `x_bin,y_bin,layer,particle,energy_group`. A transparent response library
+   verifies current closure, and a separate constant-coefficient problem is
+   checked against the exact exponential characteristic solution.
+
+The surface-source record count is never interpreted as an absolute source
+rate. Records are reweighted within particle/energy/surface bins to the
+companion OpenMC current tally. For the curved sector gate, a per-record VMEC
+reference-surface normal is reconstructed and stored with the exported phase
+space before replay.
+
+Each run writes `validation_attestation.json`, per-gate JSON reports, OpenMC
+statepoints and source banks, normalized handoff files, and multilayer HDF5
+response files. The GitHub workflow uploads these products as validation
+evidence and exits non-zero on any failed tolerance.
+
+The multilayer operator is deliberately scoped to exact planar
+uncollided/removal characteristics. Non-zero scattering redistribution,
+secondary-particle production, physical material-response coefficients, PKA
+recoil matrices, and defect-retention physics must be supplied by later
+response modules; the validation code does not fabricate them.
 
 ## Deliberate first-version limits
 
