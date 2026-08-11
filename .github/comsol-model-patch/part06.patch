@@ -1,0 +1,100 @@
++        CentralSolenoidPFParameters(cs_modules=0)
++
++
++def test_export_writes_step_manifest_and_java_importer(tmp_path):
++    design = FusionMagnetDesign.SPHERICAL_TOKAMAK_TF
++    files = export_fusion_magnet_model(
++        build_fusion_magnet_model(design),
++        tmp_path,
++        formats=("step",),
++    )
++    assert files["combined_step"].is_file()
++    assert files["comsol_java"].is_file()
++    manifest = json.loads(files["manifest"].read_text(encoding="utf-8"))
++    assert manifest["design"] == design.value
++    assert set(manifest["parts"]) == {
++        "tf_center_column",
++        "tf_outer_return",
++    }
++    assert "ModelUtil.create" in files["comsol_java"].read_text(
++        encoding="utf-8"
++    )
++
++
++def test_export_all_supports_stl_without_combined_step(tmp_path):
++    outputs = export_all_fusion_magnet_models(
++        tmp_path,
++        formats=("stl",),
++    )
++    assert set(outputs) == set(FusionMagnetDesign)
++    for files in outputs.values():
++        assert "combined_step" not in files
++        assert files["manifest"].is_file()
++        assert "comsol_java" not in files
++        assert any(name.endswith("_stl") for name in files)
++
++
++def test_cli_exports_one_design(tmp_path, capsys):
++    result = main(
++        [
++            "--design",
++            FusionMagnetDesign.CENTRAL_SOLENOID_PF.value,
++            "--output-dir",
++            str(tmp_path),
++            "--format",
++            "step",
++        ]
++    )
++    assert result == 0
++    output = json.loads(capsys.readouterr().out)
++    assert "combined_step" in output
+diff --git a/new/docs/comsol_fusion_magnet_models.md b/docs/comsol_fusion_magnet_models.md
+new file mode 100644
+index 0000000..47c2c57
+--- /dev/null
++++ b/docs/comsol_fusion_magnet_models.md
+@@ -0,0 +1,148 @@
++# Open-source COMSOL-ready fusion magnet models
++
++ParaStell does not require COMSOL for these examples. The implementation
++creates neutral CAD files, named solid parts, machine-readable manifests, and
++small COMSOL model files for Java that import the geometry and save an `.mph`
++model. COMSOL is required only for the final import, physics setup, meshing,
++and solution.
++
++The default dimensions are generic workflow-test values. They do not reproduce
++proprietary or reactor-authoritative magnet geometry.
++
++## Public model and method survey
++
++The public COMSOL material separates into one downloadable tutorial model and
++several fusion-specific papers or presentations that document methods but do
++not expose redistributable `.mph` files.
++
++| Resource | Public artifact | Reusable content |
++| --- | --- | --- |
++| COMSOL **Superconducting Wire**, Application ID 689 | COMSOL tutorial download, subject to COMSOL Access and licensing | Baseline Magnetic Field Formulation model for a nonlinear superconducting E-J law |
++| Strasser and Friedel, **Electromagnetic Modeling of HTS Superconductors — A Benchmark Collection** (2025) | Poster | Twelve-model formulation map, including H, H-phi, T-A, homogenized T-A, CORC cable, and nonplanar stellarator examples |
++| Amardas and Dwivedi, **Magneto-structural Analysis of Fusion grade Superconducting Toroidal Field Coils** (2009) | Paper | Magnetostatic-to-Lorentz-force-to-structural coupling for tokamak TF coils |
++| Cocilovo, **Analysis of D-Shaped Toroidal Superconductive Coils for Medium Size Fusion Experiment Facility** (2018) | Paper and poster | D-shaped TF geometry and coupled magnetic/mechanical design workflow |
++| De Marzi et al., **Electromagnetic Analysis of the Superconducting Magnet System of the Divertor Tokamak Test Facility** (2020) | Paper and poster | 3D TF plus 2D-axisymmetric PF/CS decomposition and field mapping to feeders |
++| Spruijtenburg et al., **Modelling superconductor AC losses in the STEP TF magnet during plasma initiation** (2025) | Paper | Quasi-2.5D center-column slices and coupled H-H0-phi formulation |
++| CFS, **Designing HTS-Based Magnets for Fusion Devices with COMSOL** (2024) | Keynote video | SPARC TF model-coil quench, AC-loss, Lorentz-load, and diagnostic workflow |
++| Chan et al., **3D Mixed-Dimensional Quench Model of a High Aspect Ratio HTS Coated Conductor Tape** (2010) | Paper | Explicit thick layers, 2D superconducting film, and thin-interface resistance treatment |
++
++The source pages are listed in each generated model manifest. The geometry in
++this repository is newly generated and uses the sources only as method and
++model-family precedents.
++
++## Generated model families
++
++### `tokamak_tf_d_shape`
++
++A generic D-shaped toroidal-field winding pack. The recommended first model is
++stationary Magnetic Fields coupled to Solid Mechanics through Lorentz loads.
++A Heat Transfer interface can consume ParaStell nuclear-heating fields.
++
++### `spherical_tokamak_tf`
++
++A low-aspect-ratio TF surrogate partitioned into a named center column and an
++outer return limb. The partition supports the quasi-2.5D approach used for STEP:

@@ -1,0 +1,131 @@
++                "purpose": "Current-ramp and dump-circuit coupling",
++            },
++            {
++                "interface": "Heat Transfer in Solids",
++                "study": "Time Dependent",
++                "purpose": "Pulsed loss and nuclear-heating response",
++            },
++        ],
++        limitations=[
++            "Each module is a homogenized annular winding pack.",
++            "Plasma-current and ferromagnetic-structure effects are omitted.",
++            "The default dimensions are generic workflow-test values.",
++        ],
++        references=[
++            {
++                "title": (
++                    "Electromagnetic Analysis of the Superconducting "
++                    "Magnet System of the Divertor Tokamak Test Facility"
++                ),
++                "url": "https://www.comsol.com/paper/94651",
++                "use": "3D TF plus 2D-axisymmetric PF/CS decomposition",
++            }
++        ],
++    )
++
++
++def _build_demountable_joint_model() -> FusionMagnetCadModel:
++    coil_parameters = DShapedCoilParameters(
++        inboard_radius_m=0.80,
++        outboard_radius_m=3.35,
++        half_height_m=2.75,
++        radial_build_m=0.34,
++        poloidal_build_m=0.34,
++        toroidal_depth_m=0.50,
++    )
++    parameters = DemountableJointParameters(coil=coil_parameters)
++    coil = _build_d_shaped_coil(parameters.coil)
++    cq = _cadquery()
++    joint_center_x = parameters.coil.outboard_radius_m - (
++        parameters.coil.radial_build_m / 2.0
++    )
++    joint_zone_box = (
++        cq.Workplane("XY")
++        .box(
++            parameters.joint_radial_span_m,
++            parameters.joint_poloidal_span_m,
++            2.0 * parameters.coil.toroidal_depth_m,
++        )
++        .translate((joint_center_x, 0.0, 0.0))
++    )
++    joint_zone = coil.intersect(joint_zone_box)
++    contact_box = (
++        cq.Workplane("XY")
++        .box(
++            1.5 * parameters.joint_radial_span_m,
++            parameters.contact_thickness_m,
++            2.0 * parameters.coil.toroidal_depth_m,
++        )
++        .translate((joint_center_x, 0.0, 0.0))
++    )
++    contact_layer = joint_zone.intersect(contact_box)
++    joint_blocks = joint_zone.cut(contact_box)
++    coil_body = coil.cut(joint_zone_box)
++    model_parameters = asdict(parameters)
++    model_parameters["joint_center_x_m"] = joint_center_x
++    return FusionMagnetCadModel(
++        design=FusionMagnetDesign.DEMOUNTABLE_TF_JOINT,
++        parts={
++            "tf_coil_body": coil_body,
++            "joint_blocks": joint_blocks,
++            "joint_contact_layer": contact_layer,
++        },
++        parameters=model_parameters,
++        description=(
++            "Generic demountable outboard TF joint with an explicit thin "
++            "contact layer for electro-thermal sensitivity studies."
++        ),
++        recommended_physics=[
++            {
++                "interface": "Electric Currents",
++                "study": "Stationary or Time Dependent",
++                "purpose": "Joint-current and contact-resistance losses",
++            },
++            {
++                "interface": "Heat Transfer in Solids",
++                "study": "Stationary or Time Dependent",
++                "purpose": "Joint hot-spot and cryogenic margin",
++            },
++            {
++                "interface": "Solid Mechanics",
++                "study": "Stationary",
++                "purpose": "Contact-pressure and Lorentz-load response",
++            },
++        ],
++        limitations=[
++            "The joint is a generic outboard butt-joint surrogate.",
++            "Contact pressure and resistance laws must be supplied by users.",
++            "No proprietary SPARC, ARC, or commercial joint geometry is used.",
++        ],
++        references=[
++            {
++                "title": (
++                    "Evaluation of Shear Strength in Soldered and "
++                    "Mechanical Lap Joints of High-Temperature "
++                    "Superconducting Tapes Intended for a Remountable "
++                    "Magnet"
++                ),
++                "url": (
++                    "https://www.jstage.jst.go.jp/article/pfr/11/0/"
++                    "11_2405065/_article"
++                ),
++                "use": "demountable REBCO lap-joint precedent",
++            },
++            {
++                "title": (
++                    "Soldered joints -- an essential component of "
++                    "demountable high temperature superconducting "
++                    "fusion magnets"
++                ),
++                "url": (
++                    "https://scientific-publications.ukaea.uk/papers/"
++                    "soldered-joints-an-essential-component-of-"
++                    "demountable-high-temperature-superconducting-"
++                    "fusion-magnets/"
++                ),
++                "use": "electro-thermal joint-model precedent",
++            },
++        ],
++    )
++
++

@@ -1,0 +1,137 @@
++    coil = _build_d_shaped_coil(parameters)
++    cq = _cadquery()
++    split_radius = parameters.inboard_radius_m + 2.2 * (
++        parameters.radial_build_m
++    )
++    center_column_box = (
++        cq.Workplane("XY")
++        .box(
++            split_radius,
++            2.5 * parameters.half_height_m,
++            2.0 * parameters.toroidal_depth_m,
++            centered=(False, True, True),
++        )
++    )
++    center_column = coil.intersect(center_column_box)
++    return_limb = coil.cut(center_column_box)
++    model_parameters = asdict(parameters)
++    model_parameters["center_column_split_radius_m"] = split_radius
++    return FusionMagnetCadModel(
++        design=FusionMagnetDesign.SPHERICAL_TOKAMAK_TF,
++        parts={
++            "tf_center_column": center_column,
++            "tf_outer_return": return_limb,
++        },
++        parameters=model_parameters,
++        description=(
++            "Low-aspect-ratio TF-coil surrogate with a separately named "
++            "center column for quasi-2.5D HTS-loss and irradiation studies."
++        ),
++        recommended_physics=[
++            {
++                "interface": "Magnetic Field Formulation (mfh)",
++                "study": "Time Dependent",
++                "purpose": "HTS current redistribution and hysteretic loss",
++            },
++            {
++                "interface": "Magnetic Fields, No Currents (mfnc)",
++                "study": "Time Dependent",
++                "purpose": "Nonconducting background-field domain",
++            },
++            {
++                "interface": "Heat Transfer in Solids",
++                "study": "Time Dependent",
++                "purpose": "AC-loss and nuclear-heating temperature rise",
++            },
++        ],
++        limitations=[
++            "The center column is a homogenized geometric partition.",
++            "The model does not encode a specific VST or CORC cable layout.",
++            "PF and CS background fields must be supplied separately.",
++        ],
++        references=[
++            {
++                "title": (
++                    "Modelling superconductor AC losses in the STEP TF "
++                    "magnet during plasma initiation"
++                ),
++                "url": "https://www.comsol.com/paper/146111",
++                "use": "quasi-2.5D and H-H0-phi method precedent",
++            },
++            {
++                "title": (
++                    "A STEP in the Right Direction: Modeling AC Losses "
++                    "in a Tokamak Design"
++                ),
++                "url": (
++                    "https://www.comsol.com/story/"
++                    "a-step-in-the-right-direction-modeling-ac-losses-"
++                    "in-a-tokamak-design-152141"
++                ),
++                "use": "spherical-tokamak HTS workflow precedent",
++            },
++        ],
++    )
++
++
++def _annular_coil(
++    inner_radius_m: float,
++    radial_build_m: float,
++    height_m: float,
++    center_z_m: float,
++) -> Any:
++    cq = _cadquery()
++    coil = (
++        cq.Workplane("XY")
++        .circle(inner_radius_m + radial_build_m)
++        .circle(inner_radius_m)
++        .extrude(height_m)
++    )
++    return coil.translate((0.0, 0.0, center_z_m - height_m / 2.0))
++
++
++def _build_central_solenoid_pf_model() -> FusionMagnetCadModel:
++    parameters = CentralSolenoidPFParameters()
++    parts: dict[str, Any] = {}
++    module_pitch = (
++        parameters.cs_module_height_m + parameters.cs_module_gap_m
++    )
++    for index in range(parameters.cs_modules):
++        center_z = (
++            index - (parameters.cs_modules - 1) / 2.0
++        ) * module_pitch
++        parts[f"cs_module_{index + 1:02d}"] = _annular_coil(
++            parameters.cs_inner_radius_m,
++            parameters.cs_radial_build_m,
++            parameters.cs_module_height_m,
++            center_z,
++        )
++    parts["pf_upper"] = _annular_coil(
++        parameters.pf_inner_radius_m,
++        parameters.pf_radial_build_m,
++        parameters.pf_height_m,
++        parameters.pf_axial_offset_m,
++    )
++    parts["pf_lower"] = _annular_coil(
++        parameters.pf_inner_radius_m,
++        parameters.pf_radial_build_m,
++        parameters.pf_height_m,
++        -parameters.pf_axial_offset_m,
++    )
++    return FusionMagnetCadModel(
++        design=FusionMagnetDesign.CENTRAL_SOLENOID_PF,
++        parts=parts,
++        parameters=asdict(parameters),
++        description=(
++            "Axisymmetric modular central-solenoid and poloidal-field "
++            "coil surrogate for ramp-field and feeder calculations."
++        ),
++        recommended_physics=[
++            {
++                "interface": "Magnetic Fields (mf), 2D Axisymmetric",
++                "study": "Stationary or Time Dependent",
++                "purpose": "CS/PF background-field calculation",
++            },
++            {
++                "interface": "Electrical Circuit",
++                "study": "Time Dependent",

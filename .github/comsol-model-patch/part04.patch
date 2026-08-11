@@ -1,0 +1,139 @@
++def build_fusion_magnet_model(
++    design: FusionMagnetDesign | str,
++) -> FusionMagnetCadModel:
++    """Build one generic fusion-magnet CAD model."""
++
++    selected = FusionMagnetDesign(design)
++    builders = {
++        FusionMagnetDesign.TOKAMAK_TF_D_SHAPE: _build_tokamak_tf_model,
++        FusionMagnetDesign.SPHERICAL_TOKAMAK_TF: (
++            _build_spherical_tokamak_tf_model
++        ),
++        FusionMagnetDesign.CENTRAL_SOLENOID_PF: (
++            _build_central_solenoid_pf_model
++        ),
++        FusionMagnetDesign.DEMOUNTABLE_TF_JOINT: (
++            _build_demountable_joint_model
++        ),
++    }
++    return builders[selected]()
++
++
++def _class_name(design: FusionMagnetDesign) -> str:
++    words = re.split(r"[^A-Za-z0-9]+", design.value)
++    return "".join(word.capitalize() for word in words) + "Import"
++
++
++def _java_import_program(
++    design: FusionMagnetDesign,
++    step_filename: str,
++) -> str:
++    class_name = _class_name(design)
++    mph_filename = f"{design.value}.mph"
++    return f'''import com.comsol.model.*;
++import com.comsol.model.util.*;
++
++public class {class_name} {{
++  public static void main(String[] args) {{
++    String geometryFile = args.length > 0 ? args[0] : "{step_filename}";
++    String outputFile = args.length > 1 ? args[1] : "{mph_filename}";
++    run(geometryFile, outputFile);
++  }}
++
++  public static Model run(String geometryFile, String outputFile) {{
++    Model model = ModelUtil.create("Model");
++    model.label("{mph_filename}");
++    model.component().create("comp1");
++    model.component("comp1").geom().create("geom1", 3);
++    model.component("comp1").geom("geom1").lengthUnit("m");
++    model.component("comp1").geom("geom1").create("imp1", "Import");
++    model.component("comp1").geom("geom1").feature("imp1")
++        .set("filename", geometryFile);
++    model.component("comp1").geom("geom1").feature("imp1")
++        .set("selresult", "on");
++    model.component("comp1").geom("geom1").run();
++    model.save(outputFile);
++    return model;
++  }}
++}}
++'''
++
++
++def _shape_statistics(shape: Any) -> dict[str, float | int]:
++    solids = shape.solids().vals()
++    if not solids:
++        raise ValueError("generated part contains no solid geometry")
++    cq = _cadquery()
++    combined = cq.Compound.makeCompound(solids)
++    bounding_box = combined.BoundingBox()
++    return {
++        "solid_count": len(solids),
++        "volume_m3": sum(solid.Volume() for solid in solids),
++        "x_min_m": bounding_box.xmin,
++        "x_max_m": bounding_box.xmax,
++        "y_min_m": bounding_box.ymin,
++        "y_max_m": bounding_box.ymax,
++        "z_min_m": bounding_box.zmin,
++        "z_max_m": bounding_box.zmax,
++    }
++
++
++def _manifest(
++    model: FusionMagnetCadModel,
++    exported_files: dict[str, Any],
++) -> dict[str, Any]:
++    return {
++        "schema_version": "1.0",
++        "design": model.design.value,
++        "units": "m",
++        "description": model.description,
++        "parameters": model.parameters,
++        "files": exported_files,
++        "parts": {
++            name: _shape_statistics(shape)
++            for name, shape in model.parts.items()
++        },
++        "recommended_comsol_physics": model.recommended_physics,
++        "parastell_radiation_handoff": {
++            "supported_inputs": [
++                "energy-group neutron or photon flux",
++                "signed boundary current by energy group",
++                "nuclear heating",
++                "species-resolved PKA source terms",
++            ],
++            "suggested_import": (
++                "Interpolation functions, tables, or General Extrusion "
++                "operators keyed by the ParaStell handoff coordinates"
++            ),
++        },
++        "limitations": model.limitations,
++        "method_references": model.references,
++    }
++
++
++def export_fusion_magnet_model(
++    model: FusionMagnetCadModel,
++    output_directory: str | Path,
++    formats: Iterable[str] = ("step",),
++) -> dict[str, Path]:
++    """Export neutral CAD, a manifest, and a COMSOL Java importer."""
++
++    cq = _cadquery()
++    output_path = Path(output_directory).resolve() / model.design.value
++    output_path.mkdir(parents=True, exist_ok=True)
++    selected_formats = {item.lower() for item in formats}
++    if not selected_formats:
++        raise ValueError("at least one export format is required")
++    unsupported = selected_formats - {"step", "stl"}
++    if unsupported:
++        names = ", ".join(sorted(unsupported))
++        raise ValueError(f"unsupported export formats: {names}")
++
++    written: dict[str, Path] = {}
++    exported_files: dict[str, Any] = {"parts": {}}
++    if "step" in selected_formats:
++        assembly = cq.Assembly(name=model.design.value)
++        for name, shape in model.parts.items():
++            assembly.add(shape, name=name)
++        combined_step = output_path / f"{model.design.value}.step"
++        cq.exporters.assembly.exportAssembly(

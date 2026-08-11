@@ -1,0 +1,62 @@
+name: Apply COMSOL-ready fusion magnet model package
+
+on:
+  push:
+    branches:
+      - reactor-magnet-spectral-handoff-20260811
+    paths:
+      - .github/workflows/materialize-comsol-fusion-magnets.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    container: ghcr.io/svalinn/parastell-ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reactor-magnet-spectral-handoff-20260811
+          fetch-depth: 0
+      - name: Apply, validate, and publish model package
+        shell: bash
+        env:
+          EXPECTED_BASE: c917259202062d7cda0ab46f9eda0aa240c08747
+        run: |
+          set -euo pipefail
+          . /opt/etc/bashrc
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          git merge-base --is-ancestor "${EXPECTED_BASE}" HEAD
+          cat .github/comsol-model-patch/part*.patch \
+            > /tmp/comsol-fusion-magnets.patch
+          git apply --check /tmp/comsol-fusion-magnets.patch
+          git apply /tmp/comsol-fusion-magnets.patch
+          black --line-length 79 \
+            parastell/comsol_fusion_magnets.py \
+            tests/test_comsol_fusion_magnets.py \
+            examples/comsol_fusion_magnets_example.py
+          python -m compileall -q parastell tests examples
+          pip install --no-deps .
+          pytest -q tests/test_comsol_fusion_magnets.py
+          parastell-comsol-fusion-magnets \
+            --design all \
+            --output-dir /tmp/generated_comsol_fusion_magnets \
+            --format step \
+            --format stl \
+            > /tmp/comsol-generation-summary.json
+          test -s /tmp/comsol-generation-summary.json
+          test "$(find /tmp/generated_comsol_fusion_magnets \
+            -name model_manifest.json | wc -l)" -eq 4
+          rm -rf \
+            .github/comsol-model-patch \
+            .github/workflows/materialize-comsol-fusion-magnets.yml
+          git diff --check
+          git config user.name "FusionSandwich"
+          git config user.email \
+            "145234893+FusionSandwich@users.noreply.github.com"
+          git add -A
+          git commit -m "Add COMSOL-ready fusion magnet model generators"
+          git push origin \
+            HEAD:reactor-magnet-spectral-handoff-20260811

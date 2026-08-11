@@ -1,0 +1,142 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 74e0f46..e43a927 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -71,6 +71,7 @@ Repository = "https://github.com/svalinn/parastell.git"
+ "parastell" = "parastell.parastell:parastell"
+ "parastell-magnet-handoff" = "parastell.magnet_handoff_cli:main"
+ "parastell-magnet-handoff-validate" = "parastell.magnet_handoff_validation:main"
++"parastell-comsol-fusion-magnets" = "parastell.comsol_fusion_magnets:main"
+ 
+ [build-system]
+ requires = ["setuptools>=64.0.0"]
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index 942022c..638d9d0 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -48,5 +48,8 @@ jobs:
+       - name: Test executable module
+         run: python -m parastell -h
+ 
++      - name: Test COMSOL fusion-magnet generator
++        run: parastell-comsol-fusion-magnets -h
++
+       - name: Test Python import
+         run: python -c "import parastell"
+diff --git a/new/parastell/comsol_fusion_magnets.py b/parastell/comsol_fusion_magnets.py
+new file mode 100644
+index 0000000..85c472f
+--- /dev/null
++++ b/parastell/comsol_fusion_magnets.py
+@@ -0,0 +1,777 @@
++"""Open-source, COMSOL-ready geometry for fusion magnet studies.
++
++The generators in this module do not require a COMSOL installation.  They
++create neutral CAD files, machine-readable model manifests, and small COMSOL
++Java import programs.  A COMSOL installation is still required to create and
++solve the final ``.mph`` models.
++
++The geometries are intentionally generic.  They are suitable for workflow and
++method development, but they are not validated reactor designs.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import re
++from dataclasses import asdict, dataclass
++from enum import Enum
++from pathlib import Path
++from typing import Any, Iterable
++
++
++class FusionMagnetDesign(str, Enum):
++    """Supported generic fusion-magnet model families."""
++
++    TOKAMAK_TF_D_SHAPE = "tokamak_tf_d_shape"
++    SPHERICAL_TOKAMAK_TF = "spherical_tokamak_tf"
++    CENTRAL_SOLENOID_PF = "central_solenoid_pf"
++    DEMOUNTABLE_TF_JOINT = "demountable_tf_joint"
++
++
++@dataclass(frozen=True)
++class DShapedCoilParameters:
++    """Dimensions for a D-shaped toroidal-field coil pack."""
++
++    inboard_radius_m: float
++    outboard_radius_m: float
++    half_height_m: float
++    radial_build_m: float
++    poloidal_build_m: float
++    toroidal_depth_m: float
++    curve_points: int = 96
++
++    def __post_init__(self) -> None:
++        values = (
++            self.inboard_radius_m,
++            self.outboard_radius_m,
++            self.half_height_m,
++            self.radial_build_m,
++            self.poloidal_build_m,
++            self.toroidal_depth_m,
++        )
++        if any(value <= 0.0 for value in values):
++            raise ValueError("all D-shaped coil dimensions must be positive")
++        if self.inboard_radius_m >= self.outboard_radius_m:
++            raise ValueError("inboard radius must be below outboard radius")
++        if self.radial_build_m * 2.0 >= (
++            self.outboard_radius_m - self.inboard_radius_m
++        ):
++            raise ValueError("radial build leaves no D-shaped aperture")
++        if self.poloidal_build_m >= self.half_height_m:
++            raise ValueError("poloidal build leaves no D-shaped aperture")
++        if self.curve_points < 24:
++            raise ValueError("curve_points must be at least 24")
++
++
++@dataclass(frozen=True)
++class CentralSolenoidPFParameters:
++    """Dimensions for a modular central-solenoid and PF-coil surrogate."""
++
++    cs_inner_radius_m: float = 0.45
++    cs_radial_build_m: float = 0.28
++    cs_module_height_m: float = 0.55
++    cs_module_gap_m: float = 0.06
++    cs_modules: int = 6
++    pf_inner_radius_m: float = 2.1
++    pf_radial_build_m: float = 0.35
++    pf_height_m: float = 0.35
++    pf_axial_offset_m: float = 2.35
++
++    def __post_init__(self) -> None:
++        values = (
++            self.cs_inner_radius_m,
++            self.cs_radial_build_m,
++            self.cs_module_height_m,
++            self.cs_module_gap_m,
++            self.pf_inner_radius_m,
++            self.pf_radial_build_m,
++            self.pf_height_m,
++            self.pf_axial_offset_m,
++        )
++        if any(value <= 0.0 for value in values):
++            raise ValueError("all CS/PF dimensions must be positive")
++        if self.cs_modules < 1:
++            raise ValueError("cs_modules must be positive")
++
++
++@dataclass(frozen=True)
++class DemountableJointParameters:
++    """Joint dimensions added to a generic D-shaped TF coil."""
++
++    coil: DShapedCoilParameters
++    joint_radial_span_m: float = 0.65
++    joint_poloidal_span_m: float = 0.50
++    contact_thickness_m: float = 0.012
++
++    def __post_init__(self) -> None:
++        if self.joint_radial_span_m <= 0.0:
++            raise ValueError("joint radial span must be positive")
++        if self.joint_poloidal_span_m <= 0.0:
