@@ -23,11 +23,12 @@ jobs:
       - name: Apply and validate repair
         shell: bash
         env:
-          EXPECTED_PARENT: 25cbb91bca4decc8daffce84ada0751bc008a12a
+          EXPECTED_BASE: 25cbb91bca4decc8daffce84ada0751bc008a12a
         run: |
           set -euo pipefail
           . /opt/etc/bashrc
-          test "$(git rev-parse HEAD^)" = "${EXPECTED_PARENT}"
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          git merge-base --is-ancestor "${EXPECTED_BASE}" HEAD
           cat .github/patch-chunks/part*.patch > /tmp/magnet-handoff-fix.patch
           git apply --check /tmp/magnet-handoff-fix.patch
           git apply /tmp/magnet-handoff-fix.patch
