@@ -47,6 +47,7 @@ dependencies = [
     "h5py",
     "matplotlib",
     "numpy",
+    "requests",
     "scipy",
     "netcdf4",
     "pyyaml",
