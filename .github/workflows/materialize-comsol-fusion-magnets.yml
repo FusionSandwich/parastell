@@ -42,7 +42,7 @@ jobs:
               '            cq.exporters.export(shape, str(part_step), unit="M")\n'
           )
           new = (
-              '            part_assembly = cq.Assembly(name=name)\n'
+              '            part_assembly = cq.Assembly()\n'
               '            part_assembly.add(shape, name=name)\n'
               '            cq.exporters.assembly.exportAssembly(\n'
               '                part_assembly, str(part_step), unit="M"\n'
