@@ -71,6 +71,7 @@ Repository = "https://github.com/svalinn/parastell.git"
 "parastell" = "parastell.parastell:parastell"
 "parastell-magnet-handoff" = "parastell.magnet_handoff_cli:main"
 "parastell-magnet-handoff-validate" = "parastell.magnet_handoff_validation:main"
+"parastell-comsol-fusion-magnets" = "parastell.comsol_fusion_magnets:main"
 
 [build-system]
 requires = ["setuptools>=64.0.0"]
