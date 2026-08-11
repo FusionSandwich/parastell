@@ -1,0 +1,125 @@
+name: Apply direction-label export fix
+
+on:
+  push:
+    branches:
+      - agent/reactor-magnet-spectral-handoff-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Trigger direction-label export fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch exporter and regression test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("parastell/magnet_spectral_handoff.py")
+          source = source_path.read_text(encoding="utf-8")
+          old_start = '''def _add_derived_columns(
+              table: dict[str, np.ndarray],
+              *,
+              role: str,
+              region: MagnetRegion,
+              source_rate_per_s: float | None,
+              tally: Any,
+              row_count: int,
+          ) -> None:
+              mean_name = _find_column(table, "mean")
+          '''
+          new_start = '''def _add_derived_columns(
+              table: dict[str, np.ndarray],
+              *,
+              role: str,
+              region: MagnetRegion,
+              source_rate_per_s: float | None,
+              tally: Any,
+              row_count: int,
+          ) -> None:
+              if role == "boundary_current":
+                  _add_direction_labels(table, region)
+
+              mean_name = _find_column(table, "mean")
+          '''
+          if source.count(old_start) != 1:
+              raise SystemExit("derived-column function anchor mismatch")
+          source = source.replace(old_start, new_start)
+          old_duplicate = '''    if role == "boundary_current":
+              _add_direction_labels(table, region)
+
+              cell_volumes = None
+          '''
+          new_duplicate = '''    cell_volumes = None
+          '''
+          if source.count(old_duplicate) != 1:
+              raise SystemExit("duplicate direction-label anchor mismatch")
+          source_path.write_text(
+              source.replace(old_duplicate, new_duplicate),
+              encoding="utf-8",
+          )
+
+          test_path = Path("tests/test_magnet_spectral_handoff.py")
+          tests = test_path.read_text(encoding="utf-8")
+          old_import = '''from parastell.magnet_spectral_handoff import (
+              _compatible_mesh_filter_dataframe,
+          )
+          '''
+          new_import = '''from parastell.magnet_spectral_handoff import (
+              _add_derived_columns,
+              _compatible_mesh_filter_dataframe,
+          )
+          '''
+          if tests.count(old_import) != 1:
+              raise SystemExit("test import anchor mismatch")
+          tests = tests.replace(old_import, new_import)
+          anchor = '''def test_openmc_015_unstructured_mesh_dataframe_compatibility(monkeypatch):
+          '''
+          regression = '''def test_boundary_direction_labels_do_not_require_uncertainty_column():
+              handoff = MagnetSpectralHandoff.from_mapping(handoff_mapping())
+              table = {
+                  "mean": np.asarray([0.0, 1.0]),
+                  "musurface_low": np.asarray([-1.0, 0.0]),
+                  "musurface_high": np.asarray([0.0, 1.0]),
+                  "surface": np.asarray([20, 20]),
+              }
+
+              _add_derived_columns(
+                  table,
+                  role="boundary_current",
+                  region=handoff.region("coil A winding pack"),
+                  source_rate_per_s=None,
+                  tally=None,
+                  row_count=2,
+              )
+
+              assert table["magnet_direction"].tolist() == [
+                  "incoming",
+                  "outgoing",
+              ]
+
+
+          '''
+          if tests.count(anchor) != 1:
+              raise SystemExit("test insertion anchor mismatch")
+          test_path.write_text(
+              tests.replace(anchor, regression + anchor),
+              encoding="utf-8",
+          )
+          PY
+          python -m pip install --disable-pip-version-check 'black==25.12.0'
+          black parastell/magnet_spectral_handoff.py tests/test_magnet_spectral_handoff.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add parastell/magnet_spectral_handoff.py tests/test_magnet_spectral_handoff.py
+          git commit -m 'Export boundary directions without uncertainty columns'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
