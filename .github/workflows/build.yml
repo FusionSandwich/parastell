@@ -48,5 +48,8 @@ jobs:
       - name: Test executable module
         run: python -m parastell -h
 
+      - name: Test COMSOL-ready magnet generator
+        run: parastell-comsol-fusion-magnets -h
+
       - name: Test Python import
         run: python -c "import parastell"

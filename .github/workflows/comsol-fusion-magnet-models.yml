@@ -1,0 +1,49 @@
+name: COMSOL-ready fusion magnet models
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - reactor-magnet-spectral-handoff-20260811
+    paths:
+      - parastell/comsol_fusion_magnets.py
+      - tests/test_comsol_fusion_magnets.py
+      - examples/comsol_fusion_magnets_example.py
+      - docs/comsol_fusion_magnet_models.md
+      - pyproject.toml
+      - .github/workflows/comsol-fusion-magnet-models.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate neutral CAD and COMSOL importers
+    runs-on: ubuntu-latest
+    container: ghcr.io/svalinn/parastell-ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install branch and test generators
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /opt/etc/bashrc
+          pip install --no-deps .
+          pytest -v tests/test_comsol_fusion_magnets.py
+      - name: Generate all model families
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /opt/etc/bashrc
+          parastell-comsol-fusion-magnets \
+            --design all \
+            --output-dir generated_comsol_fusion_magnets \
+            --format step \
+            --format stl
+      - name: Upload generated model package
+        uses: actions/upload-artifact@v4
+        with:
+          name: comsol-ready-fusion-magnet-models
+          path: generated_comsol_fusion_magnets
+          if-no-files-found: error
+          retention-days: 30
