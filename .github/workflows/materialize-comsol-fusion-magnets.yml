@@ -33,6 +33,25 @@ jobs:
             > /tmp/comsol-fusion-magnets.patch
           git apply --check /tmp/comsol-fusion-magnets.patch
           git apply /tmp/comsol-fusion-magnets.patch
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("parastell/comsol_fusion_magnets.py")
+          text = path.read_text(encoding="utf-8")
+          old = (
+              '            cq.exporters.export(shape, str(part_step), unit="M")\n'
+          )
+          new = (
+              '            part_assembly = cq.Assembly(name=name)\n'
+              '            part_assembly.add(shape, name=name)\n'
+              '            cq.exporters.assembly.exportAssembly(\n'
+              '                part_assembly, str(part_step), unit="M"\n'
+              '            )\n'
+          )
+          if old not in text:
+              raise SystemExit("expected CadQuery STEP exporter call was not found")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
           black --line-length 79 \
             parastell/comsol_fusion_magnets.py \
             tests/test_comsol_fusion_magnets.py \
