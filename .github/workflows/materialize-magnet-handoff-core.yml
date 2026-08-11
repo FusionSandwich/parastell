@@ -1,0 +1,57 @@
+name: Materialize reactor-to-magnet handoff core
+
+on:
+  push:
+    branches:
+      - agent/reactor-magnet-spectral-handoff-20260811
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-reactor-magnet-handoff
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify and materialize source
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import lzma
+
+          archive = Path('.handoff/magnet_spectral_handoff.py.xz')
+          target = Path('parastell/magnet_spectral_handoff.py')
+          data = lzma.decompress(archive.read_bytes())
+          sha256 = hashlib.sha256(data).hexdigest()
+          if sha256 != '70b72be94dc4bf674d8c44b08c99576cab580417bd2233f0d24eef49a13c03d2':
+              raise SystemExit(f'unexpected source SHA-256: {sha256}')
+          header = f'blob {len(data)}\0'.encode()
+          git_sha = hashlib.sha1(header + data).hexdigest()
+          if git_sha != '3a9f7e2dc65c9f4e14a601281912c11e0cea1906':
+              raise SystemExit(f'unexpected Git blob SHA: {git_sha}')
+          target.write_bytes(data)
+          archive.unlink()
+          Path('.handoff').rmdir()
+          Path('.github/workflows/materialize-magnet-handoff-core.yml').unlink()
+          PY
+
+      - name: Commit materialized implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Materialize reactor-to-magnet spectral handoff core'
+          git push origin HEAD:"${GITHUB_REF_NAME}"

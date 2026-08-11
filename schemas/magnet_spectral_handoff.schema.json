@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/svalinn/parastell/schemas/magnet_spectral_handoff.schema.json",
+  "title": "ParaStell magnet spectral handoff configuration",
+  "description": "Configuration for OpenMC magnet-interface tallies and deterministic HTS phase-space export.",
+  "type": "object",
+  "required": ["regions"],
+  "oneOf": [
+    {
+      "required": ["energy_bounds_eV"],
+      "not": {"required": ["energy_group_structure"]}
+    },
+    {
+      "required": ["energy_group_structure"],
+      "not": {"required": ["energy_bounds_eV"]}
+    }
+  ],
+  "properties": {
+    "energy_bounds_eV": {
+      "$ref": "#/$defs/nonnegativeEdges"
+    },
+    "energy_group_structure": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Key in openmc.mgxs.GROUP_STRUCTURES."
+    },
+    "particles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "default": ["neutron", "photon"]
+    },
+    "mu_bounds": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "number", "minimum": -1.0, "maximum": 1.0},
+      "default": [-1.0, 0.0, 1.0]
+    },
+    "time_bounds_s": {
+      "$ref": "#/$defs/nonnegativeEdges"
+    },
+    "polar_bounds_rad": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "number",
+        "minimum": 0.0,
+        "maximum": 3.141592653589793
+      }
+    },
+    "azimuthal_bounds_rad": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "number",
+        "minimum": -3.141592653589793,
+        "maximum": 3.141592653589793
+      }
+    },
+    "tally_id_base": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 9000000
+    },
+    "normalization": {
+      "type": "object",
+      "properties": {
+        "source_rate_per_s": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "tallies": {
+      "type": "object",
+      "properties": {
+        "cell_flux": {"type": "boolean", "default": true},
+        "mesh_flux": {"type": "boolean", "default": true},
+        "boundary_current": {"type": "boolean", "default": true},
+        "heating": {"type": "boolean", "default": true},
+        "damage_energy": {"type": "boolean", "default": true},
+        "gas_production": {
+          "oneOf": [
+            {"type": "boolean"},
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            }
+          ],
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/region"}
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonnegativeEdges": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "number", "minimum": 0.0}
+    },
+    "positiveIdArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "positiveIdMap": {
+      "type": "object",
+      "patternProperties": {
+        "^[1-9][0-9]*$": {"type": "number", "exclusiveMinimum": 0.0}
+      },
+      "additionalProperties": false
+    },
+    "coordinateFrame": {
+      "type": "object",
+      "properties": {
+        "origin_cm": {"$ref": "#/$defs/vector3"},
+        "x_axis": {"$ref": "#/$defs/vector3"},
+        "y_axis": {"$ref": "#/$defs/vector3"},
+        "z_axis": {"$ref": "#/$defs/vector3"},
+        "labels": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "string", "minLength": 1}
+        }
+      },
+      "additionalProperties": false
+    },
+    "regularMesh": {
+      "type": "object",
+      "required": ["kind", "lower_left_cm", "upper_right_cm", "dimension"],
+      "properties": {
+        "kind": {"const": "regular"},
+        "lower_left_cm": {"$ref": "#/$defs/vector3"},
+        "upper_right_cm": {"$ref": "#/$defs/vector3"},
+        "dimension": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "mesh_id": {"type": "integer", "minimum": 1},
+        "name": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "unstructuredMesh": {
+      "type": "object",
+      "required": ["kind", "filename"],
+      "properties": {
+        "kind": {"const": "unstructured"},
+        "filename": {"type": "string", "minLength": 1},
+        "library": {
+          "type": "string",
+          "enum": ["moab", "libmesh"],
+          "default": "moab"
+        },
+        "mesh_id": {"type": "integer", "minimum": 1},
+        "name": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "region": {
+      "type": "object",
+      "required": ["name", "cell_ids"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "source_region_id": {"type": ["string", "integer", "null"]},
+        "magnet_id": {"type": ["string", "integer", "null"]},
+        "coil_id": {"type": ["string", "integer", "null"]},
+        "winding_pack_id": {"type": ["string", "integer", "null"]},
+        "cell_ids": {"$ref": "#/$defs/positiveIdArray"},
+        "surface_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "phase_space_cell_id": {"type": "integer", "minimum": 1},
+        "volume_cm3": {"type": "number", "exclusiveMinimum": 0.0},
+        "cell_volumes_cm3": {"$ref": "#/$defs/positiveIdMap"},
+        "surface_areas_cm2": {"$ref": "#/$defs/positiveIdMap"},
+        "surface_normal_signs": {
+          "type": "object",
+          "patternProperties": {
+            "^[1-9][0-9]*$": {"type": "integer", "enum": [-1, 1]}
+          },
+          "additionalProperties": false
+        },
+        "surface_outward_normals_global": {
+          "type": "object",
+          "patternProperties": {
+            "^[1-9][0-9]*$": {"$ref": "#/$defs/vector3"}
+          },
+          "additionalProperties": false
+        },
+        "coordinate_frame": {"$ref": "#/$defs/coordinateFrame"},
+        "mesh": {
+          "oneOf": [
+            {"$ref": "#/$defs/regularMesh"},
+            {"$ref": "#/$defs/unstructuredMesh"}
+          ]
+        },
+        "damage_nuclides": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

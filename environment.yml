@@ -6,9 +6,10 @@ dependencies:
   - gmsh
   - moab>=5.5.1[build=nompi_tempest_*]
   - cad_to_dagmc>=0.9.1
-  - openmc>=0.15.0[build=dagmc_nompi_*]
+  - openmc>=0.15.1[build=dagmc_nompi_*]
+  - h5py
   - matplotlib
-  - numpy 
+  - numpy
   - scipy
   - pip
   - pip:

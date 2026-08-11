@@ -43,7 +43,8 @@ dependencies = [
     "gmsh",
     "pymoab>=5.5",
     "cad_to_dagmc>=0.9.1",
-    "openmc>=0.15",
+    "openmc>=0.15.1",
+    "h5py",
     "matplotlib",
     "numpy",
     "scipy",
@@ -67,6 +68,7 @@ Repository = "https://github.com/svalinn/parastell.git"
 
 [project.scripts]
 "parastell" = "parastell.parastell:parastell"
+"parastell-magnet-handoff" = "parastell.magnet_handoff_cli:main"
 
 [build-system]
 requires = ["setuptools>=64.0.0"]

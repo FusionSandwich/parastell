@@ -21,6 +21,7 @@ ParaStell also offers the following neutronics support:
 - Generate DAGMC geometries
 - Generate tetrahedral neutron source definitions
 - Calculate neutron wall-loading
+- Generate energy-, direction-, particle-, and space-resolved OpenMC magnet-interface tallies and phase-space handoffs for local deterministic HTS models
 
 ![Example model](images/parastell-example.png)
 
@@ -31,7 +32,8 @@ ParaStell depends on:
 - [PyDAGMC](https://github.com/svalinn/pydagmc)
 - [MOAB](https://bitbucket.org/fathomteam/moab/src/master/)
 - [CAD-to-DAGMC](https://github.com/fusion-energy/cad_to_dagmc)
-- [OpenMC](https://github.com/openmc-dev/openmc)
+- [OpenMC](https://github.com/openmc-dev/openmc) 0.15.1 or later
+- [h5py](https://www.h5py.org/)
 - [NumPy](https://numpy.org/install/)
 - [SciPy](https://scipy.org/install/)
 - [PyYAML](https://pyyaml.org/wiki/PyYAMLDocumentation)
@@ -50,12 +52,12 @@ or download the ZIP file from the repository home page.
 
 This guide will use the conda package manager to install Python dependencies. Conda provides straight-forward installation of Python packages and switching between different collections of Python packages through the use of [environments](https://conda.io/projects/conda/en/latest/user-guide/concepts/environments.html).
 
-If you have not already installed conda, you can use one of the following installers to do so:
+If you have not already installed conda, you can use one of the following installers:
 - [Miniforge](https://github.com/conda-forge/miniforge)
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
 - [Anaconda](https://www.anaconda.com/)
 
-A working conda environment with all ParaStell Python dependencies can be found in this repository's `environment.yml` file. To create the corresponding `parastell_env` conda environment on your machine, create the environment from the `environment.yml` file and activate the new environment:
+A working conda environment with all ParaStell Python dependencies can be found in this repository's `environment.yml` file. To create the corresponding `parastell_env` conda environment, create the environment from the `environment.yml` file and activate the new environment:
 
 ```bash
 conda env create -f environment.yml
@@ -69,7 +71,7 @@ To make use of ParaStell's Cubit functionality, download and install the latest 
 export PYTHONPATH=$PYTHONPATH:$HOME/Coreform-Cubit-[version]/bin/
 ```
 
-Replace `$HOME` with the path to the Coreform Cubit directory on your system. Additional information about adding modules to your `PYTHONPATH` can be found [here](https://www.tutorialspoint.com/How-to-set-python-environment-variable-PYTHONPATH-on-Linux).
+Replace `$HOME` with the path to the Coreform Cubit directory. Additional information about adding modules to your `PYTHONPATH` can be found [here](https://www.tutorialspoint.com/How-to-set-python-environment-variable-PYTHONPATH-in-Linux).
 While it is possible to use ParaStell with older versions of Cubit, additional steps not in this guide may be required.
 
 If you do not have a Coreform Cubit license, you may be able to get one through [Cubit Learn](https://coreform.com/products/coreform-cubit/free-meshing-software/) at no cost.
@@ -83,7 +85,7 @@ pip install --no-deps .
 ```
 
 ## Executing ParaStell Scripts with YAML Input
-While ParaStell can imported as a module to make use of its Python API, ParaStell also has an executable to alternatively call functionality via command line. This executable uses a YAML configuration file as a command-line argument to define input parameters.
+While ParaStell can be imported as a module to make use of its Python API, ParaStell also has an executable to alternatively call functionality via command line. This executable uses a YAML configuration file as a command-line argument to define input parameters.
 
 The executable can be run from command line with a corresponding YAML file argument. For example:
 
@@ -92,6 +94,35 @@ parastell config.yaml
 ```
 
 See the executable's help message for more details.
+
+## Reactor-to-magnet spectral handoff
+
+ParaStell can augment an existing reactor-scale OpenMC/DAGMC model with stable magnet-interface tallies and optional surface-source banking. The outputs are intended as boundary inputs for a separate deterministic model that explicitly resolves the thin layers of an HTS winding pack.
+
+Prepare a model without starting transport:
+
+```bash
+parastell-magnet-handoff prepare \
+  --config examples/magnet_spectral_handoff.yaml \
+  --model reactor_openmc_model \
+  --output-dir reactor_magnet_run \
+  --region winding_pack_01 \
+  --direction both
+```
+
+Add `--run` for a local OpenMC execution, or run the prepared model through the normal HPC scheduler and post-process it afterward:
+
+```bash
+parastell-magnet-handoff postprocess \
+  --config examples/magnet_spectral_handoff.yaml \
+  --statepoint reactor_magnet_run/statepoint.100.h5 \
+  --surface-source reactor_magnet_run/surface_source.h5 \
+  --output-dir reactor_magnet_handoff \
+  --region winding_pack_01 \
+  --selection both
+```
+
+The exported products include normalized energy/direction-resolved tallies, local-coordinate phase-space records, uncertainty columns, and a versioned manifest. See [the full magnet spectral handoff guide](docs/magnet_spectral_handoff.md) for configuration, normalization, limitations, and validation requirements.
 
 ## Citing
 If referencing ParaStell in a document or presentation, please cite the following publication:

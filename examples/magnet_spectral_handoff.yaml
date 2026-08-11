@@ -1,0 +1,104 @@
+# Replace the example OpenMC IDs and geometry measures with values from the
+# ParaStell/DAGMC reactor model used for the transport calculation.
+
+energy_group_structure: CCFE-709
+particles:
+  - neutron
+  - photon
+
+# Surface-relative angular bins. Negative mu is opposite the OpenMC surface
+# normal; surface_normal_signs maps this to magnet-relative direction.
+mu_bounds: [-1.0, -0.95, -0.8, -0.5, 0.0, 0.5, 0.8, 0.95, 1.0]
+
+# Optional global-direction and time filters can be added when required.
+# polar_bounds_rad: [0.0, 0.785398, 1.570796, 2.356194, 3.141593]
+# azimuthal_bounds_rad: [-3.141593, -1.570796, 0.0, 1.570796, 3.141593]
+# time_bounds_s: [0.0, 1.0e-8, 1.0e-7, 1.0e-6]
+
+tally_id_base: 9000000
+
+normalization:
+  # Leave null to retain all results per source particle. Set this only after
+  # sector/full-device source normalization has been established.
+  source_rate_per_s: null
+
+tallies:
+  cell_flux: true
+  mesh_flux: true
+  boundary_current: true
+  heating: true
+  damage_energy: true
+  gas_production:
+    - H1-production
+    - H2-production
+    - H3-production
+    - He3-production
+    - He4-production
+
+regions:
+  - name: winding_pack_01
+    source_region_id: hts_interface_01
+    magnet_id: magnet_01
+    coil_id: coil_01
+    winding_pack_id: wp_01
+
+    # Example IDs only. These must match the loaded OpenMC/DAGMC model.
+    cell_ids: [10001]
+    phase_space_cell_id: 10001
+    surface_ids: [20001, 20002]
+
+    # Required for physical volume/current normalization.
+    volume_cm3: 125000.0
+    cell_volumes_cm3:
+      "10001": 125000.0
+    surface_areas_cm2:
+      "20001": 2500.0
+      "20002": 2500.0
+
+    # +1 means the OpenMC surface normal points out of the magnet region.
+    # -1 means it points into the magnet region.
+    surface_normal_signs:
+      "20001": 1
+      "20002": -1
+
+    # Optional constant normals for planar or local proxy surfaces. Omit for a
+    # curved interface unless an appropriate local patch normal is available.
+    surface_outward_normals_global:
+      "20001": [1.0, 0.0, 0.0]
+      "20002": [-1.0, 0.0, 0.0]
+
+    coordinate_frame:
+      origin_cm: [500.0, 0.0, 0.0]
+      x_axis: [0.0, 1.0, 0.0]
+      y_axis: [0.0, 0.0, 1.0]
+      z_axis: [1.0, 0.0, 0.0]
+      labels: [tape_width, tape_length, tape_normal]
+
+    # A coarse local mesh can be replaced by a ParaStell-generated
+    # unstructured mesh when one is available.
+    mesh:
+      kind: regular
+      mesh_id: 9100001
+      name: winding_pack_01_interface_mesh
+      lower_left_cm: [450.0, -50.0, -50.0]
+      upper_right_cm: [550.0, 50.0, 50.0]
+      dimension: [20, 20, 20]
+
+    # Nuclides are scored separately only when present in the OpenMC material
+    # and continuous-energy data library.
+    damage_nuclides: [O16, Y89, Ba138, Cu63, Cu65]
+
+    metadata:
+      material_role: coarse_homogenized_rebco_winding_pack
+      downstream_model: heterogeneous_3d_hts_tape_stack
+      notes: >-
+        Replace all example IDs, measures, and coordinate axes before use.
+
+metadata:
+  workflow: reactor_scale_to_heterogeneous_hts_transport
+  geometry_origin: ParaStell DAGMC model
+  intended_downstream_products:
+    - deterministic_layer_resolved_flux
+    - heating
+    - damage_energy
+    - species_resolved_pka_spectra
