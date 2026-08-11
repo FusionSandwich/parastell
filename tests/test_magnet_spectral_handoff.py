@@ -8,6 +8,7 @@ import pytest
 import openmc
 
 from parastell.magnet_spectral_handoff import (
+    _add_derived_columns,
     _compatible_mesh_filter_dataframe,
 )
 from parastell.magnet_spectral_handoff import CoordinateFrame
@@ -536,6 +537,30 @@ regions:
     handoff = MagnetSpectralHandoff.from_yaml(config_path)
 
     assert handoff.regions[0].mesh.filename == str(mesh_path.resolve())
+
+
+def test_boundary_direction_labels_do_not_require_uncertainty_column():
+    handoff = MagnetSpectralHandoff.from_mapping(handoff_mapping())
+    table = {
+        "mean": np.asarray([0.0, 1.0]),
+        "musurface_low": np.asarray([-1.0, 0.0]),
+        "musurface_high": np.asarray([0.0, 1.0]),
+        "surface": np.asarray([20, 20]),
+    }
+
+    _add_derived_columns(
+        table,
+        role="boundary_current",
+        region=handoff.region("coil A winding pack"),
+        source_rate_per_s=None,
+        tally=None,
+        row_count=2,
+    )
+
+    assert table["magnet_direction"].tolist() == [
+        "incoming",
+        "outgoing",
+    ]
 
 
 def test_openmc_015_unstructured_mesh_dataframe_compatibility(monkeypatch):

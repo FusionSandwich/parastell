@@ -1564,6 +1564,9 @@ def _add_derived_columns(
     tally: Any,
     row_count: int,
 ) -> None:
+    if role == "boundary_current":
+        _add_direction_labels(table, region)
+
     mean_name = _find_column(table, "mean")
     std_name = _find_column(table, "std_dev")
     if mean_name is None or std_name is None:
@@ -1586,9 +1589,6 @@ def _add_derived_columns(
         table["energy_width_eV"] = width
         table["mean_per_eV"] = _safe_divide(mean, width)
         table["std_dev_per_eV"] = _safe_divide(std_dev, width)
-
-    if role == "boundary_current":
-        _add_direction_labels(table, region)
 
     cell_volumes = None
     if role in {
