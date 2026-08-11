@@ -253,7 +253,7 @@ def run_parastell_sector_gate(
         replay_path,
         stack=stack,
         response_library=transparent_library,
-        tally_direction=None,
+        tally_direction="incoming",
         record_direction="incoming",
         x_edges_cm=x_edges,
         y_edges_cm=y_edges,
@@ -267,13 +267,42 @@ def run_parastell_sector_gate(
         },
     )
 
-    current = _boundary_current_total(spectra_path, direction=None)
-    current_match_error = abs(replay.input_current_per_source - current) / max(
-        abs(current), np.finfo(float).tiny
+    total_current = _boundary_current_total(spectra_path, direction=None)
+    incoming_current = _boundary_current_total(
+        spectra_path,
+        direction="incoming",
+    )
+    outgoing_current = _boundary_current_total(
+        spectra_path,
+        direction="outgoing",
+    )
+    grazing_current = _boundary_current_total(
+        spectra_path,
+        direction="grazing",
+    )
+    partitioned_current = incoming_current + outgoing_current + grazing_current
+    current_partition_error = abs(total_current - partitioned_current) / max(
+        abs(total_current),
+        np.finfo(float).tiny,
+    )
+    current_match_error = abs(
+        replay.input_current_per_source - incoming_current
+    ) / max(
+        abs(incoming_current),
+        np.finfo(float).tiny,
     )
     response_shape = _response_shape(replay_path)
+    partitioned_records = sum(
+        phase_metrics[name]
+        for name in (
+            "incoming_count",
+            "outgoing_count",
+            "grazing_count",
+            "unknown_count",
+        )
+    )
     tolerances = {
-        "incoming_fraction_minimum": 0.95,
+        "current_partition_relative": 1.0e-12,
         "current_match_relative": 1.0e-12,
         "replay_balance_relative": 1.0e-12,
     }
@@ -281,11 +310,23 @@ def run_parastell_sector_gate(
         "real_dagmc_asset_used": assets["dagmc"].is_file(),
         "real_source_mesh_used": assets["source_mesh"].is_file(),
         "surface_source_nonempty": phase_metrics["record_count"] > 0,
-        "vmec_normals_are_directionally_consistent": (
-            phase_metrics["incoming_fraction"]
-            >= tolerances["incoming_fraction_minimum"]
+        "vmec_normals_are_finite": (
+            phase_metrics["finite_mu_fraction"] == 1.0
         ),
-        "tally_bank_current_match": current_match_error
+        "direction_labels_partition_records": (
+            partitioned_records == phase_metrics["record_count"]
+            and phase_metrics["unknown_count"] == 0
+        ),
+        "direction_labels_match_mu_sign": (
+            phase_metrics["label_sign_mismatch_count"] == 0
+        ),
+        "bidirectional_crossings_observed": (
+            phase_metrics["incoming_count"] > 0
+            and phase_metrics["outgoing_count"] > 0
+        ),
+        "boundary_current_partition": current_partition_error
+        <= tolerances["current_partition_relative"],
+        "incoming_tally_bank_current_match": current_match_error
         <= tolerances["current_match_relative"],
         "multilayer_balance": replay.relative_balance_error
         <= tolerances["replay_balance_relative"],
@@ -299,8 +340,14 @@ def run_parastell_sector_gate(
         "checks": checks,
         "tolerances": tolerances,
         "metrics": {
-            "boundary_current_per_source": current,
+            "boundary_current_per_source": {
+                "total": total_current,
+                "incoming": incoming_current,
+                "outgoing": outgoing_current,
+                "grazing": grazing_current,
+            },
             "phase_space": phase_metrics,
+            "current_partition_relative_error": current_partition_error,
             "current_match_relative_error": current_match_error,
             "replay": replay.to_dict(),
             "response_shape": response_shape,
@@ -550,6 +597,7 @@ def _build_sector_model(
         surface_ids=(1,),
         source_region_id="parastell-sector-first-wall",
         magnet_id="integration-proxy",
+        surface_normal_signs={1: -1},
         coordinate_frame=CoordinateFrame(
             labels=("global_x", "global_y", "global_z"),
         ),
@@ -715,6 +763,11 @@ def _phase_space_direction_metrics(path: Path) -> dict[str, Any]:
         mu = phase["mu_outward"][:]
     count = len(labels)
     incoming = int(np.count_nonzero(labels == "incoming"))
+    label_sign_mismatch = (
+        ((labels == "incoming") & ~(mu < -1.0e-12))
+        | ((labels == "outgoing") & ~(mu > 1.0e-12))
+        | ((labels == "grazing") & ~(np.abs(mu) <= 1.0e-12))
+    )
     return {
         "record_count": count,
         "incoming_count": incoming,
@@ -722,6 +775,9 @@ def _phase_space_direction_metrics(path: Path) -> dict[str, Any]:
         "grazing_count": int(np.count_nonzero(labels == "grazing")),
         "unknown_count": int(np.count_nonzero(labels == "unknown")),
         "incoming_fraction": incoming / count if count else 0.0,
+        "label_sign_mismatch_count": int(
+            np.count_nonzero(label_sign_mismatch)
+        ),
         "finite_mu_fraction": (
             float(np.count_nonzero(np.isfinite(mu))) / count if count else 0.0
         ),

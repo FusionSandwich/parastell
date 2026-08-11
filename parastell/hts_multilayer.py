@@ -324,6 +324,18 @@ def replay_phase_space(
     if not spectra_path.is_file():
         raise FileNotFoundError(spectra_path)
 
+    if tally_direction is None or record_direction is None:
+        raise ValueError(
+            "multilayer replay requires an explicit tally and record "
+            "direction"
+        )
+    if tally_direction != record_direction:
+        raise ValueError(
+            "tally_direction and record_direction must match exactly so "
+            "normalization and replay select the same directional "
+            "population"
+        )
+
     phase, phase_metadata, region_name = _read_phase_space(phase_space_path)
     tally_name, tally = _read_boundary_tally(
         spectra_path,
@@ -334,6 +346,7 @@ def replay_phase_space(
         phase,
         tally,
         tally_direction=tally_direction,
+        record_direction=record_direction,
     )
 
     direction = np.asarray(phase["direction_global"], dtype=float)
@@ -349,7 +362,12 @@ def replay_phase_space(
     record_mask = np.isfinite(record_weights) & (record_weights > 0.0)
     record_mask &= np.isfinite(mu_inward)
     record_mask &= mu_inward > float(minimum_incident_cosine)
-    if record_direction is not None and "magnet_direction" in phase:
+    if record_direction is not None:
+        if "magnet_direction" not in phase:
+            raise ValueError(
+                "record_direction was requested but phase space has no "
+                "magnet_direction labels"
+            )
         labels = _as_strings(phase["magnet_direction"])
         record_mask &= labels == record_direction
 
@@ -588,6 +606,7 @@ def _normalise_bank_to_current(
     tally: Mapping[str, np.ndarray],
     *,
     tally_direction: str | None,
+    record_direction: str | None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Scale bank weights to current in particle/energy/surface bins."""
 
@@ -634,21 +653,38 @@ def _normalise_bank_to_current(
     energy = np.asarray(phase["energy_eV"], dtype=float)
     raw_weight = np.asarray(phase["weight"], dtype=float)
     result = np.zeros(len(raw_weight), dtype=float)
+    eligible_records = np.ones(len(raw_weight), dtype=bool)
+    if record_direction is not None:
+        if "magnet_direction" not in phase:
+            raise ValueError(
+                "record_direction was requested but phase space has no "
+                "magnet_direction labels"
+            )
+        eligible_records &= (
+            _as_strings(phase["magnet_direction"]) == record_direction
+        )
+
     records_by_bin: dict[tuple[str, int, float, float], list[int]] = {}
+    uppermost_energy = max(
+        (item[3] for item in target_by_bin),
+        default=-np.inf,
+    )
     for key in target_by_bin:
         name, surface_id, lower, upper = key
-        mask = particle == name
+        mask = eligible_records & (particle == name)
         mask &= surface == surface_id
         mask &= energy >= lower
-        if upper == max(item[3] for item in target_by_bin):
+        if upper == uppermost_energy:
             mask &= energy <= upper
         else:
             mask &= energy < upper
         records_by_bin[key] = np.flatnonzero(mask).tolist()
 
     diagnostics: list[dict[str, Any]] = []
+    matched_records = np.zeros(len(raw_weight), dtype=bool)
     for key, target in target_by_bin.items():
         indices = np.asarray(records_by_bin[key], dtype=int)
+        matched_records[indices] = True
         raw_total = float(np.sum(raw_weight[indices])) if len(indices) else 0.0
         if target > 0.0 and raw_total <= 0.0:
             raise RuntimeError(
@@ -670,16 +706,39 @@ def _normalise_bank_to_current(
             }
         )
 
-    unmatched_positive = (raw_weight > 0.0) & (result == 0.0)
+    unmatched_positive = (
+        eligible_records & (raw_weight > 0.0) & ~matched_records
+    )
+    unmatched_count = int(np.count_nonzero(unmatched_positive))
+    if unmatched_count:
+        raise RuntimeError(
+            "positive-weight phase-space records selected for replay do not "
+            "match a boundary-current tally bin: "
+            f"{unmatched_count}"
+        )
+
+    target_total = float(sum(target_by_bin.values()))
+    normalised_total = float(np.sum(result))
+    if not np.isclose(
+        normalised_total,
+        target_total,
+        rtol=1.0e-12,
+        atol=1.0e-15,
+    ):
+        raise RuntimeError(
+            "direction-conditioned source normalization did not reproduce "
+            "the selected boundary current"
+        )
+
     return result, {
-        "mode": "particle_energy_surface_current_conditioning",
+        "mode": "particle_energy_surface_direction_current_conditioning",
         "tally_direction": tally_direction,
+        "record_direction": record_direction,
+        "eligible_record_count": int(np.count_nonzero(eligible_records)),
         "bins": diagnostics,
-        "target_current_per_source": float(sum(target_by_bin.values())),
-        "normalised_record_current_per_source": float(np.sum(result)),
-        "unmatched_positive_weight_records": int(
-            np.count_nonzero(unmatched_positive)
-        ),
+        "target_current_per_source": target_total,
+        "normalised_record_current_per_source": normalised_total,
+        "unmatched_positive_weight_records": unmatched_count,
         "bank_record_count_is_not_an_absolute_rate": True,
     }
 
