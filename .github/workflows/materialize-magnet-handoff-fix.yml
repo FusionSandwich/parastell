@@ -21,7 +21,7 @@ jobs:
         with:
           ref: agent/reactor-magnet-spectral-handoff-20260811
           fetch-depth: 0
-      - name: Apply, validate, and publish repair
+      - name: Apply, validate, and publish source repair
         shell: bash
         env:
           EXPECTED_BASE: 25cbb91bca4decc8daffce84ada0751bc008a12a
@@ -43,12 +43,13 @@ jobs:
             tests/test_hts_tally_columns.py \
             tests/test_magnet_spectral_handoff.py \
             tests/test_magnet_handoff_cli.py
-          rm -rf \
-            .github/patch-chunks \
-            .github/workflows/materialize-magnet-handoff-fix.yml
           git diff --check
           git config user.name "FusionSandwich"
           git config user.email "145234893+FusionSandwich@users.noreply.github.com"
-          git add -A
-          git commit -m "Fix direction-conditioned HTS replay and build environment"
+          git add \
+            environment.yml \
+            parastell/hts_multilayer.py \
+            parastell/magnet_handoff_validation.py \
+            tests/test_hts_multilayer.py
+          git commit -m "Fix direction-conditioned HTS replay"
           git push origin HEAD:agent/reactor-magnet-spectral-handoff-20260811
