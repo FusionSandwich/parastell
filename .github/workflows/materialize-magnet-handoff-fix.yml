@@ -15,6 +15,7 @@ jobs:
   repair:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    container: ghcr.io/svalinn/parastell-ci
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,21 +27,22 @@ jobs:
           EXPECTED_BASE: 25cbb91bca4decc8daffce84ada0751bc008a12a
         run: |
           set -euo pipefail
+          . /opt/etc/bashrc
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
           git merge-base --is-ancestor "${EXPECTED_BASE}" HEAD
           cat .github/patch-chunks/part*.patch > /tmp/magnet-handoff-fix.patch
           git apply --check /tmp/magnet-handoff-fix.patch
           git apply /tmp/magnet-handoff-fix.patch
           python -m compileall -q parastell tests
-          python -m pip install --disable-pip-version-check -q \
-            "black==25.*" h5py numpy pytest
           black --line-length 79 \
             parastell/hts_multilayer.py \
             parastell/magnet_handoff_validation.py \
             tests/test_hts_multilayer.py
           pytest -q \
             tests/test_hts_multilayer.py \
-            tests/test_hts_tally_columns.py
+            tests/test_hts_tally_columns.py \
+            tests/test_magnet_spectral_handoff.py \
+            tests/test_magnet_handoff_cli.py
           rm -rf \
             .github/patch-chunks \
             .github/workflows/materialize-magnet-handoff-fix.yml
