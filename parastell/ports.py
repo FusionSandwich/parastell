@@ -315,8 +315,11 @@ class PortRepetition:
 
     def __post_init__(self) -> None:
         mode = _validate_string(self.mode, "repetition.mode").lower()
-        if mode != "single":
-            e = ValueError("repetition.mode currently supports only 'single'")
+        if mode not in {"single", "per_period"}:
+            e = ValueError(
+                "repetition.mode currently supports only 'single' and "
+                "'per_period'"
+            )
             raise e
         object.__setattr__(self, "mode", mode)
 
