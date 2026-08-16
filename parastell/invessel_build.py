@@ -32,6 +32,7 @@ from .utils import (
     create_vol_mesh_from_surf_mesh,
     m2cm,
 )
+from .ports import parse_ports, PortGeometryNotImplementedError
 from .pystell import read_vmec
 
 
@@ -359,10 +360,13 @@ class InVesselBuild(object):
     """
 
     def __init__(self, ref_surf, radial_build, logger=None, **kwargs):
-
         self.logger = logger
         self.ref_surf = ref_surf
         self.radial_build = radial_build
+        self.ports = parse_ports(
+            kwargs.get("ports", None),
+            self.radial_build.user_layer_names,
+        )
 
         self.repeat = 0
         self.num_ribs = 61
@@ -518,6 +522,12 @@ class InVesselBuild(object):
         [surface.calculate_loci() for surface in self.Surfaces.values()]
 
     def generate_components(self):
+        if self.ports:
+            e = PortGeometryNotImplementedError(
+                "Port geometry generation is not implemented yet."
+            )
+            raise e
+
         if self.use_pydagmc:
             self.generate_components_pydagmc()
         else:
@@ -707,7 +717,6 @@ class InVesselBuild(object):
             self.dag_model.volumes,
             list(self.radial_build.radial_build.items())[1:],
         ):
-
             mat = layer_data.get("mat_tag", layer_name)
             group = pydagmc.Group.create(self.dag_model, name="mat:" + mat)
             group.add_set(vol)
@@ -754,7 +763,6 @@ class InVesselBuild(object):
         prev_outer_surface_id = None
 
         for data in self.radial_build.radial_build.values():
-
             inner_surface_id, outer_surface_id = orient_spline_surfaces(
                 data["vol_id"]
             )
@@ -1114,7 +1122,6 @@ class Surface(object):
     """
 
     def __init__(self, ref_surf, s, theta_list, phi_list, offset_mat, scale):
-
         self.ref_surf = ref_surf
         self.s = s
         self.theta_list = theta_list
@@ -1192,7 +1199,6 @@ class Rib(object):
     """
 
     def __init__(self, ref_surf, s, theta_list, phi, offset_list, scale):
-
         self.ref_surf = ref_surf
         self.s = s
         self.theta_list = theta_list
@@ -1465,12 +1471,12 @@ class RadialBuild(object):
         logger=None,
         **kwargs,
     ):
-
         self.logger = logger
         self.toroidal_angles = toroidal_angles
         self.poloidal_angles = poloidal_angles
         self.wall_s = wall_s
         self.radial_build = radial_build
+        self._user_layer_names = tuple(self.radial_build.keys())
         self.split_chamber = split_chamber
 
         for name in kwargs.keys() & (
@@ -1566,10 +1572,10 @@ class RadialBuild(object):
             ):
                 e = AssertionError(
                     f"The dimensions of {name}'s thickness matrix "
-                    f'{component["thickness_matrix"].shape} must match the '
+                    f"{component['thickness_matrix'].shape} must match the "
                     "dimensions defined by the toroidal and poloidal angle "
                     "lists "
-                    f"{len(self._toroidal_angles),len(self._poloidal_angles)}, "
+                    f"{len(self._toroidal_angles), len(self._poloidal_angles)}, "
                     "which define the rows and columns of the matrix, "
                     "respectively."
                 )
@@ -1586,6 +1592,9 @@ class RadialBuild(object):
 
             if "mat_tag" not in component:
                 self._set_mat_tag(name, name)
+
+        if not hasattr(self, "_user_layer_names"):
+            self._user_layer_names = tuple(self._radial_build.keys())
 
     @property
     def split_chamber(self):
@@ -1681,6 +1690,11 @@ class RadialBuild(object):
         """
         self.radial_build[name]["mat_tag"] = mat_tag
 
+    @property
+    def user_layer_names(self):
+        """User-supplied radial build component names before inner regions are added."""
+        return self._user_layer_names
+
 
 def parse_args():
     """Parser for running as a script."""
@@ -1695,8 +1709,7 @@ def parse_args():
         "--export_dir",
         default="",
         help=(
-            "Directory to which output files are exported (default: working "
-            "directory)"
+            "Directory to which output files are exported (default: working directory)"
         ),
         metavar="",
     )
@@ -1705,8 +1718,7 @@ def parse_args():
         "--logger",
         default=False,
         help=(
-            "Flag to indicate whether to instantiate a logger object (default: "
-            "False)"
+            "Flag to indicate whether to instantiate a logger object (default: False)"
         ),
         metavar="",
     )
