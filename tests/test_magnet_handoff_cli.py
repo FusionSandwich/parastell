@@ -131,3 +131,29 @@ def test_resolve_run_output_prefers_run_directory(tmp_path, monkeypatch):
     resolved = _resolve_run_output("statepoint.10.h5", run_dir)
 
     assert resolved == candidate
+
+
+def test_plane_and_energy_group_subcommands_are_public():
+    parser = build_parser()
+
+    plane_args = parser.parse_args(
+        ["validate-plane", "--config", "handoff.yaml", "--production"]
+    )
+    group_args = parser.parse_args(
+        [
+            "validate-energy-groups",
+            "--edges",
+            "0",
+            "13.5",
+            "14.1",
+            "20",
+            "--units",
+            "MeV",
+        ]
+    )
+
+    assert plane_args.production is True
+    assert group_args.edges == [0.0, 13.5, 14.1, 20.0]
+    assert parser.parse_args(["list-energy-groups"]).command == (
+        "list-energy-groups"
+    )

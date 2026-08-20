@@ -306,3 +306,48 @@ def test_direction_selection_requires_phase_space_labels(tmp_path):
             stack=stack,
             response_library=library,
         )
+
+
+def test_replay_preserves_plane_coordinates_and_high_group_axis(tmp_path):
+    phase = tmp_path / "phase.h5"
+    spectra = tmp_path / "spectra.h5"
+    output = tmp_path / "replay.h5"
+    _write_phase_space(phase)
+    _write_spectra(spectra)
+    string_dtype = h5py.string_dtype("utf-8")
+    with h5py.File(phase, "r+") as source:
+        records = source["phase_space"]
+        records.create_dataset("plane_u_cm", data=[-0.25, 0.25])
+        records.create_dataset("plane_v_cm", data=[-0.25, 0.25])
+        records.create_dataset(
+            "coupling_plane_id",
+            data=np.asarray(["entry", "entry"], dtype=object),
+            dtype=string_dtype,
+        )
+    edges = np.unique(
+        np.concatenate((np.geomspace(1.0e-5, 20.0e6, 181), [0.0, 14.1e6]))
+    )
+    library = zero_response_library(
+        verification_rebco_stack(), edges, ["neutron"]
+    )
+
+    replay_phase_space(
+        phase,
+        spectra,
+        output,
+        stack=verification_rebco_stack(),
+        response_library=library,
+        x_edges_cm=[-0.5, 0.0, 0.5],
+        y_edges_cm=[-0.5, 0.0, 0.5],
+    )
+
+    with h5py.File(output, "r") as replay:
+        manifest = json.loads(replay["manifest_json"].asstr()[()])
+        assert manifest["spatial_basis"] == "coupling_plane_u_v"
+        assert (
+            replay["response"]["incident_current_per_source"].shape[-1] >= 180
+        )
+        assert replay["records"]["coupling_plane_id"].asstr()[:].tolist() == [
+            "entry",
+            "entry",
+        ]

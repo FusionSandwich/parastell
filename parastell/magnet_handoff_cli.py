@@ -10,9 +10,21 @@ from pathlib import Path
 import re
 from typing import Any, Sequence
 
+import h5py
+import numpy as np
 import openmc
 
-from .magnet_spectral_handoff import MagnetSpectralHandoff
+from .magnet_spectral_handoff import (
+    MagnetSpectralHandoff,
+    available_energy_group_structures,
+    load_energy_group_edges,
+)
+from .hts_multilayer import (
+    constant_response_library,
+    replay_phase_space,
+    verification_rebco_stack,
+    zero_response_library,
+)
 
 
 _DEFAULT_MANIFEST = "magnet_spectral_handoff_manifest.json"
@@ -120,6 +132,108 @@ def _fresh_surface_sources(
         if before.get(resolved) != _file_fingerprint(path):
             fresh.append(path)
     return fresh
+
+
+def _contract_summary(path: Path) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "path": str(path),
+        "kind": "missing",
+        "schema": None,
+        "schema_version": None,
+    }
+    with h5py.File(path, "r") as source:
+        if "manifest_json" in source:
+            summary["kind"] = "spectra"
+            summary["schema"] = str(source.attrs.get("schema", ""))
+            summary["schema_version"] = str(
+                source.attrs.get("schema_version", "")
+            )
+            manifest = json.loads(source["manifest_json"].asstr()[()])
+            summary["interface_status"] = manifest.get("interface_status")
+            summary["energy_group_count"] = (
+                len(manifest.get("energy_group_edges_eV", [])) - 1
+            )
+            summary["particles"] = manifest.get("particles", [])
+            summary["angular_bin_count"] = (
+                len(manifest.get("mu_edges", [])) - 1
+            ) * (len(manifest.get("azimuth_edges_rad", [])) - 1)
+            summary["coupling_planes"] = [
+                plane.get("plane_id")
+                for region in manifest.get("regions", [])
+                for plane in region.get("coupling_planes", [])
+            ]
+            return summary
+        if "phase_space" in source:
+            summary["kind"] = "phase_space"
+            summary["schema"] = str(source.attrs.get("schema", ""))
+            summary["schema_version"] = str(
+                source.attrs.get("schema_version", "")
+            )
+            phase = source["phase_space"]
+            for field in ("position_local_cm", "direction_local"):
+                if field in phase:
+                    summary[f"count_{field}"] = int(len(phase[field]))
+            summary["selection"] = str(source.attrs.get("selection", ""))
+            summary["region"] = str(source.attrs.get("region", ""))
+            return summary
+    return summary
+
+
+def _inspect_contract(
+    spectra_path: Path, phase_space_path: Path | None
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "spectra": _contract_summary(spectra_path),
+        "phase_space": None,
+    }
+    if phase_space_path is not None:
+        summary["phase_space"] = _contract_summary(phase_space_path)
+    return summary
+
+
+def _validate_phase_space_contract(args: argparse.Namespace) -> dict[str, Any]:
+    handoff = MagnetSpectralHandoff.from_yaml(args.config)
+    return handoff.validate_exported_contract(
+        args.spectra,
+        phase_space_path=args.phase_space,
+    )
+
+
+def _replay_summary(
+    args: argparse.Namespace,
+    handoff: MagnetSpectralHandoff,
+) -> dict[str, Any]:
+    if args.response_mode == "zero":
+        response = zero_response_library(
+            stack=args.stack,
+            energy_bounds_eV=handoff.energy_bounds_eV,
+            particles=handoff.particles,
+        )
+    else:
+        response = constant_response_library(
+            stack=args.stack,
+            energy_bounds_eV=handoff.energy_bounds_eV,
+            particles=handoff.particles,
+            removal_xs_cm_1=args.removal_xs_cm_1,
+            deposition_fraction=args.deposition_fraction,
+        )
+    summary = replay_phase_space(
+        phase_space_path=args.phase_space,
+        spectra_path=args.spectra,
+        output_path=args.output,
+        stack=args.stack,
+        response_library=response,
+        tally_direction=args.tally_direction,
+        record_direction=args.record_direction,
+        fixed_inward_normal_global=args.fixed_inward_normal,
+        allow_local_axis_proxy=args.allow_local_axis_proxy,
+        minimum_incident_cosine=args.minimum_incident_cosine,
+    )
+    return {
+        "replay_summary": summary.to_dict(),
+        "response_mode": args.response_mode,
+        "stack": args.stack.to_dict(),
+    }
 
 
 def _resolve_run_output(path: str | Path, directory: Path) -> Path:
@@ -271,6 +385,98 @@ def _postprocess(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _run(args: argparse.Namespace) -> dict[str, Any]:
+    args.run = True
+    return _prepare(args)
+
+
+def _export(args: argparse.Namespace) -> dict[str, Any]:
+    return _postprocess(args)
+
+
+def _validate(args: argparse.Namespace) -> dict[str, Any]:
+    result = _validate_phase_space_contract(args)
+    _write_result(result)
+    return result
+
+
+def _inspect(args: argparse.Namespace) -> dict[str, Any]:
+    result = _inspect_contract(
+        spectra_path=args.spectra,
+        phase_space_path=args.phase_space,
+    )
+    _write_result(result)
+    return result
+
+
+def _inspect_planes(args: argparse.Namespace) -> dict[str, Any]:
+    handoff = MagnetSpectralHandoff.from_yaml(args.config)
+    result = {
+        "interface_status": handoff.interface_status,
+        "planes": [
+            plane.to_dict()
+            for region in handoff.regions
+            for plane in region.coupling_planes
+        ],
+    }
+    _write_result(result)
+    return result
+
+
+def _validate_planes(args: argparse.Namespace) -> dict[str, Any]:
+    handoff = MagnetSpectralHandoff.from_yaml(args.config)
+    handoff.validate_plane_contract(require_production=args.production)
+    result = {
+        "valid": True,
+        "production": bool(args.production),
+        "interface_status": handoff.interface_status,
+        "plane_count": sum(
+            len(region.coupling_planes) for region in handoff.regions
+        ),
+    }
+    _write_result(result)
+    return result
+
+
+def _list_energy_groups(args: argparse.Namespace) -> dict[str, Any]:
+    del args
+    result = available_energy_group_structures()
+    _write_result(result)
+    return result
+
+
+def _validate_energy_groups(args: argparse.Namespace) -> dict[str, Any]:
+    edges = (
+        load_energy_group_edges(args.path, units=args.units)
+        if args.path is not None
+        else np.asarray(args.edges, dtype=float)
+        * {"eV": 1.0, "keV": 1.0e3, "MeV": 1.0e6}[args.units]
+    )
+    if edges.ndim != 1 or len(edges) < 2:
+        raise ValueError("energy-group structure requires at least two edges")
+    if not np.all(np.isfinite(edges)) or np.any(np.diff(edges) <= 0.0):
+        raise ValueError("energy-group edges must be finite and increasing")
+    result = {
+        "valid": True,
+        "units": "eV",
+        "group_count": int(len(edges) - 1),
+        "edges_eV": edges.tolist(),
+    }
+    _write_result(result)
+    return result
+
+
+def _replay(args: argparse.Namespace) -> dict[str, Any]:
+    handoff = MagnetSpectralHandoff.from_yaml(args.config)
+    stack = verification_rebco_stack()
+    output = Path(args.output)
+    args.stack = stack
+    result = _replay_summary(args, handoff=handoff)
+    args.output = output
+    _write_result(result)
+    return result
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="parastell-magnet-handoff",
@@ -360,6 +566,164 @@ def build_parser() -> argparse.ArgumentParser:
         default=_DEFAULT_PHASE_SPACE_OUTPUT,
     )
     postprocess.set_defaults(handler=_postprocess)
+
+    run = subparsers.add_parser(
+        "run",
+        help="prepare an OpenMC model and execute it",
+    )
+    run.add_argument("--config", required=True, type=Path)
+    run.add_argument(
+        "--model",
+        required=True,
+        type=Path,
+        help="model.xml or a directory containing OpenMC XML files",
+    )
+    run.add_argument("--output-dir", required=True, type=Path)
+    run.add_argument("--region")
+    run.add_argument(
+        "--direction",
+        choices=("incoming", "outgoing", "both", "all"),
+        default="both",
+    )
+    run.add_argument("--max-particles", type=int, default=100_000)
+    run.add_argument("--max-source-files", type=int, default=1)
+    run.add_argument("--disable-photon-transport", action="store_true")
+    run.add_argument("--threads", type=int)
+    run.add_argument("--mpi-processes", type=int)
+    run.add_argument("--mpi-launcher", default="mpiexec")
+    run.add_argument("--openmc-exec", default="openmc")
+    run.add_argument(
+        "--tally-output",
+        default=_DEFAULT_TALLY_OUTPUT,
+    )
+    run.add_argument(
+        "--phase-space-output",
+        default=_DEFAULT_PHASE_SPACE_OUTPUT,
+    )
+    run.add_argument("--manifest-output", default=_DEFAULT_MANIFEST)
+    run.add_argument("--no-surface-source", action="store_true")
+    run.set_defaults(
+        handler=_run,
+        overwrite_surface_source_setting=False,
+        no_surface_source=False,
+    )
+
+    export = subparsers.add_parser(
+        "export",
+        help="export handoff files from existing statepoint/source banks",
+    )
+    export.add_argument("--config", required=True, type=Path)
+    export.add_argument("--statepoint", required=True, type=Path)
+    export.add_argument("--output-dir", required=True, type=Path)
+    export.add_argument(
+        "--surface-source",
+        nargs="+",
+        type=Path,
+    )
+    export.add_argument("--region")
+    export.add_argument(
+        "--selection",
+        choices=("incoming", "outgoing", "both", "all"),
+        default="both",
+    )
+    export.add_argument("--tally-output", default=_DEFAULT_TALLY_OUTPUT)
+    export.add_argument(
+        "--phase-space-output", default=_DEFAULT_PHASE_SPACE_OUTPUT
+    )
+    export.add_argument("--manifest-output", default=_DEFAULT_MANIFEST)
+    export.set_defaults(handler=_export)
+
+    validate = subparsers.add_parser(
+        "validate",
+        help="validate spectra and optional phase-space handoff files",
+    )
+    validate.add_argument("--config", required=True, type=Path)
+    validate.add_argument("--spectra", required=True, type=Path)
+    validate.add_argument("--phase-space", type=Path)
+    validate.set_defaults(handler=_validate)
+
+    inspect = subparsers.add_parser(
+        "inspect",
+        help="print a compact summary of handoff files",
+    )
+    inspect.add_argument("--spectra", required=True, type=Path)
+    inspect.add_argument("--phase-space", type=Path)
+    inspect.set_defaults(handler=_inspect)
+
+    inspect_planes = subparsers.add_parser(
+        "inspect-planes",
+        help="print resolved finite magnet-coupling planes",
+    )
+    inspect_planes.add_argument("--config", required=True, type=Path)
+    inspect_planes.set_defaults(handler=_inspect_planes)
+
+    validate_plane = subparsers.add_parser(
+        "validate-plane",
+        help="validate plane geometry and optional production metadata",
+    )
+    validate_plane.add_argument("--config", required=True, type=Path)
+    validate_plane.add_argument("--production", action="store_true")
+    validate_plane.set_defaults(handler=_validate_planes)
+
+    list_groups = subparsers.add_parser(
+        "list-energy-groups",
+        help="list built-in neutron energy-group structures",
+    )
+    list_groups.set_defaults(handler=_list_energy_groups)
+
+    validate_groups = subparsers.add_parser(
+        "validate-energy-groups",
+        help="validate inline or file-based energy-group edges",
+    )
+    group_input = validate_groups.add_mutually_exclusive_group(required=True)
+    group_input.add_argument("--path", type=Path)
+    group_input.add_argument("--edges", nargs="+", type=float)
+    validate_groups.add_argument(
+        "--units", choices=("eV", "keV", "MeV"), default="eV"
+    )
+    validate_groups.set_defaults(handler=_validate_energy_groups)
+
+    replay = subparsers.add_parser(
+        "replay",
+        help="replay phase-space through an explicit HTS stack",
+    )
+    replay.add_argument("--config", required=True, type=Path)
+    replay.add_argument("--spectra", required=True, type=Path)
+    replay.add_argument("--phase-space", required=True, type=Path)
+    replay.add_argument("--output", required=True, type=Path)
+    replay.add_argument(
+        "--response-mode",
+        choices=("zero", "constant"),
+        default="constant",
+    )
+    replay.add_argument("--removal-xs-cm-1", type=float, default=0.0)
+    replay.add_argument("--deposition-fraction", type=float, default=0.0)
+    replay.add_argument(
+        "--tally-direction",
+        choices=("incoming", "outgoing", "both"),
+        default="incoming",
+    )
+    replay.add_argument(
+        "--record-direction",
+        choices=("incoming", "outgoing", "both"),
+        default="incoming",
+    )
+    replay.add_argument(
+        "--fixed-inward-normal",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+    )
+    replay.add_argument(
+        "--allow-local-axis-proxy",
+        action="store_true",
+    )
+    replay.add_argument(
+        "--minimum-incident-cosine",
+        type=float,
+        default=1.0e-8,
+    )
+    replay.set_defaults(handler=_replay)
 
     return parser
 

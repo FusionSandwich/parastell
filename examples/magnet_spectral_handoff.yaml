@@ -1,18 +1,23 @@
 # Replace the example OpenMC IDs and geometry measures with values from the
 # ParaStell/DAGMC reactor model used for the transport calculation.
 
+dagmc_geometry_path: reactor_sector_with_magnets.h5m
+dagmc_geometry_hash: replace-with-full-sha256
+parastell_git_sha: replace-with-live-git-sha
+openmc_git_sha: replace-with-openmc-git-sha-or-release-provenance
+
 energy_group_structure: CCFE-709
 particles:
   - neutron
   - photon
 
-# Surface-relative angular bins. Negative mu is opposite the OpenMC surface
-# normal; surface_normal_signs maps this to magnet-relative direction.
+# Local angular bins use mu = Omega dot n_outward. Negative mu enters the
+# magnet envelope, positive mu leaves it, and near-zero mu is grazing.
 mu_bounds: [-1.0, -0.95, -0.8, -0.5, 0.0, 0.5, 0.8, 0.95, 1.0]
 
 # Optional global-direction and time filters can be added when required.
 # polar_bounds_rad: [0.0, 0.785398, 1.570796, 2.356194, 3.141593]
-# azimuthal_bounds_rad: [-3.141593, -1.570796, 0.0, 1.570796, 3.141593]
+azimuthal_bounds_rad: [-3.141593, -2.356194, -1.570796, -0.785398, 0.0, 0.785398, 1.570796, 2.356194, 3.141593]
 # time_bounds_s: [0.0, 1.0e-8, 1.0e-7, 1.0e-6]
 
 tally_id_base: 9000000
@@ -37,15 +42,58 @@ tallies:
 
 regions:
   - name: winding_pack_01
+    region_id: magnet_region_01
     source_region_id: hts_interface_01
     magnet_id: magnet_01
     coil_id: coil_01
     winding_pack_id: wp_01
+    magnet_component: winding_pack_01
+    geometry_source_mode: production
 
     # Example IDs only. These must match the loaded OpenMC/DAGMC model.
     cell_ids: [10001]
     phase_space_cell_id: 10001
     surface_ids: [20001, 20002]
+    entry_surface_id: 20001
+    exit_surface_id: 20002
+
+    coupling_planes:
+      - id: winding_pack_01_entry
+        role: entry
+        surface_id: 20001
+        magnet_region_id: magnet_region_01
+        magnet_component: winding_pack_01
+        placement:
+          mode: magnet_attached
+          origin_cm: [500.0, 0.0, 0.0]
+          normal: [1.0, 0.0, 0.0]
+          reference_direction: [0.0, 1.0, 0.0]
+        extent: {width_cm: 100.0, height_cm: 100.0}
+        spatial_bins: {u: 20, v: 20}
+        geometry_source:
+          dagmc_path: reactor_sector_with_magnets.h5m
+          magnet_component: winding_pack_01
+        association:
+          criterion: resolved from selected magnet CAD face
+          minimum_plane_to_magnet_distance_cm: 0.0
+      - id: winding_pack_01_exit
+        role: exit
+        surface_id: 20002
+        magnet_region_id: magnet_region_01
+        magnet_component: winding_pack_01
+        placement:
+          mode: magnet_attached
+          origin_cm: [510.0, 0.0, 0.0]
+          normal: [-1.0, 0.0, 0.0]
+          reference_direction: [0.0, 1.0, 0.0]
+        extent: {width_cm: 100.0, height_cm: 100.0}
+        spatial_bins: {u: 20, v: 20}
+        geometry_source:
+          dagmc_path: reactor_sector_with_magnets.h5m
+          magnet_component: winding_pack_01
+        association:
+          criterion: resolved from selected magnet CAD face
+          minimum_plane_to_magnet_distance_cm: 0.0
 
     # Required for physical volume/current normalization.
     volume_cm3: 125000.0

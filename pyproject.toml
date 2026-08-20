@@ -82,4 +82,21 @@ line-length = 79
 target-version = ['py311', 'py312', 'py313']
 
 [tool.setuptools.packages.find]
-exclude = ["images"]
+where = ["."]
+include = ["parastell", "parastell.*"]
+exclude = [
+    "build",
+    "build.*",
+    "dist",
+    "dist.*",
+    "*.egg-info",
+    "tests",
+    "tests.*",
+    "validation_output",
+    "validation_output.*",
+]
+namespaces = false
+
+[tool.setuptools.data-files]
+"share/parastell/schemas" = ["schemas/magnet_spectral_handoff.schema.json"]
+"share/parastell/examples" = ["examples/magnet_spectral_handoff.yaml"]

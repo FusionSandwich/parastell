@@ -383,13 +383,28 @@ def replay_phase_space(
         raise RuntimeError("no phase-space records satisfy replay selection")
     particle_index = {name: index for index, name in enumerate(particles)}
 
-    positions = np.asarray(phase["position_local_cm"], dtype=float)
-    x_edges = _spatial_edges(positions[:, 0], x_edges_cm)
-    y_edges = _spatial_edges(positions[:, 1], y_edges_cm)
-    x_index = np.searchsorted(x_edges, positions[:, 0], side="right") - 1
-    y_index = np.searchsorted(y_edges, positions[:, 1], side="right") - 1
-    x_index[positions[:, 0] == x_edges[-1]] = len(x_edges) - 2
-    y_index[positions[:, 1] == y_edges[-1]] = len(y_edges) - 2
+    if "plane_u_cm" in phase and "plane_v_cm" in phase:
+        spatial_coordinates = np.column_stack(
+            (
+                np.asarray(phase["plane_u_cm"], dtype=float),
+                np.asarray(phase["plane_v_cm"], dtype=float),
+            )
+        )
+        spatial_basis = "coupling_plane_u_v"
+    else:
+        positions = np.asarray(phase["position_local_cm"], dtype=float)
+        spatial_coordinates = positions[:, :2]
+        spatial_basis = "region_local_x_y"
+    x_edges = _spatial_edges(spatial_coordinates[:, 0], x_edges_cm)
+    y_edges = _spatial_edges(spatial_coordinates[:, 1], y_edges_cm)
+    x_index = (
+        np.searchsorted(x_edges, spatial_coordinates[:, 0], side="right") - 1
+    )
+    y_index = (
+        np.searchsorted(y_edges, spatial_coordinates[:, 1], side="right") - 1
+    )
+    x_index[spatial_coordinates[:, 0] == x_edges[-1]] = len(x_edges) - 2
+    y_index[spatial_coordinates[:, 1] == y_edges[-1]] = len(y_edges) - 2
     record_mask &= (x_index >= 0) & (x_index < len(x_edges) - 1)
     record_mask &= (y_index >= 0) & (y_index < len(y_edges) - 1)
 
@@ -472,6 +487,7 @@ def replay_phase_space(
         "boundary_tally_name": tally_name,
         "normalization": normalization,
         "direction_basis": direction_basis,
+        "spatial_basis": spatial_basis,
         "minimum_incident_cosine": minimum_incident_cosine,
         "record_direction": record_direction,
         "tally_direction": tally_direction,
@@ -665,19 +681,19 @@ def _normalise_bank_to_current(
         )
 
     records_by_bin: dict[tuple[str, int, float, float], list[int]] = {}
-    uppermost_energy = max(
-        (item[3] for item in target_by_bin),
+    lowermost_energy = min(
+        (item[2] for item in target_by_bin),
         default=-np.inf,
     )
     for key in target_by_bin:
         name, surface_id, lower, upper = key
         mask = eligible_records & (particle == name)
         mask &= surface == surface_id
-        mask &= energy >= lower
-        if upper == uppermost_energy:
-            mask &= energy <= upper
+        mask &= energy <= upper
+        if lower == lowermost_energy:
+            mask &= energy >= lower
         else:
-            mask &= energy < upper
+            mask &= energy > lower
         records_by_bin[key] = np.flatnonzero(mask).tolist()
 
     diagnostics: list[dict[str, Any]] = []
@@ -854,19 +870,19 @@ def _write_replay_output(
             )
 
             response = output.create_group("response")
-            response.create_dataset(
-                "incident_current_per_source", data=incident
-            )
-            response.create_dataset(
-                "transmitted_current_per_source", data=transmitted
-            )
-            response.create_dataset("removed_current_per_source", data=removed)
-            response.create_dataset(
-                "track_length_cm_per_source", data=track_length
-            )
-            response.create_dataset(
-                "deposited_energy_eV_per_source", data=deposited_energy
-            )
+            for name, values in (
+                ("incident_current_per_source", incident),
+                ("transmitted_current_per_source", transmitted),
+                ("removed_current_per_source", removed),
+                ("track_length_cm_per_source", track_length),
+                ("deposited_energy_eV_per_source", deposited_energy),
+            ):
+                options = (
+                    {"compression": "gzip", "shuffle": True}
+                    if values.nbytes > 1024
+                    else {}
+                )
+                response.create_dataset(name, data=values, **options)
             response.attrs["dimension_order"] = (
                 "x_bin,y_bin,layer,particle,energy_group"
             )
@@ -890,6 +906,14 @@ def _write_replay_output(
             records.create_dataset("x_bin", data=x_index)
             records.create_dataset("y_bin", data=y_index)
             records.create_dataset("energy_group", data=group_index)
+            if "coupling_plane_id" in phase:
+                records.create_dataset(
+                    "coupling_plane_id",
+                    data=np.asarray(
+                        _as_strings(phase["coupling_plane_id"]), dtype=object
+                    ),
+                    dtype=string_dtype,
+                )
         temporary.replace(output_path)
     except Exception:
         temporary.unlink(missing_ok=True)
@@ -928,8 +952,8 @@ def _energy_group_indices(
     energy_eV: np.ndarray, bounds: Sequence[float]
 ) -> np.ndarray:
     bounds_array = np.asarray(bounds, dtype=float)
-    indices = np.searchsorted(bounds_array, energy_eV, side="right") - 1
-    indices[energy_eV == bounds_array[-1]] = len(bounds_array) - 2
+    indices = np.searchsorted(bounds_array, energy_eV, side="left") - 1
+    indices[energy_eV == bounds_array[0]] = 0
     invalid = (indices < 0) | (indices >= len(bounds_array) - 1)
     indices[invalid] = -1
     return indices.astype(int)

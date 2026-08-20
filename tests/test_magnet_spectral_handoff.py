@@ -12,7 +12,10 @@ from parastell.magnet_spectral_handoff import (
     _compatible_mesh_filter_dataframe,
 )
 from parastell.magnet_spectral_handoff import CoordinateFrame
+from parastell.magnet_spectral_handoff import load_energy_group_edges
+from parastell.magnet_spectral_handoff import MagnetCouplingPlane
 from parastell.magnet_spectral_handoff import MagnetSpectralHandoff
+from parastell.magnet_spectral_handoff import software_validation_energy_bounds
 
 
 @pytest.fixture(autouse=True)
@@ -81,6 +84,73 @@ def test_accepts_named_openmc_energy_group_structure():
 
     assert handoff.energy_group_structure == "CASMO-2"
     assert handoff.energy_bounds_eV == (0.0, 0.625, 2.0e7)
+
+
+def test_software_validation_groups_resolve_fusion_peak():
+    edges = np.asarray(software_validation_energy_bounds())
+
+    assert len(edges) - 1 >= 175
+    for edge in (13.5e6, 14.0e6, 14.1e6, 14.2e6, 14.5e6):
+        assert edge in edges
+    assert np.all(np.diff(edges) > 0.0)
+
+
+def test_loads_external_numpy_energy_groups(tmp_path):
+    path = tmp_path / "groups.npy"
+    np.save(path, [0.0, 13.5, 14.1, 14.2, 20.0])
+
+    edges = load_energy_group_edges(path, units="MeV")
+
+    assert list(edges) == [0.0, 13.5e6, 14.1e6, 14.2e6, 20.0e6]
+
+
+def test_finite_coupling_plane_frame_and_spatial_mapping():
+    plane = MagnetCouplingPlane.from_mapping(
+        {
+            "id": "entry",
+            "role": "entry",
+            "surface_id": 20001,
+            "magnet_region_id": "magnet-1",
+            "magnet_component": "winding-pack-1",
+            "placement": {
+                "mode": "explicit",
+                "origin_cm": [10.0, 20.0, 30.0],
+                "normal": [1.0, 0.0, 0.0],
+                "reference_direction": [0.0, 1.0, 0.0],
+            },
+            "extent": {"width_cm": 4.0, "height_cm": 2.0},
+            "spatial_bins": {"u": 4, "v": 2},
+        }
+    )
+
+    local = plane.local_coordinates([[10.0, 21.0, 29.5]])
+
+    assert np.allclose(local, [[1.0, -0.5, 0.0]])
+    assert plane.spatial_shape == (4, 2)
+    assert plane.area_cm2 == 8.0
+    assert np.cross(plane.normal_global, plane.u_global) == pytest.approx(
+        plane.v_global
+    )
+
+
+def test_rejects_nonorthogonal_plane_reference_direction():
+    with pytest.raises(ValueError, match="reference direction"):
+        MagnetCouplingPlane.from_mapping(
+            {
+                "id": "bad",
+                "surface_id": 20001,
+                "magnet_region_id": "magnet-1",
+                "magnet_component": "winding-pack-1",
+                "placement": {
+                    "mode": "explicit",
+                    "origin_cm": [0.0, 0.0, 0.0],
+                    "normal": [1.0, 0.0, 0.0],
+                    "reference_direction": [2.0, 0.0, 0.0],
+                },
+                "extent": {"width_cm": 4.0, "height_cm": 2.0},
+                "spatial_bins": {"u": 2, "v": 2},
+            }
+        )
 
 
 def test_builds_directional_and_spatial_tallies():
@@ -242,6 +312,25 @@ def test_exports_surface_source_in_local_coordinates(tmp_path):
             "outgoing",
             "incoming",
         ]
+        assert phase_space["crossing_sense"].asstr()[:].tolist() == [
+            "exiting",
+            "entering",
+        ]
+        assert np.allclose(phase_space["mu_bin"][:], [1, 0])
+        assert np.array_equal(
+            np.isfinite(phase_space["polar_bin"][:]),
+            np.array([True, True]),
+        )
+        assert np.array_equal(
+            np.isfinite(phase_space["azimuthal_bin"][:]),
+            np.array([True, True]),
+        )
+        position_bins = phase_space["position_bin_x"][:].astype(int)
+        assert np.all(position_bins >= -1)
+        position_bins = phase_space["position_bin_y"][:].astype(int)
+        assert np.all(position_bins >= -1)
+        position_index = phase_space["position_bin_index"][:].astype(int)
+        assert np.all(np.isin(position_index, [-1, 0, 1, 2, 3]))
         assert phase_space["source_region_id"].asstr()[:].tolist() == [
             "interface-a",
             "interface-a",
@@ -354,6 +443,12 @@ def test_manifest_records_handoff_contract():
         "mu_outward"
         in manifest["phase_space_output_fields_added_by_parastell"]
     )
+    assert (
+        "position_bin_x"
+        in manifest["phase_space_output_fields_added_by_parastell"]
+    )
+    assert manifest["angular"]["mu_bin_count"] == 4
+    assert manifest["spatial"]["region"] == "coil A winding pack"
 
 
 class FakeTally:
@@ -495,7 +590,7 @@ def test_maps_mu_bins_to_magnet_direction(monkeypatch, tmp_path):
             "musurface high": [0.0, 1.0, 0.0, 1.0],
             "nuclide": ["total"] * 4,
             "score": ["current"] * 4,
-            "mean": [1.0] * 4,
+            "mean": [-1.0, 1.0, -1.0, 1.0],
             "std. dev.": [0.1] * 4,
         }
     )
@@ -612,6 +707,35 @@ def test_direction_is_inferred_from_cell_selection_without_normals(
         assert phase_space["direction_label_basis"].asstr()[:].tolist() == [
             "openmc_cell_selection",
             "openmc_cell_selection",
+        ]
+
+
+def test_crossing_sense_is_not_inferred_from_surface_ids(tmp_path):
+    data = handoff_mapping()
+    data["regions"][0].pop("surface_outward_normals_global")
+    data["regions"][0]["entry_surface_id"] = 20
+    data["regions"][0]["exit_surface_id"] = 21
+    source_path = tmp_path / "surface_source.h5"
+    output_path = tmp_path / "magnet_phase_space.h5"
+    _write_source_file(source_path)
+    handoff = MagnetSpectralHandoff.from_mapping(data)
+
+    handoff.export_surface_source(
+        source_path,
+        output_path,
+        region_name="coil A winding pack",
+        selection="both",
+    )
+
+    with h5py.File(output_path, "r") as output:
+        phase_space = output["phase_space"]
+        assert phase_space["crossing_sense"].asstr()[:].tolist() == [
+            "unknown",
+            "unknown",
+        ]
+        assert phase_space["magnet_direction"].asstr()[:].tolist() == [
+            "unknown",
+            "unknown",
         ]
 
 

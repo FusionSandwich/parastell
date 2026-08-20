@@ -294,7 +294,7 @@ parastell-magnet-handoff-validate \
   --threads 2
 ```
 
-The sequence performs three coupled checks:
+The sequence performs four coupled checks:
 
 1. **Planar interface closure.** A monodirectional 14.1 MeV neutron source
    crosses an exactly planar void interface. OpenMC's direction-resolved
@@ -305,7 +305,12 @@ The sequence performs three coupled checks:
    cross-section library are used in an actual OpenMC run. The first-wall
    surface is explicitly classified as a magnet-interface software proxy; it
    is not represented as a resolved magnet.
-3. **Explicit multilayer replay.** The weighted boundary measure is replayed
+3. **Real magnet coupling plane.** `magnet_geom_with_casing.step` is converted
+   to DAGMC, and a finite plane is derived from and associated with a selected
+   magnet CAD face. A scored run and an otherwise identical model without the
+   interface partition compare an independent leakage tally to demonstrate
+   that the coupling interface is non-perturbing within uncertainty.
+4. **Explicit multilayer replay.** The weighted boundary measure is replayed
    through separately represented copper, silver, REBCO, buffer, Hastelloy,
    copper, solder, and insulation layers. The output axes are
    `x_bin,y_bin,layer,particle,energy_group`. A transparent response library
@@ -316,7 +321,19 @@ The surface-source record count is never interpreted as an absolute source
 rate. Records are reweighted within particle/energy/surface bins to the
 companion OpenMC current tally. For the curved sector gate, a per-record VMEC
 reference-surface normal is reconstructed and stored with the exported phase
-space before replay.
+space before replay. For the magnet gate, every record carries the finite
+plane ID, plane-local `(u, v)` coordinates, outward normal, spatial-bin
+indices, and `mu = Omega dot n_outward`; `mu < 0` is entering and `mu > 0` is
+leaving.
+
+Plane and group contracts can be inspected without running transport:
+
+```bash
+parastell-magnet-handoff inspect-planes --config handoff.yaml
+parastell-magnet-handoff validate-plane --config handoff.yaml --production
+parastell-magnet-handoff list-energy-groups
+parastell-magnet-handoff validate-energy-groups --path groups.npy --units eV
+```
 
 Each run writes `validation_attestation.json`, per-gate JSON reports, OpenMC
 statepoints and source banks, normalized handoff files, and multilayer HDF5
@@ -333,12 +350,13 @@ response modules; the validation code does not fabricate them.
 
 This branch does not yet:
 
-- discover magnet cells/surfaces automatically from DAGMC metadata;
+- infer a magnet association from DAGMC IDs alone when no CAD/component
+  association is supplied;
 - build the heterogeneous HTS tape geometry itself;
 - convert damage energy or incident spectra directly into PKA recoil matrices;
 - calculate NRT-DPA, arc-DPA, defect survival, or superconducting performance;
 - preserve unavailable OpenMC event genealogy;
-- provide an exact curved-surface normal at every banked crossing.
+- replace a finite tangent-plane contract with an exact curved tape surface.
 
 Those are downstream or follow-on capabilities. The implemented boundary is
 intended to make the reactor calculation reproducible and to provide a stable,

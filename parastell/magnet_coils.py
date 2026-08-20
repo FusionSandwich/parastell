@@ -112,6 +112,53 @@ class MagnetSet(ABC):
 
         cq.exporters.export(coil_set, str(self.step_path))
 
+    def create_magnet_coupling_plane(
+        self,
+        *,
+        component_index,
+        plane_id,
+        magnet_region_id,
+        role,
+        approximate_location_cm,
+        reference_direction,
+        width_cm,
+        height_cm,
+        u_bins,
+        v_bins,
+        surface_id,
+    ):
+        """Create a finite tangent plane on a selected magnet CAD component."""
+
+        from .magnet_spectral_handoff import MagnetCouplingPlane
+
+        solids = self.all_coil_solids
+        index = int(component_index)
+        if index < 0 or index >= len(solids):
+            raise ValueError(f"unknown magnet component index {index}")
+        component = f"magnet_component_{index}"
+        source_path = getattr(
+            self, "geometry_file", getattr(self, "step_path", None)
+        )
+        return MagnetCouplingPlane.from_magnet_solid(
+            solids[index],
+            plane_id=plane_id,
+            magnet_region_id=magnet_region_id,
+            magnet_component=component,
+            role=role,
+            approximate_location_cm=approximate_location_cm,
+            reference_direction=reference_direction,
+            width_cm=width_cm,
+            height_cm=height_cm,
+            u_bins=u_bins,
+            v_bins=v_bins,
+            surface_id=surface_id,
+            geometry_source={
+                "mode": "selected_magnet_component",
+                "path": None if source_path is None else str(source_path),
+                "component_index": index,
+            },
+        )
+
     def mesh_magnets_cubit(
         self,
         mesh_size=5,

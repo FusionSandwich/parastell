@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/svalinn/parastell/schemas/magnet_spectral_handoff.schema.json",
+  "$id": "https://github.com/FusionSandwich/parastell/schemas/magnet_spectral_handoff.schema.json",
   "title": "ParaStell magnet spectral handoff configuration",
   "description": "Configuration for OpenMC magnet-interface tallies and deterministic HTS phase-space export.",
   "type": "object",
@@ -8,11 +8,30 @@
   "oneOf": [
     {
       "required": ["energy_bounds_eV"],
-      "not": {"required": ["energy_group_structure"]}
+      "not": {
+        "anyOf": [
+          {"required": ["energy_group_structure"]},
+          {"required": ["energy_group_file"]}
+        ]
+      }
     },
     {
       "required": ["energy_group_structure"],
-      "not": {"required": ["energy_bounds_eV"]}
+      "not": {
+        "anyOf": [
+          {"required": ["energy_bounds_eV"]},
+          {"required": ["energy_group_file"]}
+        ]
+      }
+    },
+    {
+      "required": ["energy_group_file"],
+      "not": {
+        "anyOf": [
+          {"required": ["energy_bounds_eV"]},
+          {"required": ["energy_group_structure"]}
+        ]
+      }
     }
   ],
   "properties": {
@@ -23,6 +42,12 @@
       "type": "string",
       "minLength": 1,
       "description": "Key in openmc.mgxs.GROUP_STRUCTURES."
+    },
+    "energy_group_file": {"type": "string", "minLength": 1},
+    "energy_group_units": {
+      "type": "string",
+      "enum": ["eV", "keV", "MeV"],
+      "default": "eV"
     },
     "particles": {
       "type": "array",
@@ -37,8 +62,28 @@
       "items": {"type": "number", "minimum": -1.0, "maximum": 1.0},
       "default": [-1.0, 0.0, 1.0]
     },
+    "mu_bins": {"type": "integer", "minimum": 1},
     "time_bounds_s": {
       "$ref": "#/$defs/nonnegativeEdges"
+    },
+    "source_definition": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "source_definition_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dagmc_geometry_hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dagmc_geometry_path": {"type": "string", "minLength": 1},
+    "parastell_git_sha": {"type": "string", "minLength": 7},
+    "openmc_git_sha": {"type": "string", "minLength": 7},
+    "run_statistics": {
+      "type": "object",
+      "additionalProperties": true
     },
     "polar_bounds_rad": {
       "type": "array",
@@ -112,6 +157,11 @@
       "minItems": 2,
       "items": {"type": "number", "minimum": 0.0}
     },
+    "numericEdges": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "number"}
+    },
     "positiveIdArray": {
       "type": "array",
       "minItems": 1,
@@ -181,15 +231,101 @@
       },
       "additionalProperties": false
     },
+    "couplingPlane": {
+      "type": "object",
+      "required": [
+        "id",
+        "role",
+        "surface_id",
+        "placement",
+        "extent",
+        "spatial_bins"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "enum": ["entry", "exit", "diagnostic"]},
+        "surface_id": {"type": "integer", "minimum": 1},
+        "magnet_region_id": {"type": ["string", "integer"]},
+        "magnet_component": {"type": "string", "minLength": 1},
+        "placement": {
+          "type": "object",
+          "required": ["mode", "origin_cm", "normal", "reference_direction"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["explicit", "magnet_attached", "first_wall_proxy"]
+            },
+            "origin_cm": {"$ref": "#/$defs/vector3"},
+            "normal": {"$ref": "#/$defs/vector3"},
+            "reference_direction": {"$ref": "#/$defs/vector3"}
+          },
+          "additionalProperties": true
+        },
+        "extent": {
+          "type": "object",
+          "required": ["width_cm", "height_cm"],
+          "properties": {
+            "width_cm": {"type": "number", "exclusiveMinimum": 0.0},
+            "height_cm": {"type": "number", "exclusiveMinimum": 0.0}
+          },
+          "additionalProperties": false
+        },
+        "spatial_bins": {
+          "type": "object",
+          "required": ["u", "v"],
+          "properties": {
+            "u": {
+              "oneOf": [
+                {"type": "integer", "minimum": 1},
+                {"$ref": "#/$defs/numericEdges"}
+              ]
+            },
+            "v": {
+              "oneOf": [
+                {"type": "integer", "minimum": 1},
+                {"$ref": "#/$defs/numericEdges"}
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "geometry_source": {"type": "object", "additionalProperties": true},
+        "association": {"type": "object", "additionalProperties": true},
+        "mu_tolerance": {"type": "number", "minimum": 0.0, "exclusiveMaximum": 1.0},
+        "adjacency_tolerance_cm": {"type": "number", "minimum": 0.0},
+        "proxy": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
     "region": {
       "type": "object",
       "required": ["name", "cell_ids"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
+        "region_id": {"type": ["string", "integer", "null"]},
         "source_region_id": {"type": ["string", "integer", "null"]},
         "magnet_id": {"type": ["string", "integer", "null"]},
         "coil_id": {"type": ["string", "integer", "null"]},
         "winding_pack_id": {"type": ["string", "integer", "null"]},
+        "magnet_component": {"type": ["string", "null"]},
+        "geometry_source_mode": {
+          "type": "string",
+          "enum": ["production", "legacy_surface", "first_wall_proxy"]
+        },
+        "coupling_planes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/couplingPlane"}
+        },
+        "entry_surface_id": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "exit_surface_id": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "units": {"type": "string", "default": "cm"},
         "cell_ids": {"$ref": "#/$defs/positiveIdArray"},
         "surface_ids": {
           "type": "array",
