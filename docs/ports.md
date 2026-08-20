@@ -85,6 +85,28 @@ The old `layer_span` mapping remains accepted with a `DeprecationWarning` and
 is migrated to the same endpoint model. Supplying both `extent` and
 `layer_span` is an error.
 
+## Visual validation package
+
+`stellarator.export_port_visual_validation(output_dir)` exports a named,
+color-preserving STEP assembly, interactive GLBs, actual longitudinal and
+transverse cutaways, headless PNG renders, and a SHA-256 manifest. Axis
+markers, outer envelopes, and clearance envelopes are marked visual-only and
+are never included in neutronics or volumetric-mesh geometry.
+
+The representative validation below is the finalized four-layer CadQuery
+sector with a circular clear aperture, an orange 1 cm liner, a 25 cm external
+extension, and filament-derived magnets.
+
+![Isometric view of the color-coded ported sector](images/ports/port_isometric.png)
+
+![Longitudinal section containing the port axis](images/ports/port_axis_section.png)
+
+![Blanket cutaway exposing the void and liner](images/ports/port_blanket_cutaway.png)
+
+![Port-to-magnet clearance view](images/ports/port_magnet_clearance.png)
+
+![Exploded blanket-layer view](images/ports/port_layers_exploded.png)
+
 ## Collision policies and report
 
 `stellarator.check_port_magnet_clearance()` classifies each identified coil

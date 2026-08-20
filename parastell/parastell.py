@@ -11,6 +11,8 @@ from . import invessel_build as ivb
 from . import magnet_coils as mc
 from . import source_mesh as sm
 from .ports import PortCollisionRecord
+from .component_ledger import ComponentRecord, component_sort_key
+from .port_visualization import export_port_visual_validation
 from .cubit_utils import (
     create_new_cubit_instance,
     export_dagmc_cubit,
@@ -70,6 +72,7 @@ class Stellarator(object):
         self.source_mesh = None
         self.use_pydagmc = False
         self.port_magnet_collision_report = ()
+        self.component_ledger = ()
 
     @property
     def ref_surf(self):
@@ -716,32 +719,83 @@ class Stellarator(object):
             "Building DAGMC neutronics model via CAD-to-DAGMC..."
         )
 
-        solids = []
-        self._material_tags = []
+        records = []
 
         if self.invessel_build:
-            ivb_solids, ivb_material_tags = (
-                self.invessel_build.extract_solids_and_mat_tags()
-            )
-            solids.extend(ivb_solids)
-            self._material_tags.extend(ivb_material_tags)
+            for name, solid in self.invessel_build.Components.items():
+                if name.endswith("__void"):
+                    port_name = name[: -len("__void")]
+                    kind = "port_void"
+                    material_tag = self.invessel_build.port_specs[
+                        port_name
+                    ].fill.mat_tag
+                elif name.endswith("__liner"):
+                    port_name = name[: -len("__liner")]
+                    kind = "port_liner"
+                    material_tag = self.invessel_build.port_specs[
+                        port_name
+                    ].liner.mat_tag
+                else:
+                    port_name = None
+                    kind = (
+                        "plasma_or_chamber"
+                        if name in {"plasma", "chamber"}
+                        else "blanket_layer"
+                    )
+                    material_tag = (
+                        self.invessel_build.radial_build.radial_build[name][
+                            "mat_tag"
+                        ]
+                    )
+                records.append(
+                    ComponentRecord(
+                        name=name,
+                        kind=kind,
+                        material_tag=material_tag,
+                        solid=solid,
+                        expected_volume=float(solid.Volume()),
+                        source_port_name=port_name,
+                    )
+                )
 
         if self.magnet_set:
-            magnet_solids = self.magnet_set.all_coil_solids
-            solids.extend(magnet_solids)
-
-            if isinstance(self.magnet_set.mat_tag, (list, tuple)):
-                magnet_mat_tags = self.magnet_set.mat_tag * len(
-                    self.magnet_set.coil_solids
+            for magnet in self.magnet_set.iter_coil_solids():
+                kind = (
+                    "magnet_casing"
+                    if magnet.region_kind == "outer_casing"
+                    else "magnet_conductor"
                 )
-            else:
-                magnet_mat_tags = [self.magnet_set.mat_tag] * len(
-                    magnet_solids
+                records.append(
+                    ComponentRecord(
+                        name=(
+                            f"magnet_{magnet.coil_id}__"
+                            f"{magnet.region_kind}"
+                        ),
+                        kind=kind,
+                        material_tag=magnet.mat_tag,
+                        solid=magnet.solid,
+                        expected_volume=float(magnet.solid.Volume()),
+                    )
                 )
 
-            self._material_tags.extend(magnet_mat_tags)
-
+        self.component_ledger = tuple(sorted(records, key=component_sort_key))
+        solids = [record.solid for record in self.component_ledger]
+        self._material_tags = [
+            record.material_tag for record in self.component_ledger
+        ]
+        if (
+            not len(solids)
+            == len(self._material_tags)
+            == len(self.component_ledger)
+        ):
+            raise AssertionError(
+                "CAD-to-DAGMC solid, material-tag, and component counts differ"
+            )
         self._geometry = cq.Compound.makeCompound(solids)
+
+    def export_port_visual_validation(self, output_dir, **kwargs):
+        """Export a human-visible validation package for finalized ports."""
+        return export_port_visual_validation(self, output_dir, **kwargs)
 
     def export_cad_to_dagmc(
         self,
