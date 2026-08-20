@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import warnings
 
 import cadquery as cq
 import cad_to_dagmc
@@ -9,6 +10,7 @@ from . import log
 from . import invessel_build as ivb
 from . import magnet_coils as mc
 from . import source_mesh as sm
+from .ports import PortCollisionRecord
 from .cubit_utils import (
     create_new_cubit_instance,
     export_dagmc_cubit,
@@ -67,6 +69,7 @@ class Stellarator(object):
         self.magnet_set = None
         self.source_mesh = None
         self.use_pydagmc = False
+        self.port_magnet_collision_report = ()
 
     @property
     def ref_surf(self):
@@ -186,6 +189,110 @@ class Stellarator(object):
         self.invessel_build.populate_surfaces()
         self.invessel_build.calculate_loci()
         self.invessel_build.generate_components()
+        self._validate_port_magnet_clearance_if_available()
+
+    def _validate_port_magnet_clearance_if_available(self):
+        if (
+            self.invessel_build is not None
+            and self.magnet_set is not None
+            and self.invessel_build.port_outer_envelopes
+        ):
+            return self.check_port_magnet_clearance()
+        return []
+
+    def check_port_magnet_clearance(self):
+        """Classify port-envelope collision and clearance against every coil."""
+        if (
+            self.invessel_build is None
+            or not self.invessel_build.port_outer_envelopes
+        ):
+            return []
+        if self.magnet_set is None:
+            raise ValueError(
+                "Magnet geometry is required for port clearance checking."
+            )
+
+        try:
+            magnet_records = list(self.magnet_set.iter_coil_solids())
+        except (AttributeError, NotImplementedError) as exc:
+            raise NotImplementedError(
+                "Port–magnet collision checking is unavailable for this "
+                "magnet representation."
+            ) from exc
+
+        records = []
+        errors = []
+        for (
+            port_name,
+            outer_envelope,
+        ) in self.invessel_build.port_outer_envelopes.items():
+            port = self.invessel_build.port_specs[port_name]
+            clearance_envelope = (
+                self.invessel_build.build_port_clearance_envelope(port)
+            )
+            tolerance = self.invessel_build._bool_tolerance(
+                outer_envelope.Volume()
+            )
+            for magnet in magnet_records:
+                actual_overlap = self.invessel_build._shape_volume(
+                    outer_envelope.intersect(magnet.solid)
+                )
+                clearance_overlap = self.invessel_build._shape_volume(
+                    clearance_envelope.intersect(magnet.solid)
+                )
+                if actual_overlap > tolerance:
+                    status = "collision"
+                    policy = port.collision.magnet_policy
+                elif clearance_overlap > tolerance:
+                    status = "clearance_violation"
+                    policy = port.collision.clearance_policy
+                else:
+                    status = "clear"
+                    policy = "report"
+                try:
+                    minimum_distance = float(
+                        outer_envelope.distance(magnet.solid)
+                    )
+                except Exception:
+                    minimum_distance = None
+                record = PortCollisionRecord(
+                    port_name=port_name,
+                    coil_id=magnet.coil_id,
+                    magnet_region_kind=magnet.region_kind,
+                    actual_overlap_volume=actual_overlap,
+                    clearance_envelope_overlap_volume=clearance_overlap,
+                    required_clearance=port.collision.minimum_magnet_clearance,
+                    estimated_minimum_distance=minimum_distance,
+                    status=status,
+                )
+                records.append(record)
+                if status == "clear" or policy in {"report", "ignore"}:
+                    continue
+                message = (
+                    f"Port {port_name!r} {status.replace('_', ' ')} with coil "
+                    f"{magnet.coil_id!r} {magnet.region_kind}: overlap "
+                    f"{actual_overlap}, clearance-envelope overlap "
+                    f"{clearance_overlap}."
+                )
+                if policy == "warn":
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
+                    self._logger.warning(message)
+                elif policy == "error":
+                    errors.append(message)
+
+        self.port_magnet_collision_report = tuple(records)
+        counts = {
+            status: sum(record.status == status for record in records)
+            for status in ("collision", "clearance_violation", "clear")
+        }
+        self._logger.info(
+            f"Port–magnet clearance: {counts['collision']} collision(s), "
+            f"{counts['clearance_violation']} clearance violation(s), "
+            f"{counts['clear']} clear pair(s)."
+        )
+        if errors:
+            raise ValueError(" ".join(errors))
+        return list(records)
 
     def export_invessel_build_step(self, export_dir=""):
         """Exports InVesselBuild component STEP files.
@@ -334,6 +441,7 @@ class Stellarator(object):
 
         self.magnet_set.populate_magnet_coils()
         self.magnet_set.build_magnet_coils()
+        self._validate_port_magnet_clearance_if_available()
 
     def add_magnets_from_geometry(self, geometry_file, **kwargs):
         """Adds custom geometry via the MagnetSetFromGeometry class
@@ -355,6 +463,7 @@ class Stellarator(object):
             logger=self._logger,
             **kwargs,
         )
+        self._validate_port_magnet_clearance_if_available()
 
     def export_magnets_step(self, filename="magnet_set", export_dir=""):
         """Export STEP file of magnet set.

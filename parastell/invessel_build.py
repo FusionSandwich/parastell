@@ -32,7 +32,7 @@ from .utils import (
     create_vol_mesh_from_surf_mesh,
     m2cm,
 )
-from .ports import parse_ports
+from .ports import PortGeometryResult, parse_ports
 from .pystell import read_vmec
 
 
@@ -368,8 +368,15 @@ class InVesselBuild(object):
             self.radial_build.user_layer_names,
         )
         self._ported_layer_names = set()
-        self._port_fill_components = {}
-        self._port_fill_specs = {}
+        self.port_void_components = {}
+        self.port_liner_components = {}
+        self.port_outer_envelopes = {}
+        self.port_specs = {port.name: port for port in self.ports}
+        self.port_geometry_diagnostics = {}
+        # Private aliases are retained for downstream Prompt-2 callers.
+        self._port_fill_components = self.port_void_components
+        self._port_fill_specs = self.port_specs
+        self._endpoint_reference_solids = {}
 
         self.repeat = 0
         self.num_ribs = 61
@@ -575,6 +582,43 @@ class InVesselBuild(object):
         if self.ports:
             self._apply_ports_to_components()
 
+    def _generate_endpoint_reference_solid(self, reference):
+        """Build the enclosed ``s=1`` or ``wall_s`` reference volume lazily."""
+        if reference in self._endpoint_reference_solids:
+            return self._endpoint_reference_solids[reference]
+        if not hasattr(self, "_toroidal_angles_exp"):
+            raise ValueError(
+                f"{reference} endpoint geometry is unavailable before surfaces "
+                "are populated."
+            )
+        s = 1.0 if reference == "plasma_surface" else self.radial_build.wall_s
+        offsets = np.zeros(
+            (len(self._toroidal_angles_exp), len(self._poloidal_angles_exp))
+        )
+        surface = Surface(
+            self._ref_surf,
+            s,
+            self._poloidal_angles_exp,
+            self._toroidal_angles_exp,
+            offsets,
+            self.scale,
+        )
+        surface.populate_ribs()
+        surface.calculate_loci()
+        segment = surface.generate_surface()
+        solid = segment
+        segment_angles = np.linspace(
+            self.radial_build.toroidal_angles[-1],
+            self._repeat * self.radial_build.toroidal_angles[-1],
+            num=self._repeat,
+        )
+        for angle in segment_angles:
+            solid = solid.fuse(segment.rotate((0, 0, 0), (0, 0, 1), angle))
+        solid = self._as_solid(solid)
+        self._require_valid_solid(solid, f"Internal {reference} volume")
+        self._endpoint_reference_solids[reference] = solid
+        return solid
+
     def _shape_solids(self, shape):
         if shape is None:
             return []
@@ -605,8 +649,13 @@ class InVesselBuild(object):
 
     @staticmethod
     def _bool_tolerance(reference_volume: float) -> float:
-        """Scale-aware volume tolerance for OpenCascade boolean checks."""
-        return max(1e-7, 1e-9 * max(1.0, abs(reference_volume)))
+        """Scale-aware volume tolerance for OpenCascade boolean checks.
+
+        Lofted spline sectors accumulate more Boolean integration error than
+        analytic primitives, so closure uses 0.1 parts per million while
+        retaining a small absolute floor for model-scale solids.
+        """
+        return max(1e-7, 1e-7 * max(1.0, abs(reference_volume)))
 
     def _as_solid(self, shape):
         solids = self._shape_solids(shape)
@@ -674,36 +723,114 @@ class InVesselBuild(object):
             self._logger.error(e.args[0])
             raise e
 
-    def _build_port_search_cutter(self, port):
-        length = float(port.placement.max_search_length)
-        axis = np.array(port.placement.local_axis, dtype=float)
-        reference = np.array(port.placement.local_reference, dtype=float)
-        origin = (
-            np.array(port.placement.anchor, dtype=float) - axis * length / 2.0
-        )
+    def _build_port_prism(
+        self, port, start, end, radial_expansion=0.0, axial_expansion=0.0
+    ):
+        """Build a finite prism in the port's local frame."""
+        start = float(start) - float(axial_expansion)
+        end = float(end) + float(axial_expansion)
+        if end <= start:
+            raise ValueError(f"Port {port.name!r} has a nonpositive extent.")
+        axis = np.asarray(port.placement.local_axis, dtype=float)
+        reference = np.asarray(port.placement.local_reference, dtype=float)
+        origin = np.asarray(port.placement.anchor, dtype=float) + axis * start
         plane = cq.Plane(
-            origin=tuple(origin),
-            xDir=tuple(reference),
-            normal=tuple(axis),
+            origin=tuple(origin), xDir=tuple(reference), normal=tuple(axis)
+        )
+        workplane = cq.Workplane(plane)
+        if port.cross_section.shape == "circle":
+            radius = port.cross_section.radius + radial_expansion
+            prism = workplane.circle(radius).extrude(end - start)
+        else:
+            width = port.cross_section.width + 2.0 * radial_expansion
+            height = port.cross_section.height + 2.0 * radial_expansion
+            prism = workplane.rect(width, height).extrude(end - start)
+        solid = self._as_solid(prism.val())
+        self._require_valid_solid(solid, f"Prism for port {port.name!r}")
+        return solid
+
+    def build_port_clearance_envelope(self, port):
+        """Return the configured conservative magnet-clearance envelope."""
+        result = self.port_geometry_diagnostics.get(port.name)
+        if result is None:
+            raise ValueError(f"Port {port.name!r} has not been generated.")
+        clearance = port.collision.minimum_magnet_clearance
+        radial = (
+            port.liner.thickness if port.liner.enabled else 0.0
+        ) + clearance
+        return self._build_port_prism(
+            port,
+            result.resolved_start,
+            result.resolved_end + result.outer_extension,
+            radial_expansion=radial,
+            axial_expansion=clearance,
         )
 
-        if port.cross_section.shape == "circle":
-            search_cutter = (
-                cq.Workplane(plane)
-                .circle(port.cross_section.radius)
-                .extrude(length)
-            )
-        else:
-            search_cutter = (
-                cq.Workplane(plane)
-                .rect(port.cross_section.width, port.cross_section.height)
-                .extrude(length)
-            )
-        cutter = search_cutter.val()
-        self._require_valid_solid(
-            cutter, f"Search cutter for port {port.name!r}"
+    def _line_interval(self, port, solid, description):
+        """Resolve one connected centerline interval inside a solid."""
+        half = port.placement.max_search_length / 2.0
+        anchor = np.asarray(port.placement.anchor, dtype=float)
+        axis = np.asarray(port.placement.local_axis, dtype=float)
+        line = cq.Edge.makeLine(
+            tuple(anchor - axis * half), tuple(anchor + axis * half)
         )
-        return cutter
+        intersection = solid.intersect(line)
+        edges = [edge for edge in intersection.Edges() if edge.Length() > 1e-8]
+        if not edges:
+            raise ValueError(
+                f"Port {port.name!r} centerline does not intersect {description}."
+            )
+        if len(edges) != 1:
+            raise NotImplementedError(
+                f"Port {port.name!r} centerline intersects {description} in "
+                "multiple disconnected or far-side locations."
+            )
+        coordinates = [
+            float(np.dot(np.asarray(vertex.toTuple()) - anchor, axis))
+            for vertex in edges[0].Vertices()
+        ]
+        if len(coordinates) < 2:
+            raise ValueError(
+                f"Port {port.name!r} has a degenerate centerline intersection "
+                f"with {description}."
+            )
+        return min(coordinates), max(coordinates)
+
+    def _resolve_port_endpoint(self, port, endpoint, source_components):
+        if endpoint.reference == "layer":
+            solid = source_components[endpoint.layer]
+            low, high = self._line_interval(
+                port, solid, f"layer {endpoint.layer!r}"
+            )
+            coordinate = low + endpoint.fraction * (high - low)
+        else:
+            solid = self._generate_endpoint_reference_solid(endpoint.reference)
+            _, coordinate = self._line_interval(
+                port, solid, endpoint.reference
+            )
+        return coordinate + endpoint.axial_offset
+
+    def _trim_inner_endpoint(self, port, solid):
+        endpoint = port.extent.start
+        if endpoint.reference not in {"plasma_surface", "wall_surface"}:
+            return solid
+        if endpoint.axial_offset != 0.0:
+            return solid
+        reference = self._generate_endpoint_reference_solid(endpoint.reference)
+        trimmed = self._as_solid(solid.cut(reference))
+        if trimmed is None:
+            raise ValueError(
+                f"Port {port.name!r} was eliminated while conformally trimming "
+                f"to {endpoint.reference}."
+            )
+        return self._repair_and_require_valid_solid(
+            trimmed, f"Conformally trimmed port {port.name!r}"
+        )
+
+    @staticmethod
+    def _intersection_location(shape):
+        center = shape.CenterOfBoundBox()
+        return (float(center.x), float(center.y), float(center.z))
 
     def _apply_ports_to_components(self):
         user_layers = [
@@ -711,267 +838,273 @@ class InVesselBuild(object):
             for name in self.radial_build.user_layer_names
             if name in self.Components
         ]
-        baseline_volumes = {
-            name: self._shape_volume(self.Components[name])
+        source_components = {
+            name: self._repair_and_require_valid_solid(
+                self._as_solid(self.Components[name]),
+                f"Source component {name!r}",
+            )
             for name in user_layers
+        }
+        baseline_volumes = {
+            name: self._shape_volume(solid)
+            for name, solid in source_components.items()
         }
         baseline_adjacent_overlaps = {
             (inner, outer): self._shape_volume(
-                self.Components[inner].intersect(self.Components[outer])
+                source_components[inner].intersect(source_components[outer])
             )
             for inner, outer in zip(user_layers, user_layers[1:])
         }
         all_target_layers = set()
 
         for port in self.ports:
-            if port.name in self.Components:
-                e = ValueError(
-                    f"Port name {port.name!r} conflicts with an in-vessel "
-                    "component name."
+            void_name = f"{port.name}__void"
+            liner_name = f"{port.name}__liner"
+            if port.name in self.Components or void_name in self.Components:
+                raise ValueError(
+                    f"Port name {port.name!r} conflicts with an in-vessel component."
                 )
-                self._logger.error(e.args[0])
-                raise e
-
             if port.repetition.mode == "per_period":
-                e = NotImplementedError(
+                raise NotImplementedError(
                     "per_period port repetition is not implemented yet."
                 )
-                self._logger.error(e.args[0])
-                raise e
 
-            search_cutter = self._build_port_search_cutter(port)
-            fill_fragments = []
-            target_layers = tuple(port.resolution.layers)
-            all_target_layers.update(target_layers)
-            staged_components = {}
-            original_selected_volume = 0.0
-            remaining_selected_volume = 0.0
+            resolved_start = self._resolve_port_endpoint(
+                port, port.extent.start, source_components
+            )
+            resolved_end = self._resolve_port_endpoint(
+                port, port.extent.end, source_components
+            )
+            tolerance = self._bool_tolerance(
+                max(baseline_volumes.values(), default=1.0)
+            )
+            if resolved_start >= resolved_end - tolerance:
+                raise ValueError(
+                    f"Port {port.name!r} resolves start coordinate "
+                    f"{resolved_start} at or beyond end coordinate {resolved_end}; "
+                    "the supplied axis may need to be reversed."
+                )
+            final_end = resolved_end + port.extent.outer_extension
+            liner_thickness = (
+                port.liner.thickness if port.liner.enabled else 0.0
+            )
+            transverse_pad = (
+                port.cross_section.radius
+                if port.cross_section.shape == "circle"
+                else max(port.cross_section.width, port.cross_section.height)
+                / 2.0
+            ) + liner_thickness
+            build_start = resolved_start
+            if (
+                port.extent.start.reference
+                in {"plasma_surface", "wall_surface"}
+                and port.extent.start.axial_offset == 0.0
+            ):
+                build_start -= transverse_pad + 1.0
 
-            for (
-                existing_fill_name,
-                existing_spec,
-            ) in self._port_fill_specs.items():
-                if not set(target_layers).intersection(
-                    existing_spec.resolution.layers
+            inner_aperture = self._build_port_prism(
+                port, build_start, final_end
+            )
+            outer_envelope = self._build_port_prism(
+                port,
+                build_start,
+                final_end,
+                radial_expansion=liner_thickness,
+            )
+            inner_aperture = self._trim_inner_endpoint(port, inner_aperture)
+            outer_envelope = self._trim_inner_endpoint(port, outer_envelope)
+
+            liner = None
+            if port.liner.enabled:
+                liner = self._as_solid(outer_envelope.cut(inner_aperture))
+                liner = self._repair_and_require_valid_solid(
+                    liner, f"Liner for port {port.name!r}"
+                )
+
+            for existing_name, existing in self.port_outer_envelopes.items():
+                overlap_shape = outer_envelope.intersect(existing)
+                overlap_volume = self._shape_volume(overlap_shape)
+                if overlap_volume > self._bool_tolerance(
+                    outer_envelope.Volume()
                 ):
-                    continue
-                existing_fill = self._port_fill_components[existing_fill_name]
-                overlap = self._shape_volume(
-                    existing_fill.intersect(search_cutter)
-                )
-                if overlap > self._bool_tolerance(existing_fill.Volume()):
-                    e = NotImplementedError(
-                        f"Port {port.name!r} overlaps an existing port fill "
-                        "volume. Overlapping ports are not supported yet."
+                    location = self._intersection_location(overlap_shape)
+                    raise ValueError(
+                        f"Port {port.name!r} outer envelope overlaps port "
+                        f"{existing_name!r}: volume {overlap_volume}, "
+                        f"approximate location {location}."
                     )
-                    self._logger.error(e.args[0])
-                    raise e
 
+            layer_intersections = []
+            for index, layer_name in enumerate(user_layers):
+                intersection = outer_envelope.intersect(
+                    source_components[layer_name]
+                )
+                volume = self._shape_volume(intersection)
+                if volume > self._bool_tolerance(baseline_volumes[layer_name]):
+                    low, _ = self._line_interval(
+                        port,
+                        source_components[layer_name],
+                        f"layer {layer_name!r}",
+                    )
+                    layer_intersections.append((low, index, layer_name))
+            layer_intersections.sort()
+            target_layers = tuple(item[2] for item in layer_intersections)
+            if not target_layers:
+                raise ValueError(
+                    f"Port {port.name!r} finite outer envelope does not intersect "
+                    "any user layer."
+                )
+            if (
+                port.expected_layers is not None
+                and target_layers != port.expected_layers
+            ):
+                raise ValueError(
+                    f"Port {port.name!r} expected layers {port.expected_layers} "
+                    f"but geometrically intersects {target_layers}."
+                )
+            if port.resolution is not None and set(target_layers) != set(
+                port.resolution.layers
+            ):
+                raise ValueError(
+                    f"Deprecated layer_span for port {port.name!r} resolves "
+                    f"{port.resolution.layers} but finite geometry intersects "
+                    f"{target_layers}."
+                )
+
+            staged_components = {}
+            original_volume = 0.0
+            remaining_volume = 0.0
+            total_cut_volume = 0.0
+            blanket_union = None
             for layer_name in target_layers:
-                if layer_name not in self.Components:
-                    e = ValueError(
-                        f"Resolved layer {layer_name!r} was not found in "
-                        f"components for port {port.name!r}."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
-                component = self.Components[layer_name]
-                component_solids = self._shape_solids(component)
-                if len(component_solids) == 0:
-                    e = ValueError(
-                        f"Port {port.name!r} encountered an empty component for "
-                        f"layer {layer_name!r}."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-                component_to_cut = (
-                    component_solids[0]
-                    if len(component_solids) == 1
-                    else self._fuse_shapes(component_solids)
+                component = self._repair_and_require_valid_solid(
+                    self._as_solid(self.Components[layer_name]),
+                    f"Current component {layer_name!r}",
                 )
-                if component_to_cut is None:
-                    e = ValueError(
-                        f"Port {port.name!r} failed to prepare layer {layer_name!r} "
-                        "for boolean operations."
+                before = self._shape_volume(component)
+                removed = self._as_solid(component.intersect(outer_envelope))
+                if removed is None:
+                    raise ValueError(
+                        f"Port {port.name!r} does not remove positive volume "
+                        f"from layer {layer_name!r}."
                     )
-                    self._logger.error(e.args[0])
-                    raise e
-
-                component_to_cut = self._repair_and_require_valid_solid(
-                    component_to_cut,
-                    f"Selected source component {layer_name!r}",
-                )
-                component_solids = self._shape_solids(component_to_cut)
-
-                original_vol = self._shape_volume(component_to_cut)
-                if layer_name not in self._ported_layer_names:
-                    baseline_volumes[layer_name] = original_vol
-                if original_vol <= 0.0:
-                    e = ValueError(
-                        f"Port {port.name!r} requested zero-volume layer "
-                        f"{layer_name!r}; every requested layer must have "
-                        "positive volume."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
-                intersections = []
-                for component_solid in component_solids:
-                    intersections.extend(
-                        self._shape_solids(
-                            component_solid.intersect(search_cutter)
-                        )
-                    )
-                if len(intersections) == 0:
-                    e = ValueError(
-                        f"Port {port.name!r} does not intersect requested layer "
-                        f"{layer_name!r}."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
-                if len(intersections) > 1:
-                    e = NotImplementedError(
-                        f"Port {port.name!r} intersects layer "
-                        f"{layer_name!r} in multiple disconnected locations."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
-                intersection = self._as_solid(self._fuse_shapes(intersections))
-                if intersection is None:
-                    e = ValueError(
-                        f"Port {port.name!r} produced invalid geometry for "
-                        f"layer {layer_name!r}."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-                intersection = self._repair_and_require_valid_solid(
-                    intersection,
-                    f"Removed fragment for port {port.name!r}, layer "
-                    f"{layer_name!r}",
-                )
-
-                intersection_vol = self._shape_volume(intersection)
-                if intersection_vol <= self._bool_tolerance(original_vol):
-                    e = ValueError(
-                        f"Port {port.name!r} does not remove positive volume from "
-                        f"layer {layer_name!r}."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
-                remaining = self._as_solid(component_to_cut.cut(search_cutter))
+                removed_volume = self._shape_volume(removed)
+                remaining = self._as_solid(component.cut(outer_envelope))
                 if remaining is None:
-                    e = ValueError(
-                        f"Port {port.name!r} removes all volume from layer "
-                        f"{layer_name!r}."
+                    raise ValueError(
+                        f"Port {port.name!r} completely removes layer {layer_name!r}."
                     )
-                    self._logger.error(e.args[0])
-                    raise e
                 remaining = self._repair_and_require_valid_solid(
                     remaining,
-                    f"Remaining component for port {port.name!r}, layer "
-                    f"{layer_name!r}",
+                    f"Remaining component for port {port.name!r}, layer {layer_name!r}",
                 )
-
-                remaining_vol = self._shape_volume(remaining)
-                if remaining_vol >= original_vol - self._bool_tolerance(
-                    original_vol
-                ):
-                    e = ValueError(
-                        f"Port {port.name!r} did not remove material from "
-                        f"layer {layer_name!r}: original volume {original_vol}, "
-                        f"remaining volume {remaining_vol}, intersection "
-                        f"volume {intersection_vol}."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
+                after = self._shape_volume(remaining)
                 self._assert_volume_closure(
-                    original_vol,
-                    remaining_vol,
-                    intersection_vol,
+                    before,
+                    after,
+                    removed_volume,
                     f"Port {port.name!r}, layer {layer_name!r}",
                 )
-
-                if self._shape_volume(
-                    remaining.intersect(intersection)
-                ) > self._bool_tolerance(original_vol):
-                    e = ValueError(
-                        f"Port {port.name!r} fill volume overlaps remaining "
-                        f"material in layer {layer_name!r}."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
-                staged_components[layer_name] = remaining
-                fill_fragments.append(intersection)
-                original_selected_volume += original_vol
-                remaining_selected_volume += remaining_vol
-
-            if len(fill_fragments) == 0:
-                e = ValueError(
-                    f"Port {port.name!r} does not intersect any user layer."
-                )
-                self._logger.error(e.args[0])
-                raise e
-
-            fill_solid = self._as_solid(self._fuse_shapes(fill_fragments))
-            if fill_solid is None:
-                e = ValueError(
-                    f"Port {port.name!r} produced no finite fill volume."
-                )
-                self._logger.error(e.args[0])
-                raise e
-            fill_solid = self._repair_and_require_valid_solid(
-                fill_solid, f"Fill volume for port {port.name!r}"
-            )
-            fill_volume = self._shape_volume(fill_solid)
-            self._assert_volume_closure(
-                original_selected_volume,
-                remaining_selected_volume,
-                fill_volume,
-                f"Selected span for port {port.name!r}",
-            )
-
-            # Reject overlaps between this port and previously generated port cuts
-            # before accepting geometry changes.
-            for existing_fill in self._port_fill_components.values():
-                overlap = self._shape_volume(
-                    fill_solid.intersect(existing_fill)
-                )
-                if overlap > self._bool_tolerance(fill_solid.Volume()):
-                    e = NotImplementedError(
-                        f"Port {port.name!r} overlaps an existing port fill "
-                        "volume. Overlapping ports are not supported yet."
-                    )
-                    self._logger.error(e.args[0])
-                    raise e
-
-            # Validate that the final fused fill volume does not overlap
-            # modified material in the same span.
-            for layer_name in target_layers:
-                if layer_name in staged_components:
+                for assembly_shape, kind in (
+                    (inner_aperture, "void"),
+                    (liner, "liner"),
+                ):
+                    if assembly_shape is None:
+                        continue
                     overlap = self._shape_volume(
-                        staged_components[layer_name].intersect(fill_solid)
+                        remaining.intersect(assembly_shape)
                     )
-                    if overlap > self._bool_tolerance(
-                        baseline_volumes[layer_name]
-                    ):
-                        e = ValueError(
-                            f"Port {port.name!r} fill volume overlaps remaining "
+                    if overlap > self._bool_tolerance(before):
+                        raise ValueError(
+                            f"Port {port.name!r} {kind} overlaps remaining "
                             f"material in layer {layer_name!r}."
                         )
-                        self._logger.error(e.args[0])
-                        raise e
+                staged_components[layer_name] = remaining
+                original_volume += before
+                remaining_volume += after
+                total_cut_volume += removed_volume
+                source = source_components[layer_name]
+                blanket_union = (
+                    source
+                    if blanket_union is None
+                    else blanket_union.fuse(source)
+                )
+
+            void_inside = self._shape_volume(
+                inner_aperture.intersect(blanket_union)
+            )
+            liner_inside = (
+                self._shape_volume(liner.intersect(blanket_union))
+                if liner is not None
+                else 0.0
+            )
+            void_outside = inner_aperture.Volume() - void_inside
+            liner_outside = (
+                (liner.Volume() - liner_inside) if liner is not None else 0.0
+            )
+            closure_error = abs(
+                original_volume - remaining_volume - void_inside - liner_inside
+            )
+            if closure_error > self._bool_tolerance(original_volume):
+                raise ValueError(
+                    f"Port {port.name!r} assembly violates blanket volume "
+                    f"closure: error {closure_error}."
+                )
+            if abs(
+                total_cut_volume - void_inside - liner_inside
+            ) > self._bool_tolerance(total_cut_volume):
+                raise ValueError(
+                    f"Port {port.name!r} void and liner do not partition the "
+                    "removed blanket volume."
+                )
+            if liner is not None:
+                void_liner_overlap = self._shape_volume(
+                    inner_aperture.intersect(liner)
+                )
+                if void_liner_overlap > self._bool_tolerance(liner.Volume()):
+                    raise ValueError(
+                        f"Port {port.name!r} liner overlaps its clear void."
+                    )
+
+            plasma_overlap = 0.0
+            if (
+                port.extent.start.reference == "plasma_surface"
+                and liner is not None
+            ):
+                plasma = self._generate_endpoint_reference_solid(
+                    "plasma_surface"
+                )
+                plasma_overlap = self._shape_volume(liner.intersect(plasma))
+                if plasma_overlap > self._bool_tolerance(plasma.Volume()):
+                    raise ValueError(
+                        f"Port {port.name!r} liner penetrates the plasma volume."
+                    )
 
             self.Components.update(staged_components)
+            self.Components[void_name] = inner_aperture
+            if liner is not None:
+                self.Components[liner_name] = liner
+                self.port_liner_components[port.name] = liner
+            self.port_void_components[port.name] = inner_aperture
+            self.port_outer_envelopes[port.name] = outer_envelope
             self._ported_layer_names.update(target_layers)
-            self.Components[port.name] = fill_solid
-            self._port_fill_components[port.name] = fill_solid
-            self._port_fill_specs[port.name] = port
+            all_target_layers.update(target_layers)
+            self.port_geometry_diagnostics[port.name] = PortGeometryResult(
+                name=port.name,
+                resolved_start=resolved_start,
+                resolved_end=resolved_end,
+                outer_extension=port.extent.outer_extension,
+                ordered_intersected_layers=target_layers,
+                original_blanket_volume=original_volume,
+                remaining_blanket_volume=remaining_volume,
+                void_volume_inside_blanket=void_inside,
+                liner_volume_inside_blanket=liner_inside,
+                void_volume_outside_blanket=max(0.0, void_outside),
+                liner_volume_outside_blanket=max(0.0, liner_outside),
+                total_cut_volume=total_cut_volume,
+                closure_error=closure_error,
+                maximum_liner_overlap_with_plasma=plasma_overlap,
+            )
 
         for layer_name in user_layers:
             final_volume = self._shape_volume(self.Components[layer_name])
@@ -979,38 +1112,14 @@ class InVesselBuild(object):
             tolerance = self._bool_tolerance(original_volume)
             if layer_name in all_target_layers:
                 if final_volume >= original_volume - tolerance:
-                    e = ValueError(
-                        f"Ported layer {layer_name!r} did not lose positive "
-                        "volume."
+                    raise ValueError(
+                        f"Ported layer {layer_name!r} did not lose positive volume."
                     )
-                    self._logger.error(e.args[0])
-                    raise e
             elif abs(final_volume - original_volume) > tolerance:
-                e = ValueError(
+                raise ValueError(
                     f"Unselected layer {layer_name!r} changed volume by "
-                    f"{abs(final_volume - original_volume)}, exceeding "
-                    f"tolerance {tolerance}."
+                    f"{abs(final_volume - original_volume)}."
                 )
-                self._logger.error(e.args[0])
-                raise e
-
-        original_selected_volume = sum(
-            baseline_volumes[name] for name in all_target_layers
-        )
-        remaining_selected_volume = sum(
-            self._shape_volume(self.Components[name])
-            for name in all_target_layers
-        )
-        total_fill_volume = sum(
-            self._shape_volume(fill)
-            for fill in self._port_fill_components.values()
-        )
-        self._assert_volume_closure(
-            original_selected_volume,
-            remaining_selected_volume,
-            total_fill_volume,
-            "All ported user-layer spans",
-        )
 
         for pair, baseline_overlap in baseline_adjacent_overlaps.items():
             inner, outer = pair
@@ -1021,25 +1130,20 @@ class InVesselBuild(object):
                 max(baseline_volumes[inner], baseline_volumes[outer])
             )
             if final_overlap > baseline_overlap + tolerance:
-                e = ValueError(
-                    f"Port booleans introduced overlap between adjacent "
-                    f"layers {inner!r} and {outer!r}."
+                raise ValueError(
+                    f"Port booleans introduced overlap between adjacent layers "
+                    f"{inner!r} and {outer!r}."
                 )
-                self._logger.error(e.args[0])
-                raise e
 
-        outputs_requiring_validation = all_target_layers.union(
-            self._port_fill_components
-        )
-        for name in outputs_requiring_validation:
-            component = self.Components[name]
-            solids = self._shape_solids(component)
-            if not solids:
-                e = ValueError(f"Final component {name!r} contains no solids.")
-                self._logger.error(e.args[0])
-                raise e
-            for solid in solids:
-                self._require_valid_solid(solid, f"Final component {name!r}")
+        for name in all_target_layers:
+            self._require_valid_solid(
+                self._as_solid(self.Components[name]),
+                f"Final component {name!r}",
+            )
+        for name, solid in self.port_void_components.items():
+            self._require_valid_solid(solid, f"Final port void {name!r}")
+        for name, solid in self.port_liner_components.items():
+            self._require_valid_solid(solid, f"Final port liner {name!r}")
 
     def _connect_ribs_with_tris_moab(self, rib1, rib2, reverse=False):
         """Creat MBTRI elements add add them to a surface between two ribs.
@@ -1289,9 +1393,14 @@ class InVesselBuild(object):
                 mat_tags.append(
                     self.radial_build.radial_build[name]["mat_tag"]
                 )
-            else:
-                port_spec = self._port_fill_specs[name]
+            elif name.endswith("__void"):
+                port_spec = self.port_specs[name[: -len("__void")]]
                 mat_tags.append(port_spec.fill.mat_tag)
+            elif name.endswith("__liner"):
+                port_spec = self.port_specs[name[: -len("__liner")]]
+                mat_tags.append(port_spec.liner.mat_tag)
+            else:
+                raise ValueError(f"No material tag is defined for {name!r}.")
 
         return solids, mat_tags
 
@@ -1338,9 +1447,10 @@ class InVesselBuild(object):
                 )
                 self._logger.error(e.args[0])
                 raise e
-            affected_ports = set(self._port_fill_components).intersection(
-                components
-            )
+            port_component_names = {
+                f"{name}__void" for name in self.port_void_components
+            }.union(f"{name}__liner" for name in self.port_liner_components)
+            affected_ports = port_component_names.intersection(components)
             if affected_ports:
                 e = NotImplementedError(
                     "MOAB mesh workflow is not supported for port fills: "
