@@ -337,3 +337,35 @@ def test_zero_volume_volumes():
     ms.build_magnet_coils()
     for solids in ms.coil_solids:
         assert not np.isclose(solids[0].Volume(), 0)
+
+
+def test_filament_magnet_iterator_preserves_coil_region_metadata(
+    coil_set_from_filaments,
+):
+    coil_set_from_filaments.case_thickness = 5.0
+    coil_set_from_filaments.mat_tag = ["casing", "conductor"]
+    coil_set_from_filaments.populate_magnet_coils()
+    coil_set_from_filaments.build_magnet_coils()
+    records = list(coil_set_from_filaments.iter_coil_solids())
+    assert {record.coil_id for record in records} == {0, 1}
+    assert [record.region_kind for record in records[:2]] == [
+        "outer_casing",
+        "inner_conductor",
+    ]
+    assert [record.mat_tag for record in records[:2]] == [
+        "casing",
+        "conductor",
+    ]
+    assert all(record.solid.isValid() for record in records)
+
+
+@pytest.mark.parametrize(
+    "geometry_file", ["magnet_geom", "magnet_geom_with_casing"]
+)
+def test_imported_step_magnet_iterator_exposes_in_memory_solids(
+    coil_set_from_geometry, geometry_file
+):
+    records = list(coil_set_from_geometry.iter_coil_solids())
+    assert records
+    assert all(record.solid.isValid() for record in records)
+    assert all(record.coil_id >= 0 for record in records)

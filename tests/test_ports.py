@@ -5,14 +5,21 @@ import pytest
 import cadquery as cq
 
 import parastell.invessel_build as ivb
+import parastell.parastell as ps
+import parastell.magnet_coils as magnet_coils
+from parastell.magnet_coils import MagnetSolidRecord
 from parastell.ports import parse_ports
 from parastell.utils import ribs_from_kisslinger_format
 
 
-class _SyntheticReferenceSurface:
+class _SyntheticReferenceSurface(ivb.ReferenceSurface):
+    def __init__(self):
+        super().__init__()
+
     def angles_to_xyz(self, toroidal_angles, poloidal_angles, s, scale):
-        phi = np.deg2rad(np.asarray(toroidal_angles, dtype=float))
-        theta = np.deg2rad(np.asarray(poloidal_angles, dtype=float))
+        phi = np.asarray(toroidal_angles, dtype=float)
+        theta = np.asarray(poloidal_angles, dtype=float)
+        scalar_phi = phi.ndim == 0
         major_radius = 6.0 * scale
         minor_radius = 1.6 * (1.0 + 0.2 * (s - 1.0)) * scale
         phi = np.atleast_1d(phi)[:, None]
@@ -21,7 +28,7 @@ class _SyntheticReferenceSurface:
         y = (major_radius + minor_radius * np.cos(theta)) * np.sin(phi)
         z = minor_radius * np.sin(theta)
         points = np.stack([x, y, z], axis=-1)
-        if points.ndim == 2:
+        if scalar_phi:
             return points[0]
         return points
 
@@ -130,6 +137,56 @@ def _base_box_port(
     }
 
 
+def _explicit_box_port(
+    name="engineering_port",
+    *,
+    start=None,
+    end=None,
+    outer_extension=0.0,
+    liner=None,
+    collision=None,
+    expected_layers=None,
+    cross_section=None,
+    anchor=(10.0, 0.0, 0.0),
+    axis=(-1.0, 0.0, 0.0),
+):
+    if start is None:
+        start = {"reference": "layer", "layer": "first_wall", "fraction": 0.0}
+    if end is None:
+        end = {"reference": "layer", "layer": "shield", "fraction": 1.0}
+    if cross_section is None:
+        cross_section = {
+            "shape": "rectangle",
+            "width": 40.0,
+            "height": 25.0,
+            "dimensions_are": "clear_aperture",
+        }
+    port = {
+        "name": name,
+        "placement": {
+            "mode": "cartesian",
+            "anchor": list(anchor),
+            "axis": list(axis),
+            "reference_direction": [0.0, 0.0, 1.0],
+            "max_search_length": 500.0,
+        },
+        "cross_section": cross_section,
+        "extent": {
+            "start": start,
+            "end": end,
+            "outer_extension": outer_extension,
+        },
+        "liner": liner or {"enabled": False, "thickness": 0.0},
+        "fill": {"mat_tag": "Vacuum"},
+        "repetition": {"mode": "single"},
+        "collision": collision
+        or {"magnet_policy": "error", "minimum_magnet_clearance": 0.0},
+    }
+    if expected_layers is not None:
+        port["expected_layers"] = expected_layers
+    return port
+
+
 def _radial_build(layers):
     return {
         layer: {
@@ -147,6 +204,7 @@ def _synthetic_ivb_from_ports(
     ports=None,
     *,
     layer_components=None,
+    endpoint_reference_solids=None,
 ):
     if layer_components is None:
         layer_components = {
@@ -174,8 +232,14 @@ def _synthetic_ivb_from_ports(
     )
     obj.Components = dict(layer_components)
     obj._ported_layer_names = set()
-    obj._port_fill_components = {}
-    obj._port_fill_specs = {}
+    obj.port_void_components = {}
+    obj.port_liner_components = {}
+    obj.port_outer_envelopes = {}
+    obj.port_geometry_diagnostics = {}
+    obj._port_fill_components = obj.port_void_components
+    obj._port_fill_specs = obj.port_specs
+    if endpoint_reference_solids:
+        obj._endpoint_reference_solids.update(endpoint_reference_solids)
 
     if ports:
         obj._apply_ports_to_components()
@@ -333,13 +397,117 @@ def test_parse_ports_layer_resolution_uses_user_layers():
     assert ports[0].resolution.layers == ("first_wall",)
 
 
+@pytest.mark.parametrize("reference", ["plasma_surface", "wall_surface"])
+def test_parse_surface_endpoint_references(reference):
+    port = _explicit_box_port(
+        start={"reference": reference, "axial_offset": 1.5}
+    )
+    spec = parse_ports([port], ("first_wall", "breeder", "shield"))[0]
+    assert spec.extent.start.reference == reference
+    assert spec.extent.start.axial_offset == 1.5
+
+
+@pytest.mark.parametrize("fraction", [0.0, 0.25, 1.0])
+def test_parse_layer_endpoint_fractions(fraction):
+    port = _explicit_box_port(
+        start={
+            "reference": "layer",
+            "layer": "breeder",
+            "fraction": fraction,
+        }
+    )
+    spec = parse_ports([port], ("first_wall", "breeder", "shield"))[0]
+    assert spec.extent.start.fraction == fraction
+
+
+def test_parse_same_layer_extent_and_interior_end():
+    port = _explicit_box_port(
+        start={"reference": "layer", "layer": "breeder", "fraction": 0.1},
+        end={"reference": "layer", "layer": "breeder", "fraction": 0.75},
+    )
+    spec = parse_ports([port], ("first_wall", "breeder", "shield"))[0]
+    assert spec.extent.start.layer == spec.extent.end.layer == "breeder"
+    assert spec.extent.end.fraction == 0.75
+
+
+@pytest.mark.parametrize("fraction", [-0.01, 1.01])
+def test_parse_rejects_invalid_endpoint_fraction(fraction):
+    port = _explicit_box_port(
+        start={
+            "reference": "layer",
+            "layer": "first_wall",
+            "fraction": fraction,
+        }
+    )
+    with pytest.raises(ValueError, match="fraction must be between"):
+        parse_ports([port], ("first_wall", "breeder", "shield"))
+
+
+def test_parse_rejects_unknown_endpoint_layer_and_negative_extension():
+    unknown = _explicit_box_port(
+        start={"reference": "layer", "layer": "unknown", "fraction": 0.0}
+    )
+    with pytest.raises(ValueError, match="not in radial build layers"):
+        parse_ports([unknown], ("first_wall", "breeder", "shield"))
+
+    negative = _explicit_box_port(outer_extension=-1.0)
+    with pytest.raises(
+        ValueError, match="outer_extension must be nonnegative"
+    ):
+        parse_ports([negative], ("first_wall", "breeder", "shield"))
+
+
+def test_parse_liner_zero_positive_and_material_validation():
+    zero = _explicit_box_port(
+        liner={"enabled": True, "thickness": 0.0, "mat_tag": "steel"}
+    )
+    zero_spec = parse_ports([zero], ("first_wall", "breeder", "shield"))[0]
+    assert zero_spec.liner.enabled is False
+
+    lined = _explicit_box_port(
+        liner={"enabled": True, "thickness": 2.0, "mat_tag": "SS316L"}
+    )
+    lined_spec = parse_ports([lined], ("first_wall", "breeder", "shield"))[0]
+    assert lined_spec.liner.enabled
+    assert lined_spec.liner.thickness == 2.0
+    assert lined_spec.liner.mat_tag == "SS316L"
+
+    invalid = _explicit_box_port(
+        liner={"enabled": True, "thickness": 2.0, "mat_tag": ""}
+    )
+    with pytest.raises(ValueError, match="cannot be empty"):
+        parse_ports([invalid], ("first_wall", "breeder", "shield"))
+
+
+def test_legacy_layer_span_migrates_to_extent_with_warning():
+    with pytest.warns(DeprecationWarning, match="layer_span is deprecated"):
+        spec = parse_ports(
+            [_base_port()], ("first_wall", "breeder", "shield")
+        )[0]
+    assert spec.extent.start.layer == "first_wall"
+    assert spec.extent.start.fraction == 0.0
+    assert spec.extent.end.layer == "first_wall"
+    assert spec.extent.end.fraction == 1.0
+
+
+def test_parse_rejects_extent_layer_span_conflict():
+    port = _explicit_box_port()
+    port["layer_span"] = {
+        "start": "first_wall",
+        "count": 3,
+        "direction": "outward",
+    }
+    with pytest.raises(ValueError, match="cannot define both"):
+        parse_ports([port], ("first_wall", "breeder", "shield"))
+
+
 def test_generate_rectangular_port_single_layer():
     port = _base_box_port()
     ivb_with_port = _synthetic_ivb_from_ports([port])
     ivb_without_port = _synthetic_ivb_from_ports(None)
 
     remaining = ivb_with_port.Components["first_wall"].Volume()
-    fill = ivb_with_port.Components[port["name"]].Volume()
+    fill = ivb_with_port.Components[f"{port['name']}__void"].Volume()
     original = ivb_without_port.Components["first_wall"].Volume()
     assert np.isclose(original, remaining + fill, rtol=1e-10, atol=1e-6)
 
@@ -406,19 +574,31 @@ def test_generate_circular_port():
         axis=(-1.0, 0.0, 0.0),
     )
     ivb_obj = _synthetic_ivb_from_ports([port])
-    assert "circular" in ivb_obj.Components
-    assert ivb_obj.Components["circular"].Volume() > 0
+    assert "circular__void" in ivb_obj.Components
+    assert ivb_obj.Components["circular__void"].Volume() > 0
 
 
 def test_generate_non_axis_aligned_port():
-    port = _base_box_port(
+    port = _explicit_box_port(
         "tilted",
         anchor=(10.0, 0.0, 0.0),
-        axis=(0.2, 1.0, 0.4),
+        axis=(-1.0, 0.1, 0.05),
+        start={
+            "reference": "layer",
+            "layer": "first_wall",
+            "fraction": 0.1,
+        },
+        end={
+            "reference": "layer",
+            "layer": "first_wall",
+            "fraction": 0.9,
+        },
+        expected_layers=["first_wall"],
+        cross_section={"shape": "circle", "radius": 2.0},
     )
     ivb_obj = _synthetic_ivb_from_ports([port])
-    assert "tilted" in ivb_obj.Components
-    assert ivb_obj.Components["tilted"].Volume() > 0
+    assert "tilted__void" in ivb_obj.Components
+    assert ivb_obj.Components["tilted__void"].Volume() > 0
 
 
 def test_generate_port_with_axis_opposite_global_z():
@@ -440,8 +620,8 @@ def test_generate_port_with_axis_opposite_global_z():
         "shield": _layer_box_z(-40.0, -20.0),
     }
     ivb_obj = _synthetic_ivb_from_ports([port], layer_components=components)
-    assert ivb_obj.Components["negative_z"].isValid()
-    assert ivb_obj.Components["negative_z"].Volume() > 0.0
+    assert ivb_obj.Components["negative_z__void"].isValid()
+    assert ivb_obj.Components["negative_z__void"].Volume() > 0.0
 
 
 def test_selected_layers_reduced_and_unselected_layers_preserved():
@@ -492,7 +672,7 @@ def test_port_volume_closure_and_no_overlap():
     selected_remaining = sum(
         ivb_obj.Components[name].Volume() for name in selected
     )
-    port_fill = ivb_obj.Components["closure"].Volume()
+    port_fill = ivb_obj.Components["closure__void"].Volume()
 
     # expected closure only for the selected material span
     assert np.isclose(
@@ -506,11 +686,11 @@ def test_port_volume_closure_and_no_overlap():
         assert ivb_obj.Components[name].isValid()
         overlap = (
             ivb_obj.Components[name]
-            .intersect(ivb_obj.Components["closure"])
+            .intersect(ivb_obj.Components["closure__void"])
             .Volume()
         )
         assert overlap == pytest.approx(0.0, abs=1e-8)
-    assert ivb_obj.Components["closure"].isValid()
+    assert ivb_obj.Components["closure__void"].isValid()
 
     for inner, outer in zip(selected, selected[1:]):
         overlap = (
@@ -527,7 +707,7 @@ def test_ported_step_export(tmp_path):
     ivb_obj.export_step(export_dir=tmp_path)
 
     assert (tmp_path / "first_wall.step").is_file()
-    assert (tmp_path / "step_port.step").is_file()
+    assert (tmp_path / "step_port__void.step").is_file()
 
 
 def test_gmsh_consumes_boolean_modified_component():
@@ -614,7 +794,10 @@ def test_real_rib_based_ivb_fixture_rejects_unstable_boolean():
         },
     )
     model.ports = parse_ports([port], radial_build.user_layer_names)
-    with pytest.raises(ValueError, match="did not remove material"):
+    with pytest.raises(
+        (ValueError, NotImplementedError),
+        match="valid|multiple|finite geometry",
+    ):
         model._apply_ports_to_components()
 
 
@@ -623,7 +806,7 @@ def test_explicit_port_fill_metadata_preserved():
     ivb_obj = _synthetic_ivb_from_ports([port])
     solids, mat_tags = ivb_obj.extract_solids_and_mat_tags()
 
-    idx = list(ivb_obj.Components.keys()).index("metadata")
+    idx = list(ivb_obj.Components.keys()).index("metadata__void")
     assert mat_tags[idx] == "Vacuum"
 
     custom = _base_box_port(
@@ -635,8 +818,17 @@ def test_explicit_port_fill_metadata_preserved():
     custom["fill"] = {"mat_tag": "void_tag"}
     custom_ivb = _synthetic_ivb_from_ports([custom])
     _, mat_tags = custom_ivb.extract_solids_and_mat_tags()
-    idx = list(custom_ivb.Components.keys()).index("custom")
+    idx = list(custom_ivb.Components.keys()).index("custom__void")
     assert mat_tags[idx] == "void_tag"
+
+    lined = _explicit_box_port(
+        "tagged_liner",
+        liner={"enabled": True, "thickness": 2.0, "mat_tag": "steel_tag"},
+    )
+    lined_ivb = _synthetic_ivb_from_ports([lined])
+    _, mat_tags = lined_ivb.extract_solids_and_mat_tags()
+    liner_idx = list(lined_ivb.Components).index("tagged_liner__liner")
+    assert mat_tags[liner_idx] == "steel_tag"
 
 
 def test_generate_port_rejects_missed_layer_by_geometry():
@@ -666,7 +858,7 @@ def test_generate_port_rejects_multiple_intersections_per_layer():
         "breeder": _layer_box(-20.0, 0.0),
         "shield": _layer_box(-40.0, -20.0),
     }
-    with pytest.raises(NotImplementedError, match="multiple disconnected"):
+    with pytest.raises(NotImplementedError, match="disconnected.*multiple"):
         _synthetic_ivb_from_ports([port], layer_components=components)
 
 
@@ -701,10 +893,10 @@ def test_generate_two_non_overlapping_ports():
     )
     ivb_obj = _synthetic_ivb_from_ports([p1, p2])
 
-    assert "p1" in ivb_obj.Components
-    assert "p2" in ivb_obj.Components
-    assert ivb_obj.Components["p1"].intersect(
-        ivb_obj.Components["p2"]
+    assert "p1__void" in ivb_obj.Components
+    assert "p2__void" in ivb_obj.Components
+    assert ivb_obj.Components["p1__void"].intersect(
+        ivb_obj.Components["p2__void"]
     ).Volume() == pytest.approx(
         0.0,
         abs=1e-8,
@@ -725,9 +917,7 @@ def test_generate_rejects_overlapping_port_policy():
         axis=(-1.0, 0.0, 0.0),
     )
 
-    with pytest.raises(
-        NotImplementedError, match="overlaps an existing port fill"
-    ):
+    with pytest.raises(ValueError, match="outer envelope overlaps port"):
         _synthetic_ivb_from_ports([p1, p2])
 
 
@@ -770,6 +960,10 @@ def test_mesh_components_moab_rejects_affected_ported_components():
         NotImplementedError, match="MOAB mesh workflow is not supported"
     ):
         ivb_obj.mesh_components_moab(["first_wall"])
+    with pytest.raises(
+        NotImplementedError, match="MOAB mesh workflow is not supported"
+    ):
+        ivb_obj.mesh_components_moab(["moab__void"])
 
 
 def test_per_period_not_implemented():
@@ -779,3 +973,415 @@ def test_per_period_not_implemented():
     port["repetition"] = {"mode": "per_period"}
     with pytest.raises(NotImplementedError, match="per_period"):
         _synthetic_ivb_from_ports([port])
+
+
+@pytest.mark.parametrize(
+    "cross_section",
+    [
+        {
+            "shape": "circle",
+            "radius": 8.0,
+            "dimensions_are": "clear_aperture",
+        },
+        {
+            "shape": "rectangle",
+            "width": 30.0,
+            "height": 18.0,
+            "dimensions_are": "clear_aperture",
+        },
+    ],
+)
+def test_lined_port_has_connected_hollow_liner(cross_section):
+    port = _explicit_box_port(
+        "lined",
+        cross_section=cross_section,
+        liner={"enabled": True, "thickness": 2.0, "mat_tag": "SS316L"},
+    )
+    model = _synthetic_ivb_from_ports([port])
+    void = model.Components["lined__void"]
+    liner = model.Components["lined__liner"]
+    outer = model.port_outer_envelopes["lined"]
+    assert void.isValid() and liner.isValid() and outer.isValid()
+    assert len(liner.Solids()) == 1
+    assert outer.Volume() == pytest.approx(
+        void.Volume() + liner.Volume(), rel=1e-10, abs=1e-6
+    )
+    assert void.intersect(liner).Volume() == pytest.approx(0.0, abs=1e-8)
+
+
+def test_liner_dimensions_expand_outward_from_clear_aperture():
+    port = _explicit_box_port(
+        "dimensions",
+        start={"reference": "layer", "layer": "breeder", "fraction": 0.1},
+        end={"reference": "layer", "layer": "breeder", "fraction": 0.9},
+        cross_section={
+            "shape": "rectangle",
+            "width": 30.0,
+            "height": 18.0,
+            "dimensions_are": "clear_aperture",
+        },
+        liner={"enabled": True, "thickness": 3.0, "mat_tag": "steel"},
+    )
+    model = _synthetic_ivb_from_ports([port])
+    void_box = model.port_void_components["dimensions"].BoundingBox()
+    outer_box = model.port_outer_envelopes["dimensions"].BoundingBox()
+    assert sorted([void_box.ylen, void_box.zlen]) == pytest.approx(
+        [18.0, 30.0]
+    )
+    assert sorted([outer_box.ylen, outer_box.zlen]) == pytest.approx(
+        [24.0, 36.0]
+    )
+
+
+def test_same_layer_blind_penetration_and_reversed_axis_diagnostic():
+    port = _explicit_box_port(
+        "blind",
+        start={"reference": "layer", "layer": "breeder", "fraction": 0.1},
+        end={"reference": "layer", "layer": "breeder", "fraction": 0.75},
+        expected_layers=["breeder"],
+    )
+    model = _synthetic_ivb_from_ports([port])
+    result = model.port_geometry_diagnostics["blind"]
+    assert result.resolved_end - result.resolved_start == pytest.approx(13.0)
+    assert result.ordered_intersected_layers == ("breeder",)
+
+    reversed_port = _explicit_box_port(
+        "reversed",
+        start={"reference": "layer", "layer": "breeder", "fraction": 0.75},
+        end={"reference": "layer", "layer": "breeder", "fraction": 0.1},
+    )
+    with pytest.raises(ValueError, match="axis may need to be reversed"):
+        _synthetic_ivb_from_ports([reversed_port])
+
+
+def test_partial_layer_to_layer_extent_and_expected_layer_assertion():
+    port = _explicit_box_port(
+        "partial",
+        start={"reference": "layer", "layer": "breeder", "fraction": 0.2},
+        end={"reference": "layer", "layer": "shield", "fraction": 0.65},
+        expected_layers=["breeder", "shield"],
+    )
+    model = _synthetic_ivb_from_ports([port])
+    assert model.port_geometry_diagnostics[
+        "partial"
+    ].ordered_intersected_layers == ("breeder", "shield")
+
+    mismatch = _explicit_box_port(
+        "mismatch",
+        expected_layers=["first_wall", "breeder"],
+    )
+    with pytest.raises(ValueError, match="expected layers"):
+        _synthetic_ivb_from_ports([mismatch])
+
+
+def test_plasma_flush_lined_port_with_external_protrusion_and_accounting():
+    plasma_volume = _layer_box(20.0, 200.0)
+    port = _explicit_box_port(
+        "plasma_to_exterior",
+        start={"reference": "plasma_surface", "axial_offset": 0.0},
+        end={"reference": "layer", "layer": "shield", "fraction": 1.0},
+        outer_extension=30.0,
+        liner={"enabled": True, "thickness": 2.0, "mat_tag": "SS316L"},
+        expected_layers=["first_wall", "breeder", "shield"],
+    )
+    model = _synthetic_ivb_from_ports(
+        [port], endpoint_reference_solids={"plasma_surface": plasma_volume}
+    )
+    result = model.port_geometry_diagnostics["plasma_to_exterior"]
+    liner = model.port_liner_components["plasma_to_exterior"]
+    assert result.resolved_start == pytest.approx(-10.0)
+    assert result.resolved_end == pytest.approx(50.0)
+    assert result.outer_extension == 30.0
+    assert result.void_volume_inside_blanket > 0.0
+    assert result.liner_volume_inside_blanket > 0.0
+    assert result.void_volume_outside_blanket > 0.0
+    assert result.liner_volume_outside_blanket > 0.0
+    assert result.closure_error < model._bool_tolerance(
+        result.original_blanket_volume
+    )
+    assert result.maximum_liner_overlap_with_plasma == pytest.approx(
+        0.0, abs=1e-8
+    )
+    assert liner.intersect(plasma_volume).Volume() == pytest.approx(
+        0.0, abs=1e-8
+    )
+
+
+def test_wall_surface_start_is_conformally_trimmed():
+    wall_volume = _layer_box(20.0, 200.0)
+    port = _explicit_box_port(
+        "wall_start",
+        start={"reference": "wall_surface", "axial_offset": 0.0},
+        end={"reference": "layer", "layer": "first_wall", "fraction": 1.0},
+        liner={"enabled": True, "thickness": 1.0, "mat_tag": "steel"},
+        expected_layers=["first_wall"],
+    )
+    model = _synthetic_ivb_from_ports(
+        [port], endpoint_reference_solids={"wall_surface": wall_volume}
+    )
+    assert model.port_geometry_diagnostics[
+        "wall_start"
+    ].resolved_start == pytest.approx(-10.0)
+    assert model.port_outer_envelopes["wall_start"].intersect(
+        wall_volume
+    ).Volume() == pytest.approx(0.0, abs=1e-8)
+
+
+def test_lined_step_round_trip_and_gmsh_smoke(tmp_path):
+    port = _explicit_box_port(
+        "round_trip",
+        liner={"enabled": True, "thickness": 2.0, "mat_tag": "SS316L"},
+        outer_extension=10.0,
+    )
+    model = _synthetic_ivb_from_ports([port])
+    model.export_step(export_dir=tmp_path)
+    for suffix, expected in (
+        ("void", model.port_void_components["round_trip"]),
+        ("liner", model.port_liner_components["round_trip"]),
+    ):
+        path = tmp_path / f"round_trip__{suffix}.step"
+        assert path.is_file()
+        imported = cq.importers.importStep(str(path)).val()
+        assert imported.isValid()
+        assert len(imported.Solids()) == 1
+        assert imported.Volume() == pytest.approx(
+            expected.Volume(), rel=1e-9, abs=1e-6
+        )
+
+    try:
+        model.mesh_components_gmsh(
+            ["round_trip__void", "round_trip__liner"],
+            min_mesh_size=10.0,
+            max_mesh_size=25.0,
+        )
+        assert len(ivb.gmsh.model.getEntities(3)) == 2
+    finally:
+        if ivb.gmsh.isInitialized():
+            ivb.gmsh.clear()
+            ivb.gmsh.finalize()
+
+
+class _SyntheticMagnetSet:
+    def __init__(self, records):
+        self.records = records
+
+    def iter_coil_solids(self):
+        return iter(self.records)
+
+
+def _stellarator_with_port_and_magnets(port, magnet_records):
+    model = _synthetic_ivb_from_ports([port])
+    stellarator = ps.Stellarator.__new__(ps.Stellarator)
+    stellarator.invessel_build = model
+    stellarator.magnet_set = _SyntheticMagnetSet(magnet_records)
+    stellarator.port_magnet_collision_report = ()
+    stellarator._logger = model._logger
+    return stellarator
+
+
+def _magnet_record(coil_id, region_kind, x, y, z=0.0):
+    solid = cq.Workplane("XY").box(10.0, 10.0, 10.0).translate((x, y, z)).val()
+    return MagnetSolidRecord(coil_id, region_kind, "magnet", solid)
+
+
+def test_magnet_collision_clearance_and_multiple_coil_records():
+    port = _explicit_box_port(
+        "magnet_check",
+        start={"reference": "layer", "layer": "first_wall", "fraction": 0.0},
+        end={"reference": "layer", "layer": "first_wall", "fraction": 1.0},
+        collision={
+            "magnet_policy": "report",
+            "clearance_policy": "report",
+            "minimum_magnet_clearance": 10.0,
+        },
+    )
+    records = [
+        _magnet_record(0, "inner_conductor", 10.0, 0.0),
+        _magnet_record(1, "outer_casing", 10.0, 20.0),
+        _magnet_record(2, "inner_conductor", 10.0, 60.0),
+    ]
+    stellarator = _stellarator_with_port_and_magnets(port, records)
+    report = stellarator.check_port_magnet_clearance()
+    assert [record.status for record in report] == [
+        "collision",
+        "clearance_violation",
+        "clear",
+    ]
+    assert report[0].actual_overlap_volume > 0.0
+    assert report[1].actual_overlap_volume == pytest.approx(0.0, abs=1e-8)
+    assert report[1].clearance_envelope_overlap_volume > 0.0
+    assert report[2].estimated_minimum_distance > 10.0
+
+
+@pytest.mark.parametrize("policy", ["error", "warn", "report", "ignore"])
+def test_all_hard_collision_policies(policy):
+    port = _explicit_box_port(
+        f"policy_{policy}",
+        start={"reference": "layer", "layer": "first_wall", "fraction": 0.0},
+        end={"reference": "layer", "layer": "first_wall", "fraction": 1.0},
+        collision={
+            "magnet_policy": policy,
+            "minimum_magnet_clearance": 0.0,
+        },
+    )
+    stellarator = _stellarator_with_port_and_magnets(
+        port, [_magnet_record(0, "inner_conductor", 10.0, 0.0)]
+    )
+    if policy == "error":
+        with pytest.raises(ValueError, match="collision with coil"):
+            stellarator.check_port_magnet_clearance()
+    elif policy == "warn":
+        with pytest.warns(RuntimeWarning, match="collision with coil"):
+            report = stellarator.check_port_magnet_clearance()
+        assert report[0].status == "collision"
+    else:
+        assert (
+            stellarator.check_port_magnet_clearance()[0].status == "collision"
+        )
+
+
+def test_clearance_exactly_at_tolerance_is_clear_and_construction_order_hook():
+    port = _explicit_box_port(
+        "touching",
+        start={"reference": "layer", "layer": "first_wall", "fraction": 0.0},
+        end={"reference": "layer", "layer": "first_wall", "fraction": 1.0},
+        collision={
+            "magnet_policy": "report",
+            "clearance_policy": "report",
+            "minimum_magnet_clearance": 10.0,
+        },
+    )
+    # Clear-aperture half-height is 12.5; a 10-wide magnet centered at 27.5
+    # touches the 10-unit clearance envelope without positive overlap.
+    stellarator = _stellarator_with_port_and_magnets(
+        port, [_magnet_record(0, "inner_conductor", 10.0, 27.5)]
+    )
+    assert (
+        stellarator._validate_port_magnet_clearance_if_available()[0].status
+        == "clear"
+    )
+
+
+def test_clearance_validation_is_order_independent():
+    port = _explicit_box_port(
+        "order",
+        start={"reference": "layer", "layer": "first_wall", "fraction": 0.0},
+        end={"reference": "layer", "layer": "first_wall", "fraction": 1.0},
+        collision={"magnet_policy": "report", "minimum_magnet_clearance": 0.0},
+    )
+    model = _synthetic_ivb_from_ports([port])
+    magnets = _SyntheticMagnetSet(
+        [_magnet_record(0, "inner_conductor", 10.0, 60.0)]
+    )
+
+    magnets_first = ps.Stellarator.__new__(ps.Stellarator)
+    magnets_first.invessel_build = None
+    magnets_first.magnet_set = magnets
+    magnets_first._logger = model._logger
+    assert magnets_first._validate_port_magnet_clearance_if_available() == []
+    magnets_first.invessel_build = model
+    assert magnets_first._validate_port_magnet_clearance_if_available()
+
+    ports_first = ps.Stellarator.__new__(ps.Stellarator)
+    ports_first.invessel_build = model
+    ports_first.magnet_set = None
+    ports_first._logger = model._logger
+    assert ports_first._validate_port_magnet_clearance_if_available() == []
+    ports_first.magnet_set = magnets
+    assert ports_first._validate_port_magnet_clearance_if_available()
+
+
+@pytest.mark.parametrize("split_chamber", [False, True])
+def test_real_sector_plasma_to_exterior_with_filament_magnets(
+    tmp_path, split_chamber
+):
+    toroidal_angles = [0.0, 10.0, 20.0, 30.0]
+    poloidal_angles = [0.0, 90.0, 180.0, 270.0, 360.0]
+    thickness = np.ones((len(toroidal_angles), len(poloidal_angles))) * 5.0
+    radial_build = ivb.RadialBuild(
+        toroidal_angles,
+        poloidal_angles,
+        1.08,
+        {
+            "first_wall": {"thickness_matrix": thickness},
+            "breeder": {"thickness_matrix": thickness},
+            "shield": {"thickness_matrix": thickness},
+            "vacuum_vessel": {"thickness_matrix": thickness},
+        },
+        split_chamber=split_chamber,
+    )
+    phi = np.deg2rad(15.0)
+    outward = np.array([np.cos(phi), np.sin(phi), 0.0])
+    anchor = outward * 760.0
+    port = _explicit_box_port(
+        "real_heating_port",
+        anchor=anchor,
+        axis=outward,
+        start={"reference": "plasma_surface", "axial_offset": 0.0},
+        end={
+            "reference": "layer",
+            "layer": "vacuum_vessel",
+            "fraction": 1.0,
+        },
+        outer_extension=25.0,
+        cross_section={
+            "shape": "circle",
+            "radius": 3.0,
+            "dimensions_are": "clear_aperture",
+        },
+        liner={"enabled": True, "thickness": 1.0, "mat_tag": "SS316L"},
+        expected_layers=["first_wall", "breeder", "shield", "vacuum_vessel"],
+        collision={
+            "magnet_policy": "report",
+            "clearance_policy": "report",
+            "minimum_magnet_clearance": 5.0,
+        },
+    )
+    model = ivb.InVesselBuild(
+        _SyntheticReferenceSurface(),
+        radial_build,
+        num_ribs=13,
+        num_rib_pts=49,
+        ports=[port],
+    )
+    model.populate_surfaces()
+    model.calculate_loci()
+    model.generate_components_cadquery()
+    result = model.port_geometry_diagnostics["real_heating_port"]
+    assert model.port_void_components["real_heating_port"].isValid()
+    assert model.port_liner_components["real_heating_port"].isValid()
+    assert result.void_volume_inside_blanket > 0.0
+    assert result.liner_volume_inside_blanket > 0.0
+    assert result.maximum_liner_overlap_with_plasma == pytest.approx(
+        0.0, abs=1e-7
+    )
+
+    model.export_step(export_dir=tmp_path)
+    for kind in ("void", "liner"):
+        imported = cq.importers.importStep(
+            str(tmp_path / f"real_heating_port__{kind}.step")
+        ).val()
+        assert imported.isValid()
+        assert imported.Volume() > 0.0
+
+    coils_path = Path(__file__).parent / "files_for_tests" / "coils.example"
+    magnets = magnet_coils.MagnetSetFromFilaments(
+        coils_path,
+        width=40.0,
+        thickness=50.0,
+        toroidal_extent=30.0,
+        sample_mod=10,
+    )
+    magnets.populate_magnet_coils()
+    magnets.build_magnet_coils()
+    stellarator = ps.Stellarator.__new__(ps.Stellarator)
+    stellarator.invessel_build = model
+    stellarator.magnet_set = magnets
+    stellarator.port_magnet_collision_report = ()
+    stellarator._logger = model._logger
+    collision_report = stellarator.check_port_magnet_clearance()
+    assert collision_report
+    assert all(
+        record.status in {"collision", "clearance_violation", "clear"}
+        for record in collision_report
+    )

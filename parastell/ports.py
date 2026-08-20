@@ -1,135 +1,114 @@
-"""Layer-bounded port configuration for in-vessel model construction.
+"""Engineering port configuration and geometry result records.
 
-The immutable objects in this module preserve the user contract and resolved
-user-layer span consumed by the CadQuery boolean implementation in
-``parastell.invessel_build``.
+A port is defined by an oriented axis and a clear two-dimensional aperture.
+Endpoint references bound that aperture physically; optional lining expands
+outward from the clear opening. The legacy ``layer_span`` form is accepted as
+a deprecated shorthand and converted to :class:`PortExtent` during parsing.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
+import warnings
 
 import numpy as np
 
 
 class PortGeometryNotImplementedError(NotImplementedError):
-    """Raised when port geometry requests reach the generation stage."""
+    """Compatibility exception retained for downstream imports."""
 
 
-def _validate_mapping(
-    value: Any,
-    path: str,
-) -> Mapping[str, Any]:
+def _validate_mapping(value: Any, path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        e = TypeError(f"{path} must be a mapping")
-        raise e
+        raise TypeError(f"{path} must be a mapping")
     return value
 
 
 def _validate_sequence(value: Any, path: str) -> Sequence[Any]:
-    if not isinstance(value, Sequence):
-        e = TypeError(f"{path} must be a sequence")
-        raise e
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise TypeError(f"{path} must be a sequence")
     return value
 
 
 def _validate_string(value: Any, path: str) -> str:
     if not isinstance(value, str):
-        e = TypeError(f"{path} must be a string")
-        raise e
+        raise TypeError(f"{path} must be a string")
     if not value.strip():
-        e = ValueError(f"{path} cannot be empty")
-        raise e
+        raise ValueError(f"{path} cannot be empty")
     return value
 
 
 def _validate_positive_int(value: Any, path: str) -> int:
     if not isinstance(value, int):
-        e = TypeError(f"{path} must be an integer")
-        raise e
+        raise TypeError(f"{path} must be an integer")
     if value < 1:
-        e = ValueError(f"{path} must be positive")
-        raise e
+        raise ValueError(f"{path} must be positive")
     return value
 
 
 def _validate_finite_scalar(value: Any, path: str) -> float:
     number = float(value)
     if not np.isfinite(number):
-        e = ValueError(f"{path} must be finite")
-        raise e
+        raise ValueError(f"{path} must be finite")
     return number
 
 
 def _to_vector3(value: Any, path: str) -> np.ndarray:
-    if not isinstance(value, Sequence):
-        e = TypeError(f"{path} must be a three-element sequence")
-        raise e
-    vector = np.asarray(list(value), dtype=float)
+    vector = np.asarray(list(_validate_sequence(value, path)), dtype=float)
     if vector.shape != (3,):
-        e = ValueError(f"{path} must be a three-element vector")
-        raise e
+        raise ValueError(f"{path} must be a three-element vector")
     if np.any(~np.isfinite(vector)):
-        e = ValueError(f"{path} values must be finite")
-        raise e
+        raise ValueError(f"{path} values must be finite")
     return vector
 
 
 def _normalize_vector(vector: np.ndarray, path: str) -> np.ndarray:
     norm = np.linalg.norm(vector)
     if norm == 0:
-        e = ValueError(f"{path} cannot be a zero vector")
-        raise e
+        raise ValueError(f"{path} cannot be a zero vector")
     return vector / norm
 
 
 def _ensure_no_unexpected_keys(
-    mapping: Mapping[str, Any],
-    path: str,
-    allowed: set[str],
+    mapping: Mapping[str, Any], path: str, allowed: set[str]
 ) -> None:
-    unknown = set(mapping.keys()) - allowed
+    unknown = set(mapping) - allowed
     if unknown:
         names = ", ".join(sorted(unknown))
-        e = ValueError(f"{path} contains unknown keys: {names}")
-        raise e
+        raise ValueError(f"{path} contains unknown keys: {names}")
 
 
 def _resolve_layer_indices(
-    layer_names: Sequence[str],
-    start: str,
-    count: int,
-    direction: str,
+    layer_names: Sequence[str], start: str, count: int, direction: str
 ) -> list[str]:
     if start not in layer_names:
         names = ", ".join(layer_names)
-        e = ValueError(
+        raise ValueError(
             f"layer_span.start ({start!r}) is not in radial build layers {names}"
         )
-        raise e
-
     start_index = layer_names.index(start)
     step = 1 if direction == "outward" else -1
     stop_index = start_index + step * (count - 1)
-
     if stop_index < 0 or stop_index >= len(layer_names):
-        e = ValueError(
+        raise ValueError(
             "layer_span extends beyond available radial layers; clipping is not allowed"
         )
-        raise e
-
-    if step == 1:
-        index_range = range(start_index, stop_index + 1)
-    else:
-        index_range = range(start_index, stop_index - 1, -1)
-
-    return [layer_names[index] for index in index_range]
+    indices = (
+        range(start_index, stop_index + 1)
+        if step == 1
+        else range(start_index, stop_index - 1, -1)
+    )
+    return [layer_names[index] for index in indices]
 
 
 @dataclass(frozen=True)
 class PortPlacement:
-    """Placement metadata for a port anchor and search orientation."""
+    """Cartesian anchor and right-handed local frame.
+
+    Positive distance along ``axis`` is from the plasma/inner side toward the
+    blanket exterior. ``reference_direction`` controls aperture rotation.
+    """
 
     anchor: tuple[float, float, float]
     axis: tuple[float, float, float]
@@ -143,132 +122,246 @@ class PortPlacement:
     def __post_init__(self) -> None:
         mode = _validate_string(self.mode, "placement.mode").lower()
         if mode != "cartesian":
-            e = ValueError("placement.mode must be 'cartesian'")
-            raise e
+            raise ValueError("placement.mode must be 'cartesian'")
         anchor = _to_vector3(self.anchor, "placement.anchor")
-        axis = _to_vector3(self.axis, "placement.axis")
-        reference = _to_vector3(
-            self.reference_direction,
+        axis = _normalize_vector(
+            _to_vector3(self.axis, "placement.axis"), "placement.axis"
+        )
+        reference = _normalize_vector(
+            _to_vector3(
+                self.reference_direction, "placement.reference_direction"
+            ),
             "placement.reference_direction",
         )
-
-        local_axis = _normalize_vector(axis, "placement.axis")
-        reference = _normalize_vector(
-            reference, "placement.reference_direction"
-        )
-
-        if np.allclose(reference, local_axis) or np.allclose(
-            reference, -local_axis
-        ):
-            e = ValueError(
-                "placement.reference_direction must not be parallel to placement.axis"
-            )
-            raise e
-
-        local_reference = (
-            reference - np.dot(reference, local_axis) * local_axis
-        )
+        local_reference = reference - np.dot(reference, axis) * axis
         if np.linalg.norm(local_reference) < 1e-12:
-            e = ValueError(
+            raise ValueError(
                 "placement.reference_direction must not be parallel to placement.axis"
             )
-            raise e
         local_reference = _normalize_vector(local_reference, "frame reference")
-
-        local_normal = np.cross(local_axis, local_reference)
-        local_normal = _normalize_vector(local_normal, "frame normal")
-
-        max_search_length = float(
+        local_normal = _normalize_vector(
+            np.cross(axis, local_reference), "frame normal"
+        )
+        max_search_length = (
             max(1000.0, 2.0 * float(np.linalg.norm(anchor)))
             if self.max_search_length is None
             else _validate_finite_scalar(
-                self.max_search_length,
-                "placement.max_search_length",
+                self.max_search_length, "placement.max_search_length"
             )
         )
         if max_search_length <= 0.0:
-            e = ValueError("placement.max_search_length must be positive")
-            raise e
-
+            raise ValueError("placement.max_search_length must be positive")
         object.__setattr__(self, "anchor", tuple(anchor))
+        object.__setattr__(self, "axis", tuple(axis))
+        object.__setattr__(self, "reference_direction", tuple(reference))
         object.__setattr__(self, "mode", mode)
-        object.__setattr__(self, "axis", tuple(local_axis))
-        object.__setattr__(
-            self,
-            "reference_direction",
-            tuple(reference),
-        )
-        object.__setattr__(self, "max_search_length", max_search_length)
-        object.__setattr__(self, "local_axis", tuple(local_axis))
+        object.__setattr__(self, "max_search_length", float(max_search_length))
+        object.__setattr__(self, "local_axis", tuple(axis))
         object.__setattr__(self, "local_reference", tuple(local_reference))
         object.__setattr__(self, "local_normal", tuple(local_normal))
 
 
 @dataclass(frozen=True)
 class PortCrossSection:
-    """Cross-section definition for a port cutout."""
+    """Clear internal aperture dimensions."""
 
     shape: str
     radius: float | None = None
     width: float | None = None
     height: float | None = None
+    dimensions_are: str = "clear_aperture"
 
     def __post_init__(self) -> None:
         shape = _validate_string(self.shape, "cross_section.shape").lower()
+        dimensions_are = _validate_string(
+            self.dimensions_are, "cross_section.dimensions_are"
+        ).lower()
+        if dimensions_are != "clear_aperture":
+            raise ValueError(
+                "cross_section.dimensions_are must be 'clear_aperture'"
+            )
         if shape not in {"circle", "rectangle"}:
-            e = ValueError(
+            raise ValueError(
                 "cross_section.shape must be one of {'circle', 'rectangle'}"
             )
-            raise e
-
         if shape == "circle":
             if self.width is not None or self.height is not None:
-                e = ValueError("circle cross_section must define only radius")
-                raise e
+                raise ValueError(
+                    "circle cross_section must define only radius"
+                )
             if self.radius is None:
-                e = ValueError("circle cross_section requires a radius")
-                raise e
+                raise ValueError("circle cross_section requires a radius")
             radius = _validate_finite_scalar(
                 self.radius, "cross_section.radius"
             )
             if radius <= 0.0:
-                e = ValueError("cross_section.radius must be positive")
-                raise e
+                raise ValueError("cross_section.radius must be positive")
             object.__setattr__(self, "radius", radius)
             object.__setattr__(self, "width", None)
             object.__setattr__(self, "height", None)
         else:
             if self.radius is not None:
-                e = ValueError(
+                raise ValueError(
                     "rectangle cross_section must not define radius"
                 )
-                raise e
             if self.width is None or self.height is None:
-                e = ValueError(
+                raise ValueError(
                     "rectangle cross_section must define both width and height"
                 )
-                raise e
             width = _validate_finite_scalar(self.width, "cross_section.width")
             height = _validate_finite_scalar(
                 self.height, "cross_section.height"
             )
-            if width <= 0.0:
-                e = ValueError("cross_section.width must be positive")
-                raise e
-            if height <= 0.0:
-                e = ValueError("cross_section.height must be positive")
-                raise e
-            object.__setattr__(self, "shape", shape)
+            if width <= 0.0 or height <= 0.0:
+                raise ValueError(
+                    "cross_section width and height must be positive"
+                )
+            object.__setattr__(self, "radius", None)
             object.__setattr__(self, "width", width)
             object.__setattr__(self, "height", height)
-            object.__setattr__(self, "radius", None)
-
         object.__setattr__(self, "shape", shape)
+        object.__setattr__(self, "dimensions_are", dimensions_are)
+
+
+@dataclass(frozen=True)
+class PortEndpoint:
+    """Physical endpoint with an optional signed outward axial offset."""
+
+    reference: str
+    layer: str | None = None
+    fraction: float | None = None
+    axial_offset: float = 0.0
+
+    def __post_init__(self) -> None:
+        reference = _validate_string(
+            self.reference, "endpoint.reference"
+        ).lower()
+        if reference not in {"plasma_surface", "wall_surface", "layer"}:
+            raise ValueError(
+                "endpoint.reference must be one of "
+                "{'plasma_surface', 'wall_surface', 'layer'}"
+            )
+        if reference == "layer":
+            if self.layer is None:
+                raise ValueError("layer endpoint requires endpoint.layer")
+            layer = _validate_string(self.layer, "endpoint.layer")
+            if self.fraction is None:
+                raise ValueError("layer endpoint requires endpoint.fraction")
+            fraction = _validate_finite_scalar(
+                self.fraction, "endpoint.fraction"
+            )
+            if not 0.0 <= fraction <= 1.0:
+                raise ValueError("endpoint.fraction must be between 0 and 1")
+        else:
+            if self.layer is not None or self.fraction is not None:
+                raise ValueError(
+                    f"{reference} endpoint must not define layer or fraction"
+                )
+            layer = None
+            fraction = None
+        object.__setattr__(self, "reference", reference)
+        object.__setattr__(self, "layer", layer)
+        object.__setattr__(self, "fraction", fraction)
+        object.__setattr__(
+            self,
+            "axial_offset",
+            _validate_finite_scalar(
+                self.axial_offset, "endpoint.axial_offset"
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class PortExtent:
+    start: PortEndpoint
+    end: PortEndpoint
+    outer_extension: float = 0.0
+
+    def __post_init__(self) -> None:
+        extension = _validate_finite_scalar(
+            self.outer_extension, "extent.outer_extension"
+        )
+        if extension < 0.0:
+            raise ValueError("extent.outer_extension must be nonnegative")
+        object.__setattr__(self, "outer_extension", extension)
+
+
+@dataclass(frozen=True)
+class PortLiner:
+    enabled: bool = False
+    thickness: float = 0.0
+    mat_tag: str = "SS316L"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError("liner.enabled must be a boolean")
+        thickness = _validate_finite_scalar(self.thickness, "liner.thickness")
+        if thickness < 0.0:
+            raise ValueError("liner.thickness must be nonnegative")
+        mat_tag = _validate_string(self.mat_tag, "liner.mat_tag")
+        object.__setattr__(self, "thickness", thickness)
+        object.__setattr__(self, "mat_tag", mat_tag)
+        object.__setattr__(self, "enabled", self.enabled and thickness > 0.0)
+
+
+@dataclass(frozen=True)
+class PortFill:
+    mat_tag: str = "Vacuum"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "mat_tag", _validate_string(self.mat_tag, "fill.mat_tag")
+        )
+
+
+@dataclass(frozen=True)
+class PortRepetition:
+    mode: str = "single"
+
+    def __post_init__(self) -> None:
+        mode = _validate_string(self.mode, "repetition.mode").lower()
+        if mode not in {"single", "per_period"}:
+            raise ValueError(
+                "repetition.mode currently supports only 'single' and 'per_period'"
+            )
+        object.__setattr__(self, "mode", mode)
+
+
+@dataclass(frozen=True)
+class PortCollisionPolicy:
+    magnet_policy: str = "error"
+    clearance_policy: str = "warn"
+    minimum_magnet_clearance: float = 0.0
+
+    def __post_init__(self) -> None:
+        policies = {"error", "warn", "report", "ignore"}
+        magnet_policy = _validate_string(
+            self.magnet_policy, "collision.magnet_policy"
+        ).lower()
+        clearance_policy = _validate_string(
+            self.clearance_policy, "collision.clearance_policy"
+        ).lower()
+        if magnet_policy not in policies or clearance_policy not in policies:
+            raise ValueError(
+                "collision policies must be one of "
+                "{'error', 'warn', 'report', 'ignore'}"
+            )
+        clearance = _validate_finite_scalar(
+            self.minimum_magnet_clearance,
+            "collision.minimum_magnet_clearance",
+        )
+        if clearance < 0.0:
+            raise ValueError(
+                "collision.minimum_magnet_clearance must be nonnegative"
+            )
+        object.__setattr__(self, "magnet_policy", magnet_policy)
+        object.__setattr__(self, "clearance_policy", clearance_policy)
+        object.__setattr__(self, "minimum_magnet_clearance", clearance)
 
 
 @dataclass(frozen=True)
 class PortLayerSpan:
-    """Named radial layer span that will be traversed for a port."""
+    """Deprecated contiguous-layer shorthand."""
 
     start: str
     count: int
@@ -283,19 +376,18 @@ class PortLayerSpan:
             "count",
             _validate_positive_int(self.count, "layer_span.count"),
         )
-        direction = _validate_string(self.direction, "layer_span.direction")
-        direction = direction.lower()
+        direction = _validate_string(
+            self.direction, "layer_span.direction"
+        ).lower()
         if direction not in {"inward", "outward"}:
-            e = ValueError(
+            raise ValueError(
                 "layer_span.direction must be one of {'inward', 'outward'}"
             )
-            raise e
         object.__setattr__(self, "direction", direction)
 
     def resolve(self, layer_names: Sequence[str]) -> "PortResolution":
-        names = list(layer_names)
         layers = _resolve_layer_indices(
-            names, self.start, self.count, self.direction
+            list(layer_names), self.start, self.count, self.direction
         )
         return PortResolution(
             layers=tuple(layers),
@@ -306,106 +398,115 @@ class PortLayerSpan:
 
 
 @dataclass(frozen=True)
-class PortFill:
-    """Material assignment for port volumes."""
-
-    mat_tag: str = "Vacuum"
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "mat_tag", _validate_string(self.mat_tag, "mat_tag")
-        )
-
-
-@dataclass(frozen=True)
-class PortRepetition:
-    """Repetition metadata for multiple ports."""
-
-    mode: str = "single"
-
-    def __post_init__(self) -> None:
-        mode = _validate_string(self.mode, "repetition.mode").lower()
-        if mode not in {"single", "per_period"}:
-            e = ValueError(
-                "repetition.mode currently supports only 'single' and "
-                "'per_period'"
-            )
-            raise e
-        object.__setattr__(self, "mode", mode)
-
-
-@dataclass(frozen=True)
 class PortResolution:
-    """Resolved layer span for a parsed :class:`PortLayerSpan`."""
-
     layers: tuple[str, ...]
     start: str
     count: int
     direction: str
 
-    def __post_init__(self) -> None:
-        if not self.layers:
-            e = ValueError("port resolution must include at least one layer")
-            raise e
-        object.__setattr__(
-            self, "start", _validate_string(self.start, "start")
-        )
-        object.__setattr__(
-            self,
-            "count",
-            _validate_positive_int(self.count, "port resolution count"),
-        )
-        direction = _validate_string(self.direction, "direction").lower()
-        if direction not in {"inward", "outward"}:
-            e = ValueError(
-                "port resolution direction must be one of {'inward', 'outward'}"
-            )
-            raise e
-        object.__setattr__(self, "direction", direction)
-        object.__setattr__(self, "layers", tuple(self.layers))
+
+@dataclass(frozen=True)
+class PortGeometryResult:
+    name: str
+    resolved_start: float
+    resolved_end: float
+    outer_extension: float
+    ordered_intersected_layers: tuple[str, ...]
+    original_blanket_volume: float
+    remaining_blanket_volume: float
+    void_volume_inside_blanket: float
+    liner_volume_inside_blanket: float
+    void_volume_outside_blanket: float
+    liner_volume_outside_blanket: float
+    total_cut_volume: float
+    closure_error: float
+    maximum_liner_overlap_with_plasma: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class PortCollisionRecord:
+    port_name: str
+    coil_id: int | str
+    magnet_region_kind: str
+    actual_overlap_volume: float
+    clearance_envelope_overlap_volume: float
+    required_clearance: float
+    estimated_minimum_distance: float | None
+    status: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
 class PortSpec:
-    """Top-level port contract for one single port."""
-
     name: str
     placement: PortPlacement
     cross_section: PortCrossSection
-    layer_span: PortLayerSpan
+    extent: PortExtent
+    liner: PortLiner
     fill: PortFill
     repetition: PortRepetition
-    resolution: PortResolution
+    collision: PortCollisionPolicy
+    expected_layers: tuple[str, ...] | None = None
+    layer_span: PortLayerSpan | None = None
+    resolution: PortResolution | None = None
+
+
+def _parse_endpoint(
+    value: Any, path: str, layer_names: Sequence[str]
+) -> PortEndpoint:
+    data = _validate_mapping(value, path)
+    _ensure_no_unexpected_keys(
+        data, path, {"reference", "layer", "fraction", "axial_offset"}
+    )
+    endpoint = PortEndpoint(
+        reference=data["reference"],
+        layer=data.get("layer"),
+        fraction=data.get("fraction"),
+        axial_offset=data.get("axial_offset", 0.0),
+    )
+    if endpoint.reference == "layer" and endpoint.layer not in layer_names:
+        names = ", ".join(layer_names)
+        raise ValueError(
+            f"endpoint.layer ({endpoint.layer!r}) is not in radial build layers {names}"
+        )
+    return endpoint
 
 
 def parse_port_spec(
-    name: str,
-    value: Mapping[str, Any],
-    user_layer_names: Sequence[str],
+    name: str, value: Mapping[str, Any], user_layer_names: Sequence[str]
 ) -> PortSpec:
-    port_data = _validate_mapping(value, f"port[{name!r}]")
-
+    data = _validate_mapping(value, f"port[{name!r}]")
     _ensure_no_unexpected_keys(
-        port_data,
+        data,
         f"port[{name!r}]",
         {
             "name",
             "placement",
             "cross_section",
+            "extent",
             "layer_span",
+            "liner",
             "fill",
             "repetition",
+            "collision",
+            "expected_layers",
         },
     )
+    if "extent" in data and "layer_span" in data:
+        raise ValueError("a port cannot define both extent and layer_span")
+    if "extent" not in data and "layer_span" not in data:
+        raise ValueError("a port requires extent or deprecated layer_span")
 
-    if "name" in port_data:
-        port_name = _validate_string(port_data["name"], f"port[{name!r}].name")
-    else:
-        port_name = _validate_string(name, f"port[{name!r}].name")
-
+    port_name = _validate_string(
+        data.get("name", name), f"port[{name!r}].name"
+    )
     placement_data = _validate_mapping(
-        port_data.get("placement", {}),
-        f"port[{name!r}].placement",
+        data.get("placement", {}), f"port[{name!r}].placement"
     )
     _ensure_no_unexpected_keys(
         placement_data,
@@ -417,106 +518,168 @@ def parse_port_spec(
         anchor=placement_data["anchor"],
         axis=placement_data["axis"],
         reference_direction=placement_data["reference_direction"],
-        max_search_length=placement_data.get(
-            "max_search_length",
-            None,
-        ),
+        max_search_length=placement_data.get("max_search_length"),
     )
 
-    if "cross_section" not in port_data:
-        e = ValueError(f"port[{name!r}].cross_section is required")
-        raise e
-
-    cross_section_data = _validate_mapping(
-        port_data["cross_section"],
-        f"port[{name!r}].cross_section",
+    if "cross_section" not in data:
+        raise ValueError(f"port[{name!r}].cross_section is required")
+    cross_data = _validate_mapping(
+        data["cross_section"], f"port[{name!r}].cross_section"
     )
     _ensure_no_unexpected_keys(
-        cross_section_data,
+        cross_data,
         f"port[{name!r}].cross_section",
-        {"shape", "radius", "width", "height"},
+        {"shape", "radius", "width", "height", "dimensions_are"},
     )
     cross_section = PortCrossSection(
-        shape=cross_section_data["shape"],
-        radius=cross_section_data.get("radius"),
-        width=cross_section_data.get("width"),
-        height=cross_section_data.get("height"),
+        shape=cross_data["shape"],
+        radius=cross_data.get("radius"),
+        width=cross_data.get("width"),
+        height=cross_data.get("height"),
+        dimensions_are=cross_data.get("dimensions_are", "clear_aperture"),
     )
 
-    layer_span_data = _validate_mapping(
-        port_data["layer_span"],
-        f"port[{name!r}].layer_span",
+    layer_span = None
+    resolution = None
+    if "layer_span" in data:
+        span_data = _validate_mapping(
+            data["layer_span"], f"port[{name!r}].layer_span"
+        )
+        _ensure_no_unexpected_keys(
+            span_data,
+            f"port[{name!r}].layer_span",
+            {"start", "count", "direction"},
+        )
+        layer_span = PortLayerSpan(
+            start=span_data["start"],
+            count=span_data["count"],
+            direction=span_data["direction"],
+        )
+        resolution = layer_span.resolve(user_layer_names)
+        extent = PortExtent(
+            start=PortEndpoint(
+                reference="layer", layer=resolution.layers[0], fraction=0.0
+            ),
+            end=PortEndpoint(
+                reference="layer", layer=resolution.layers[-1], fraction=1.0
+            ),
+        )
+        warnings.warn(
+            "port.layer_span is deprecated; use explicit port.extent endpoints",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    else:
+        extent_data = _validate_mapping(
+            data["extent"], f"port[{name!r}].extent"
+        )
+        _ensure_no_unexpected_keys(
+            extent_data,
+            f"port[{name!r}].extent",
+            {"start", "end", "outer_extension"},
+        )
+        extent = PortExtent(
+            start=_parse_endpoint(
+                extent_data["start"],
+                f"port[{name!r}].extent.start",
+                user_layer_names,
+            ),
+            end=_parse_endpoint(
+                extent_data["end"],
+                f"port[{name!r}].extent.end",
+                user_layer_names,
+            ),
+            outer_extension=extent_data.get("outer_extension", 0.0),
+        )
+
+    liner_data = _validate_mapping(
+        data.get("liner", {}), f"port[{name!r}].liner"
     )
     _ensure_no_unexpected_keys(
-        layer_span_data,
-        f"port[{name!r}].layer_span",
-        {"start", "count", "direction"},
+        liner_data,
+        f"port[{name!r}].liner",
+        {"enabled", "thickness", "mat_tag"},
     )
-    layer_span = PortLayerSpan(
-        start=layer_span_data["start"],
-        count=layer_span_data["count"],
-        direction=layer_span_data["direction"],
+    liner = PortLiner(
+        enabled=liner_data.get("enabled", False),
+        thickness=liner_data.get("thickness", 0.0),
+        mat_tag=liner_data.get("mat_tag", "SS316L"),
     )
 
-    fill_data = _validate_mapping(
-        port_data.get("fill", {}),
-        f"port[{name!r}].fill",
-    )
-    _ensure_no_unexpected_keys(
-        fill_data,
-        f"port[{name!r}].fill",
-        {"mat_tag"},
-    )
+    fill_data = _validate_mapping(data.get("fill", {}), f"port[{name!r}].fill")
+    _ensure_no_unexpected_keys(fill_data, f"port[{name!r}].fill", {"mat_tag"})
     fill = PortFill(mat_tag=fill_data.get("mat_tag", "Vacuum"))
 
     repetition_data = _validate_mapping(
-        port_data.get("repetition", {}),
-        f"port[{name!r}].repetition",
+        data.get("repetition", {}), f"port[{name!r}].repetition"
     )
     _ensure_no_unexpected_keys(
-        repetition_data,
-        f"port[{name!r}].repetition",
-        {"mode"},
+        repetition_data, f"port[{name!r}].repetition", {"mode"}
     )
     repetition = PortRepetition(mode=repetition_data.get("mode", "single"))
 
-    layer_resolution = layer_span.resolve(user_layer_names)
+    collision_data = _validate_mapping(
+        data.get("collision", {}), f"port[{name!r}].collision"
+    )
+    _ensure_no_unexpected_keys(
+        collision_data,
+        f"port[{name!r}].collision",
+        {"magnet_policy", "clearance_policy", "minimum_magnet_clearance"},
+    )
+    collision = PortCollisionPolicy(
+        magnet_policy=collision_data.get("magnet_policy", "error"),
+        clearance_policy=collision_data.get("clearance_policy", "warn"),
+        minimum_magnet_clearance=collision_data.get(
+            "minimum_magnet_clearance", 0.0
+        ),
+    )
+
+    expected_layers = None
+    if "expected_layers" in data:
+        expected_layers = tuple(
+            _validate_string(item, "expected_layers item")
+            for item in _validate_sequence(
+                data["expected_layers"], "expected_layers"
+            )
+        )
+        unknown = set(expected_layers) - set(user_layer_names)
+        if unknown:
+            raise ValueError(
+                f"expected_layers contains unknown layers: {sorted(unknown)}"
+            )
+        if len(set(expected_layers)) != len(expected_layers):
+            raise ValueError("expected_layers must not contain duplicates")
 
     return PortSpec(
         name=port_name,
         placement=placement,
         cross_section=cross_section,
-        layer_span=layer_span,
+        extent=extent,
+        liner=liner,
         fill=fill,
         repetition=repetition,
-        resolution=layer_resolution,
+        collision=collision,
+        expected_layers=expected_layers,
+        layer_span=layer_span,
+        resolution=resolution,
     )
 
 
 def parse_ports(
-    value: Any,
-    user_layer_names: Sequence[str],
+    value: Any, user_layer_names: Sequence[str]
 ) -> tuple[PortSpec, ...]:
-    """Parse and validate ``invessel_build["ports"]`` from input data."""
+    """Parse and validate ``invessel_build["ports"]``."""
     if value is None:
         return ()
-
     ports = _validate_sequence(value, "ports")
-    if len(ports) == 0:
-        return ()
-
-    parsed_ports: list[PortSpec] = []
+    parsed: list[PortSpec] = []
     names: set[str] = set()
-    for idx, port_data in enumerate(ports):
+    for index, port_data in enumerate(ports):
         if not isinstance(port_data, Mapping):
-            e = TypeError(f"ports[{idx}] must be a mapping")
-            raise e
-        port_name = f"ports[{idx}]"
-        port = parse_port_spec(port_name, port_data, user_layer_names)
+            raise TypeError(f"ports[{index}] must be a mapping")
+        port = parse_port_spec(f"ports[{index}]", port_data, user_layer_names)
         if port.name in names:
-            e = ValueError(f"duplicate port name {port.name!r}")
-            raise e
+            raise ValueError(f"duplicate port name {port.name!r}")
         names.add(port.name)
-        parsed_ports.append(port)
-
-    return tuple(parsed_ports)
+        parsed.append(port)
+    return tuple(parsed)
