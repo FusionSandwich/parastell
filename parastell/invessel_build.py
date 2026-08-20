@@ -32,7 +32,7 @@ from .utils import (
     create_vol_mesh_from_surf_mesh,
     m2cm,
 )
-from .ports import parse_ports, PortGeometryNotImplementedError
+from .ports import parse_ports
 from .pystell import read_vmec
 
 
@@ -575,28 +575,6 @@ class InVesselBuild(object):
         if self.ports:
             self._apply_ports_to_components()
 
-    def _vector_cross(self, v1, v2):
-        return np.cross(np.array(v1, dtype=float), np.array(v2, dtype=float))
-
-    def _rotate_vector(self, vector, axis, angle_rad):
-        axis = np.array(axis, dtype=float)
-        axis = axis / np.linalg.norm(axis)
-        vector = np.array(vector, dtype=float)
-
-        cos_theta = np.cos(angle_rad)
-        sin_theta = np.sin(angle_rad)
-        return (
-            vector * cos_theta
-            + np.cross(axis, vector) * sin_theta
-            + axis * np.dot(axis, vector) * (1.0 - cos_theta)
-        )
-
-    def _project_to_plane(self, vector, normal):
-        vector = np.array(vector, dtype=float)
-        normal = np.array(normal, dtype=float)
-        normal = normal / np.linalg.norm(normal)
-        return vector - np.dot(vector, normal) * normal
-
     def _shape_solids(self, shape):
         if shape is None:
             return []
@@ -627,7 +605,8 @@ class InVesselBuild(object):
 
     @staticmethod
     def _bool_tolerance(reference_volume: float) -> float:
-        return max(1e-10, 1e-10 * max(1.0, abs(reference_volume)))
+        """Scale-aware volume tolerance for OpenCascade boolean checks."""
+        return max(1e-7, 1e-9 * max(1.0, abs(reference_volume)))
 
     def _as_solid(self, shape):
         solids = self._shape_solids(shape)
@@ -650,89 +629,100 @@ class InVesselBuild(object):
             fused = shape if fused is None else fused.fuse(shape)
         return fused
 
-    def _as_solid(self, shape):
-        solids = self._shape_solids(shape)
-        if len(solids) == 0:
-            return None
-        if len(solids) == 1:
-            return solids[0]
-        e = NotImplementedError(
-            "Port intersections that are disconnected into multiple "
-            "components are not supported."
-        )
-        self._logger.error(e.args[0])
-        raise e
+    def _require_valid_solid(self, solid, description):
+        if solid is None or not solid.isValid():
+            e = ValueError(f"{description} is not a valid OpenCascade solid.")
+            self._logger.error(e.args[0])
+            raise e
+
+    def _repair_and_require_valid_solid(self, solid, description):
+        if solid is not None and solid.isValid():
+            return solid
+
+        repaired = solid
+        for operation in ("clean", "fix", "clean_fix"):
+            try:
+                if operation == "clean":
+                    candidate = solid.clean()
+                elif operation == "fix":
+                    candidate = solid.fix()
+                else:
+                    candidate = solid.clean().fix()
+            except Exception:
+                continue
+            if candidate is not None and candidate.isValid():
+                repaired = candidate
+                break
+
+        self._require_valid_solid(repaired, description)
+        return repaired
+
+    def _assert_volume_closure(
+        self,
+        original_volume,
+        remaining_volume,
+        removed_volume,
+        description,
+    ):
+        error = abs(original_volume - remaining_volume - removed_volume)
+        tolerance = self._bool_tolerance(original_volume)
+        if error > tolerance:
+            e = ValueError(
+                f"{description} violates volume closure: error {error} "
+                f"exceeds tolerance {tolerance}."
+            )
+            self._logger.error(e.args[0])
+            raise e
 
     def _build_port_search_cutter(self, port):
         length = float(port.placement.max_search_length)
+        axis = np.array(port.placement.local_axis, dtype=float)
+        reference = np.array(port.placement.local_reference, dtype=float)
+        origin = (
+            np.array(port.placement.anchor, dtype=float) - axis * length / 2.0
+        )
+        plane = cq.Plane(
+            origin=tuple(origin),
+            xDir=tuple(reference),
+            normal=tuple(axis),
+        )
+
         if port.cross_section.shape == "circle":
-            local_cutter = (
-                cq.Workplane("XY")
+            search_cutter = (
+                cq.Workplane(plane)
                 .circle(port.cross_section.radius)
                 .extrude(length)
-                .translate((0.0, 0.0, -length / 2.0))
             )
         else:
-            local_cutter = (
-                cq.Workplane("XY")
+            search_cutter = (
+                cq.Workplane(plane)
                 .rect(port.cross_section.width, port.cross_section.height)
                 .extrude(length)
-                .translate((0.0, 0.0, -length / 2.0))
             )
-
-        target_axis = np.array(port.placement.axis, dtype=float)
-        if np.linalg.norm(target_axis) == 0.0:
-            e = ValueError("Port axis vector cannot be zero length.")
-            self._logger.error(e.args[0])
-            raise e
-        target_axis = target_axis / np.linalg.norm(target_axis)
-
-        local_reference = np.array(port.placement.local_reference, dtype=float)
-        local_reference = local_reference / np.linalg.norm(local_reference)
-
-        base_axis = np.array([0.0, 0.0, 1.0])
-        axis_cross = self._vector_cross(base_axis, target_axis)
-        axis_cross_norm = np.linalg.norm(axis_cross)
-
-        if axis_cross_norm > 0.0:
-            first_rotation_angle = np.degrees(
-                np.arctan2(axis_cross_norm, np.dot(base_axis, target_axis))
-            )
-            first_rotation_axis = axis_cross / axis_cross_norm
-            search_cutter = local_cutter.rotate(
-                (0.0, 0.0, 0.0),
-                tuple(first_rotation_axis),
-                first_rotation_angle,
-            )
-            base_reference = self._rotate_vector(
-                np.array([1.0, 0.0, 0.0]),
-                first_rotation_axis,
-                np.radians(first_rotation_angle),
-            )
-        else:
-            search_cutter = local_cutter
-            base_reference = np.array([1.0, 0.0, 0.0])
-
-        aligned_reference = self._project_to_plane(base_reference, target_axis)
-        aligned_reference_norm = np.linalg.norm(aligned_reference)
-
-        if aligned_reference_norm > 0.0:
-            aligned_reference = aligned_reference / aligned_reference_norm
-            twist_cos = np.dot(aligned_reference, local_reference)
-            twist_sin = np.dot(
-                np.cross(aligned_reference, local_reference), target_axis
-            )
-            twist_angle = np.degrees(np.arctan2(twist_sin, twist_cos))
-            if abs(twist_angle) > 1e-12:
-                search_cutter = search_cutter.rotate(
-                    (0.0, 0.0, 0.0),
-                    tuple(target_axis),
-                    twist_angle,
-                )
-
-        return search_cutter.translate(tuple(port.placement.anchor)).val()
+        cutter = search_cutter.val()
+        self._require_valid_solid(
+            cutter, f"Search cutter for port {port.name!r}"
+        )
+        return cutter
 
     def _apply_ports_to_components(self):
+        user_layers = [
+            name
+            for name in self.radial_build.user_layer_names
+            if name in self.Components
+        ]
+        baseline_volumes = {
+            name: self._shape_volume(self.Components[name])
+            for name in user_layers
+        }
+        baseline_adjacent_overlaps = {
+            (inner, outer): self._shape_volume(
+                self.Components[inner].intersect(self.Components[outer])
+            )
+            for inner, outer in zip(user_layers, user_layers[1:])
+        }
+        all_target_layers = set()
+
         for port in self.ports:
             if port.name in self.Components:
                 e = ValueError(
@@ -752,6 +742,30 @@ class InVesselBuild(object):
             search_cutter = self._build_port_search_cutter(port)
             fill_fragments = []
             target_layers = tuple(port.resolution.layers)
+            all_target_layers.update(target_layers)
+            staged_components = {}
+            original_selected_volume = 0.0
+            remaining_selected_volume = 0.0
+
+            for (
+                existing_fill_name,
+                existing_spec,
+            ) in self._port_fill_specs.items():
+                if not set(target_layers).intersection(
+                    existing_spec.resolution.layers
+                ):
+                    continue
+                existing_fill = self._port_fill_components[existing_fill_name]
+                overlap = self._shape_volume(
+                    existing_fill.intersect(search_cutter)
+                )
+                if overlap > self._bool_tolerance(existing_fill.Volume()):
+                    e = NotImplementedError(
+                        f"Port {port.name!r} overlaps an existing port fill "
+                        "volume. Overlapping ports are not supported yet."
+                    )
+                    self._logger.error(e.args[0])
+                    raise e
 
             for layer_name in target_layers:
                 if layer_name not in self.Components:
@@ -771,7 +785,6 @@ class InVesselBuild(object):
                     )
                     self._logger.error(e.args[0])
                     raise e
-
                 component_to_cut = (
                     component_solids[0]
                     if len(component_solids) == 1
@@ -785,32 +798,23 @@ class InVesselBuild(object):
                     self._logger.error(e.args[0])
                     raise e
 
-                original_vol = self._shape_volume(component_to_cut)
-                if original_vol <= 0.0:
-                    w = Warning(
-                        f"Skipping zero-volume layer {layer_name!r} for port "
-                        f"{port.name!r}."
-                    )
-                    self._logger.warning(w.args[0])
-                    continue
+                component_to_cut = self._repair_and_require_valid_solid(
+                    component_to_cut,
+                    f"Selected source component {layer_name!r}",
+                )
+                component_solids = self._shape_solids(component_to_cut)
 
-                for existing_fill_name in self._port_fill_specs:
-                    existing_spec = self._port_fill_specs[existing_fill_name]
-                    if layer_name not in existing_spec.resolution.layers:
-                        continue
-                    existing_fill = self._port_fill_components[
-                        existing_fill_name
-                    ]
-                    overlap = self._shape_volume(
-                        existing_fill.intersect(search_cutter)
+                original_vol = self._shape_volume(component_to_cut)
+                if layer_name not in self._ported_layer_names:
+                    baseline_volumes[layer_name] = original_vol
+                if original_vol <= 0.0:
+                    e = ValueError(
+                        f"Port {port.name!r} requested zero-volume layer "
+                        f"{layer_name!r}; every requested layer must have "
+                        "positive volume."
                     )
-                    if overlap > self._bool_tolerance(existing_fill.Volume()):
-                        e = NotImplementedError(
-                            f"Port {port.name!r} overlaps an existing port fill "
-                            "volume. Overlapping ports are not supported yet."
-                        )
-                        self._logger.error(e.args[0])
-                        raise e
+                    self._logger.error(e.args[0])
+                    raise e
 
                 intersections = []
                 for component_solid in component_solids:
@@ -843,6 +847,11 @@ class InVesselBuild(object):
                     )
                     self._logger.error(e.args[0])
                     raise e
+                intersection = self._repair_and_require_valid_solid(
+                    intersection,
+                    f"Removed fragment for port {port.name!r}, layer "
+                    f"{layer_name!r}",
+                )
 
                 intersection_vol = self._shape_volume(intersection)
                 if intersection_vol <= self._bool_tolerance(original_vol):
@@ -853,7 +862,7 @@ class InVesselBuild(object):
                     self._logger.error(e.args[0])
                     raise e
 
-                remaining = self._as_solid(component_to_cut.cut(intersection))
+                remaining = self._as_solid(component_to_cut.cut(search_cutter))
                 if remaining is None:
                     e = ValueError(
                         f"Port {port.name!r} removes all volume from layer "
@@ -861,6 +870,11 @@ class InVesselBuild(object):
                     )
                     self._logger.error(e.args[0])
                     raise e
+                remaining = self._repair_and_require_valid_solid(
+                    remaining,
+                    f"Remaining component for port {port.name!r}, layer "
+                    f"{layer_name!r}",
+                )
 
                 remaining_vol = self._shape_volume(remaining)
                 if remaining_vol >= original_vol - self._bool_tolerance(
@@ -868,10 +882,19 @@ class InVesselBuild(object):
                 ):
                     e = ValueError(
                         f"Port {port.name!r} did not remove material from "
-                        f"layer {layer_name!r}."
+                        f"layer {layer_name!r}: original volume {original_vol}, "
+                        f"remaining volume {remaining_vol}, intersection "
+                        f"volume {intersection_vol}."
                     )
                     self._logger.error(e.args[0])
                     raise e
+
+                self._assert_volume_closure(
+                    original_vol,
+                    remaining_vol,
+                    intersection_vol,
+                    f"Port {port.name!r}, layer {layer_name!r}",
+                )
 
                 if self._shape_volume(
                     remaining.intersect(intersection)
@@ -883,9 +906,10 @@ class InVesselBuild(object):
                     self._logger.error(e.args[0])
                     raise e
 
-                self.Components[layer_name] = remaining
-                self._ported_layer_names.add(layer_name)
+                staged_components[layer_name] = remaining
                 fill_fragments.append(intersection)
+                original_selected_volume += original_vol
+                remaining_selected_volume += remaining_vol
 
             if len(fill_fragments) == 0:
                 e = ValueError(
@@ -894,13 +918,23 @@ class InVesselBuild(object):
                 self._logger.error(e.args[0])
                 raise e
 
-            fill_solid = self._fuse_shapes(fill_fragments)
+            fill_solid = self._as_solid(self._fuse_shapes(fill_fragments))
             if fill_solid is None:
                 e = ValueError(
                     f"Port {port.name!r} produced no finite fill volume."
                 )
                 self._logger.error(e.args[0])
                 raise e
+            fill_solid = self._repair_and_require_valid_solid(
+                fill_solid, f"Fill volume for port {port.name!r}"
+            )
+            fill_volume = self._shape_volume(fill_solid)
+            self._assert_volume_closure(
+                original_selected_volume,
+                remaining_selected_volume,
+                fill_volume,
+                f"Selected span for port {port.name!r}",
+            )
 
             # Reject overlaps between this port and previously generated port cuts
             # before accepting geometry changes.
@@ -919,11 +953,13 @@ class InVesselBuild(object):
             # Validate that the final fused fill volume does not overlap
             # modified material in the same span.
             for layer_name in target_layers:
-                if layer_name in self.Components:
+                if layer_name in staged_components:
                     overlap = self._shape_volume(
-                        self.Components[layer_name].intersect(fill_solid)
+                        staged_components[layer_name].intersect(fill_solid)
                     )
-                    if overlap > 1e-12:
+                    if overlap > self._bool_tolerance(
+                        baseline_volumes[layer_name]
+                    ):
                         e = ValueError(
                             f"Port {port.name!r} fill volume overlaps remaining "
                             f"material in layer {layer_name!r}."
@@ -931,9 +967,79 @@ class InVesselBuild(object):
                         self._logger.error(e.args[0])
                         raise e
 
+            self.Components.update(staged_components)
+            self._ported_layer_names.update(target_layers)
             self.Components[port.name] = fill_solid
             self._port_fill_components[port.name] = fill_solid
             self._port_fill_specs[port.name] = port
+
+        for layer_name in user_layers:
+            final_volume = self._shape_volume(self.Components[layer_name])
+            original_volume = baseline_volumes[layer_name]
+            tolerance = self._bool_tolerance(original_volume)
+            if layer_name in all_target_layers:
+                if final_volume >= original_volume - tolerance:
+                    e = ValueError(
+                        f"Ported layer {layer_name!r} did not lose positive "
+                        "volume."
+                    )
+                    self._logger.error(e.args[0])
+                    raise e
+            elif abs(final_volume - original_volume) > tolerance:
+                e = ValueError(
+                    f"Unselected layer {layer_name!r} changed volume by "
+                    f"{abs(final_volume - original_volume)}, exceeding "
+                    f"tolerance {tolerance}."
+                )
+                self._logger.error(e.args[0])
+                raise e
+
+        original_selected_volume = sum(
+            baseline_volumes[name] for name in all_target_layers
+        )
+        remaining_selected_volume = sum(
+            self._shape_volume(self.Components[name])
+            for name in all_target_layers
+        )
+        total_fill_volume = sum(
+            self._shape_volume(fill)
+            for fill in self._port_fill_components.values()
+        )
+        self._assert_volume_closure(
+            original_selected_volume,
+            remaining_selected_volume,
+            total_fill_volume,
+            "All ported user-layer spans",
+        )
+
+        for pair, baseline_overlap in baseline_adjacent_overlaps.items():
+            inner, outer = pair
+            final_overlap = self._shape_volume(
+                self.Components[inner].intersect(self.Components[outer])
+            )
+            tolerance = self._bool_tolerance(
+                max(baseline_volumes[inner], baseline_volumes[outer])
+            )
+            if final_overlap > baseline_overlap + tolerance:
+                e = ValueError(
+                    f"Port booleans introduced overlap between adjacent "
+                    f"layers {inner!r} and {outer!r}."
+                )
+                self._logger.error(e.args[0])
+                raise e
+
+        outputs_requiring_validation = all_target_layers.union(
+            self._port_fill_components
+        )
+        for name in outputs_requiring_validation:
+            component = self.Components[name]
+            solids = self._shape_solids(component)
+            if not solids:
+                e = ValueError(f"Final component {name!r} contains no solids.")
+                self._logger.error(e.args[0])
+                raise e
+            for solid in solids:
+                self._require_valid_solid(solid, f"Final component {name!r}")
 
     def _connect_ribs_with_tris_moab(self, rib1, rib2, reverse=False):
         """Creat MBTRI elements add add them to a surface between two ribs.

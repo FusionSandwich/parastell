@@ -1,8 +1,8 @@
-"""Port-aware extensions for in-vessel model construction.
+"""Layer-bounded port configuration for in-vessel model construction.
 
-This module focuses on parsing and validating the prompt-1 port input contract.
-Geometry generation for ports is deferred to a future prompt and is therefore
-not implemented yet.
+The immutable objects in this module preserve the user contract and resolved
+user-layer span consumed by the CadQuery boolean implementation in
+``parastell.invessel_build``.
 """
 
 from __future__ import annotations
@@ -165,7 +165,14 @@ class PortPlacement:
             )
             raise e
 
-        local_reference = np.cross(local_axis, reference)
+        local_reference = (
+            reference - np.dot(reference, local_axis) * local_axis
+        )
+        if np.linalg.norm(local_reference) < 1e-12:
+            e = ValueError(
+                "placement.reference_direction must not be parallel to placement.axis"
+            )
+            raise e
         local_reference = _normalize_vector(local_reference, "frame reference")
 
         local_normal = np.cross(local_axis, local_reference)
@@ -179,6 +186,9 @@ class PortPlacement:
                 "placement.max_search_length",
             )
         )
+        if max_search_length <= 0.0:
+            e = ValueError("placement.max_search_length must be positive")
+            raise e
 
         object.__setattr__(self, "anchor", tuple(anchor))
         object.__setattr__(self, "mode", mode)

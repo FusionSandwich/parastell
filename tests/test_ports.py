@@ -1,9 +1,12 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 import cadquery as cq
 
 import parastell.invessel_build as ivb
 from parastell.ports import parse_ports
+from parastell.utils import ribs_from_kisslinger_format
 
 
 class _SyntheticReferenceSurface:
@@ -39,6 +42,16 @@ def _layer_box(
         .translate(((x_min + x_max) / 2.0 + x_offset, y_offset, z_offset))
     )
     return body.val()
+
+
+def _layer_box_z(z_min, z_max, x_span=200.0, y_span=200.0):
+    depth = z_max - z_min
+    return (
+        cq.Workplane("XY")
+        .box(x_span, y_span, depth)
+        .translate((0.0, 0.0, (z_min + z_max) / 2.0))
+        .val()
+    )
 
 
 def _disconnected_layer_pair():
@@ -84,6 +97,8 @@ def _base_box_port(
     *,
     anchor=(10.0, 0.0, 0.0),
     axis=(-1.0, 0.0, 0.0),
+    reference_direction=(0.0, 0.0, 1.0),
+    max_search_length=500.0,
     layer_span=None,
     cross_section=None,
 ):
@@ -105,8 +120,8 @@ def _base_box_port(
             "mode": "cartesian",
             "anchor": list(anchor),
             "axis": list(axis),
-            "reference_direction": [0.0, 0.0, 1.0],
-            "max_search_length": 500.0,
+            "reference_direction": list(reference_direction),
+            "max_search_length": max_search_length,
         },
         "cross_section": cross_section,
         "layer_span": layer_span,
@@ -220,6 +235,21 @@ def test_parse_port_reference_frame_geometry():
     assert np.isclose(np.dot(axis, normal), 0.0)
     assert np.isclose(np.dot(reference, normal), 0.0)
     assert np.allclose(np.cross(reference, normal), axis)
+
+    nonorthogonal = _base_port("projected")
+    nonorthogonal["placement"]["reference_direction"] = [1.0, 1.0, 0.0]
+    nonorthogonal["placement"]["axis"] = [1.0, 0.0, 0.0]
+    projected = parse_ports(
+        [nonorthogonal], ("first_wall", "breeder", "shield")
+    )[0]
+    assert np.allclose(projected.placement.local_reference, [0.0, 1.0, 0.0])
+
+
+def test_parse_port_rejects_nonpositive_search_length():
+    port = _base_port("bad_length")
+    port["placement"]["max_search_length"] = 0.0
+    with pytest.raises(ValueError, match="max_search_length must be positive"):
+        parse_ports([port], ("first_wall", "breeder", "shield"))
 
 
 def test_parse_port_layer_span():
@@ -391,6 +421,29 @@ def test_generate_non_axis_aligned_port():
     assert ivb_obj.Components["tilted"].Volume() > 0
 
 
+def test_generate_port_with_axis_opposite_global_z():
+    port = _base_box_port(
+        "negative_z",
+        anchor=(0.0, 0.0, 10.0),
+        axis=(0.0, 0.0, -1.0),
+        reference_direction=(1.0, 0.0, 0.0),
+        max_search_length=100.0,
+        layer_span={
+            "start": "first_wall",
+            "count": 3,
+            "direction": "outward",
+        },
+    )
+    components = {
+        "first_wall": _layer_box_z(0.0, 20.0),
+        "breeder": _layer_box_z(-20.0, 0.0),
+        "shield": _layer_box_z(-40.0, -20.0),
+    }
+    ivb_obj = _synthetic_ivb_from_ports([port], layer_components=components)
+    assert ivb_obj.Components["negative_z"].isValid()
+    assert ivb_obj.Components["negative_z"].Volume() > 0.0
+
+
 def test_selected_layers_reduced_and_unselected_layers_preserved():
     port = _base_box_port(
         "selector",
@@ -450,12 +503,119 @@ def test_port_volume_closure_and_no_overlap():
     )
 
     for name in selected:
+        assert ivb_obj.Components[name].isValid()
         overlap = (
             ivb_obj.Components[name]
             .intersect(ivb_obj.Components["closure"])
             .Volume()
         )
         assert overlap == pytest.approx(0.0, abs=1e-8)
+    assert ivb_obj.Components["closure"].isValid()
+
+    for inner, outer in zip(selected, selected[1:]):
+        overlap = (
+            ivb_obj.Components[inner]
+            .intersect(ivb_obj.Components[outer])
+            .Volume()
+        )
+        assert overlap == pytest.approx(0.0, abs=1e-8)
+
+
+def test_ported_step_export(tmp_path):
+    port = _base_box_port("step_port")
+    ivb_obj = _synthetic_ivb_from_ports([port])
+    ivb_obj.export_step(export_dir=tmp_path)
+
+    assert (tmp_path / "first_wall.step").is_file()
+    assert (tmp_path / "step_port.step").is_file()
+
+
+def test_gmsh_consumes_boolean_modified_component():
+    port = _base_box_port("gmsh_port")
+    ivb_obj = _synthetic_ivb_from_ports([port])
+
+    try:
+        ivb_obj.mesh_components_gmsh(
+            ["first_wall"], min_mesh_size=20.0, max_mesh_size=40.0
+        )
+        assert ivb.gmsh.model.getEntities(3)
+    finally:
+        if ivb.gmsh.isInitialized():
+            ivb.gmsh.clear()
+            ivb.gmsh.finalize()
+
+
+def test_real_rib_based_ivb_fixture_rejects_unstable_boolean():
+    toroidal_angles = [0.0, 5.0, 10.0, 15.0]
+    poloidal_angles = [0.0, 120.0, 240.0, 360.0]
+    thickness = np.ones((len(toroidal_angles), len(poloidal_angles)))
+    radial_build = ivb.RadialBuild(
+        toroidal_angles,
+        poloidal_angles,
+        1.08,
+        {
+            "component_1": {"thickness_matrix": thickness * 10.0},
+            "component_2": {"thickness_matrix": thickness * 10.0},
+            "component_3": {"thickness_matrix": thickness * 10.0},
+        },
+    )
+    ribs_path = (
+        Path(__file__).parent
+        / "files_for_tests"
+        / "kisslinger_file_example.txt"
+    )
+    (
+        custom_toroidal_angles,
+        _,
+        num_poloidal_angles,
+        _,
+        custom_surface_rz_ribs,
+    ) = ribs_from_kisslinger_format(
+        ribs_path, delimiter=" ", scale=1.0, format=False
+    )
+    reference_surface = ivb.RibBasedSurface(
+        custom_surface_rz_ribs,
+        custom_toroidal_angles,
+        np.linspace(0.0, 360.0, num_poloidal_angles),
+    )
+    model = ivb.InVesselBuild(
+        reference_surface,
+        radial_build,
+        num_ribs=11,
+        num_rib_pts=61,
+    )
+    model.populate_surfaces()
+    model.calculate_loci()
+    model.generate_components_cadquery()
+
+    surface_loci = model.Surfaces["component_2"].get_loci()
+    toroidal_index = len(surface_loci) // 2
+    poloidal_index = len(surface_loci[toroidal_index]) // 4
+    anchor = np.asarray(surface_loci[toroidal_index][poloidal_index])
+    toroidal_tangent = np.asarray(
+        surface_loci[toroidal_index + 1][poloidal_index]
+    ) - np.asarray(surface_loci[toroidal_index - 1][poloidal_index])
+    poloidal_tangent = np.asarray(
+        surface_loci[toroidal_index][poloidal_index + 1]
+    ) - np.asarray(surface_loci[toroidal_index][poloidal_index - 1])
+    axis = np.cross(toroidal_tangent, poloidal_tangent)
+    reference_direction = np.array([anchor[0], anchor[1], 0.0])
+    port = _base_box_port(
+        "rib_fixture_port",
+        anchor=anchor,
+        axis=axis,
+        reference_direction=reference_direction,
+        max_search_length=100.0,
+        cross_section={"shape": "circle", "radius": 5.0},
+        layer_span={
+            "start": "component_2",
+            "count": 1,
+            "direction": "outward",
+        },
+    )
+    model.ports = parse_ports([port], radial_build.user_layer_names)
+    with pytest.raises(ValueError, match="did not remove material"):
+        model._apply_ports_to_components()
 
 
 def test_explicit_port_fill_metadata_preserved():
