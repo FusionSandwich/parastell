@@ -1,0 +1,23 @@
+vmec_file: wout_vmec.nc
+invessel_build:
+  toroidal_angles: [0.0, 11.25, 22.5, 33.75, 45.0, 56.25, 67.5, 78.75, 90.0]
+  poloidal_angles: [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0, 360.0]
+  wall_s: 1.08
+  num_ribs: 13
+  num_rib_pts: 49
+  radial_build:
+    first_wall: {thickness_matrix: &fw [[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5],[5,5,5,5,5,5,5,5,5]]}
+    breeder: {thickness_matrix: [[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75],[75,75,75,75,75,75,75,75,75]]}
+    back_wall: {thickness_matrix: *fw}
+    shield: {thickness_matrix: [[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50],[50,50,50,50,50,50,50,50,50]]}
+    vacuum_vessel: {thickness_matrix: [[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10],[10,10,10,10,10,10,10,10,10]], mat_tag: vacuum_vessel}
+port:
+  name: equatorial_diagnostic
+  placement: {mode: surface, toroidal_deg: 0.0, poloidal_deg: 0.0, direction: outward_normal}
+  cross_section: {shape: rectangle, width: 40.0, height: 25.0}
+  layer_span: {start: first_wall, count: 3, direction: outward}
+  fill: {mat_tag: Vacuum}
+variants:
+  one_layer_rectangle: {layer_span: {start: first_wall, count: 1, direction: outward}}
+  three_layer_rectangle: {layer_span: {start: first_wall, count: 3, direction: outward}}
+  two_layer_circle: {layer_span: {start: breeder, count: 2, direction: outward}, cross_section: {shape: circle, radius: 15.0}}

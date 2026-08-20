@@ -69,6 +69,7 @@ Repository = "https://github.com/svalinn/parastell.git"
 
 [project.scripts]
 "parastell" = "parastell.parastell:parastell"
+"parastell-render-ports" = "parastell.port_visualization:main"
 "parastell-magnet-handoff" = "parastell.magnet_handoff_cli:main"
 "parastell-magnet-handoff-validate" = "parastell.magnet_handoff_validation:main"
 "parastell-comsol-fusion-magnets" = "parastell.comsol_fusion_magnets:main"

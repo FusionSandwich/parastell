@@ -1,0 +1,264 @@
+{
+  "config": "/work/examples/equatorial_diagnostic_port.yaml",
+  "config_sha256": "bf327dab87a6a9fbb966949fa115cef093b6f8a245c292057f8ebdbd2ba45a72",
+  "geometry_basis": "actual CadQuery solids produced by RadialBuild and InVesselBuild",
+  "images": [
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          461.908,
+          455.44677562738343,
+          0.003114908321748544
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 513.2311111111111
+      },
+      "components": [
+        "chamber",
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "shield",
+        "vacuum_vessel"
+      ],
+      "name": "01_unported_isometric",
+      "path": "01_unported_isometric.png",
+      "section": false,
+      "sha256": "c224027ab65264db307c9882410fd6b3c9af9874478e19c98bc8498aaf17d384"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          461.908,
+          449.19680888341503,
+          0.003114908321748544
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 513.2311111111111
+      },
+      "components": [
+        "chamber",
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "shield",
+        "vacuum_vessel",
+        "equatorial_diagnostic__void"
+      ],
+      "name": "02_ported_isometric",
+      "path": "02_ported_isometric.png",
+      "section": false,
+      "sha256": "da1e3d8c75267352c9a5af9037dc2ad95f8e3789275704c6931569ed60cfb28e"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          343.8380067203998,
+          735.5579060775192,
+          0.0010258926962194437
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 382.0422296893331
+      },
+      "components": [
+        "chamber",
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "shield",
+        "vacuum_vessel",
+        "equatorial_diagnostic__void"
+      ],
+      "name": "03_ported_section",
+      "path": "03_ported_section.png",
+      "section": true,
+      "sha256": "ba7c5c715889cb9bc2621af9635e2a14ce5c724d745787d400b08b6a6b7c9537"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          820.3160046122705,
+          0.005511352025435734,
+          0.004330124361281662
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 45.55972377531873
+      },
+      "components": [
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "equatorial_diagnostic__void"
+      ],
+      "name": "04_aperture_closeup",
+      "path": "04_aperture_closeup.png",
+      "section": false,
+      "sha256": "d4171c52fe380ec2c0102253cbc9b48cfbe4c9b3b828bf60b3a8d58e960ee856"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          305.670209749813,
+          707.3174932592194,
+          0.007181295903166074
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 122.2680838999252
+      },
+      "components": [
+        "first_wall",
+        "breeder",
+        "back_wall"
+      ],
+      "name": "05_selected_layer_cuts",
+      "path": "05_selected_layer_cuts.png",
+      "section": true,
+      "sha256": "10fa5620cdcfbde09821447f29acc331cd543fb2cb3a872f7537825f32baa726"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          820.3160046122705,
+          0.005511352025435734,
+          0.004330124361281662
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 45.55972377531873
+      },
+      "components": [
+        "equatorial_diagnostic__void"
+      ],
+      "name": "06_vacuum_fill",
+      "path": "06_vacuum_fill.png",
+      "section": false,
+      "sha256": "f08121021ad17d71374c4a46eb99cbf30722946c797578380ecabad21f68d0a3"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          820.3160046122705,
+          0.005511352025435734,
+          0.004330124361281662
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 45.55972377531873
+      },
+      "components": [
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "equatorial_diagnostic__void"
+      ],
+      "name": "07_volume_closure",
+      "path": "07_volume_closure.png",
+      "section": true,
+      "sha256": "b821448972718e4ce9751396d2dd4c34026000caebbe9440eac16b28b1cb9b8d"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          780.3160002002046,
+          0.0001992054993440462,
+          0.0001565105225775909
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 22.222338227432267
+      },
+      "components": [
+        "first_wall",
+        "equatorial_diagnostic__void"
+      ],
+      "name": "08_one_layer_variant",
+      "path": "08_one_layer_variant.png",
+      "section": true,
+      "sha256": "6d86a8458534e4234e3751268b1ed605a9ac3e6a9aef3cd8e8b3dddd476042d7"
+    },
+    {
+      "camera": {
+        "azimuth_deg": -48.0,
+        "center_cm": [
+          826.3160053251625,
+          0.006308174011134149,
+          0.004956166442414478
+        ],
+        "elevation_deg": 24.0,
+        "radius_cm": 38.89170790080527
+      },
+      "components": [
+        "breeder",
+        "back_wall",
+        "equatorial_diagnostic__void"
+      ],
+      "name": "09_circular_variant",
+      "path": "09_circular_variant.png",
+      "section": true,
+      "sha256": "08877eefdf6a74f0ee9fa46c89dbd1ddc11d6901f1b88453104666a19e12b2cd"
+    },
+    {
+      "camera": "contact_sheet",
+      "components": [],
+      "name": "10_port_variants_contact_sheet",
+      "path": "10_port_variants_contact_sheet.png",
+      "section": false,
+      "sha256": "a8c54c4568452da5488409e12614b803e36bc536bdb226aa9b2ef96ef29a28c7"
+    }
+  ],
+  "reference_surface": "documented analytic five-period stellarator rendering fixture; VMEC is reserved for the transport workflow",
+  "renderer": "parastell.port_visualization",
+  "resolution_px": [
+    1200,
+    800
+  ],
+  "schema": "parastell.port_visualization/v1",
+  "transparency": 0.45,
+  "units": "cm",
+  "variants": {
+    "one_layer_rectangle": {
+      "all_solids_valid": true,
+      "baseline_selected_volume_cm3": 4898231.265851721,
+      "closure_relative_error": 3.8761030247607487e-07,
+      "fill_overlap_cm3": 0.0,
+      "remaining_selected_volume_cm3": 4897233.148371006,
+      "selected_layers": [
+        "first_wall"
+      ],
+      "total_void_solid_volume_cm3": 2000.000295462945,
+      "vacuum_fill_volume_cm3": 1000.01608561736
+    },
+    "three_layer_rectangle": {
+      "all_solids_valid": true,
+      "baseline_selected_volume_cm3": 103403810.60171619,
+      "closure_relative_error": 2.1896308350264133e-07,
+      "fill_overlap_cm3": 0.0,
+      "remaining_selected_volume_cm3": 103362815.16096412,
+      "selected_layers": [
+        "first_wall",
+        "breeder",
+        "back_wall"
+      ],
+      "total_void_solid_volume_cm3": 82000.01026054326,
+      "vacuum_fill_volume_cm3": 41018.0823692894
+    },
+    "two_layer_circle": {
+      "all_solids_valid": true,
+      "baseline_selected_volume_cm3": 98505579.33586447,
+      "closure_relative_error": 2.0030304469355907e-07,
+      "fill_overlap_cm3": 0.0,
+      "remaining_selected_volume_cm3": 98480845.77445635,
+      "selected_layers": [
+        "breeder",
+        "back_wall"
+      ],
+      "total_void_solid_volume_cm3": 49480.090417988824,
+      "vacuum_fill_volume_cm3": 24753.29237557769
+    }
+  }
+}

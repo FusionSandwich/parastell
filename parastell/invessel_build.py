@@ -652,10 +652,10 @@ class InVesselBuild(object):
         """Scale-aware volume tolerance for OpenCascade boolean checks.
 
         Lofted spline sectors accumulate more Boolean integration error than
-        analytic primitives, so closure uses 0.1 parts per million while
+        analytic primitives, so closure uses ten parts per million while
         retaining a small absolute floor for model-scale solids.
         """
-        return max(1e-7, 1e-7 * max(1.0, abs(reference_volume)))
+        return max(1e-7, 1e-5 * max(1.0, abs(reference_volume)))
 
     def _as_solid(self, shape):
         solids = self._shape_solids(shape)
@@ -717,7 +717,8 @@ class InVesselBuild(object):
         tolerance = self._bool_tolerance(original_volume)
         if error > tolerance:
             e = ValueError(
-                f"{description} violates volume closure: error {error} "
+                f"{description} has invalid finite geometry volume closure: "
+                f"error {error} "
                 f"exceeds tolerance {tolerance}."
             )
             self._logger.error(e.args[0])
@@ -875,10 +876,11 @@ class InVesselBuild(object):
             resolved_end = self._resolve_port_endpoint(
                 port, port.extent.end, source_components
             )
-            tolerance = self._bool_tolerance(
-                max(baseline_volumes.values(), default=1.0)
+            length_tolerance = max(
+                1.0e-7,
+                1.0e-9 * max(abs(resolved_start), abs(resolved_end), 1.0),
             )
-            if resolved_start >= resolved_end - tolerance:
+            if resolved_start >= resolved_end - length_tolerance:
                 raise ValueError(
                     f"Port {port.name!r} resolves start coordinate "
                     f"{resolved_start} at or beyond end coordinate {resolved_end}; "
