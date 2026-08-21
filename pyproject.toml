@@ -70,7 +70,7 @@ Repository = "https://github.com/svalinn/parastell.git"
 "Bug Tracker" = "https://github.com/svalinn/parastell/issues"
 
 [project.scripts]
-"parastell" = "parastell.parastell:parastell"
+"parastell" = "parastell.cli:main"
 "parastell-magnet-handoff" = "parastell.magnet_handoff_cli:main"
 "parastell-magnet-handoff-validate" = "parastell.magnet_handoff_validation:main"
 "parastell-openmc16-handoff" = "parastell.openmc16_cli:main"

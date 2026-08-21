@@ -1,4 +1,7 @@
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tomllib
 
 from setuptools.discovery import PackageFinder
@@ -22,3 +25,26 @@ def test_package_discovery_excludes_dirty_build_tree(tmp_path):
 
     assert packages == ["parastell"]
     assert not any(package.startswith("build") for package in packages)
+
+
+def test_base_import_does_not_require_optional_openmc():
+    repository = Path(__file__).resolve().parents[1]
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(repository), environment.get("PYTHONPATH")))
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; sys.modules['openmc'] = None; import parastell; "
+                "assert 'CoordinateFrame' in parastell.__all__"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
