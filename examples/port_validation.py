@@ -30,7 +30,7 @@ class ValidationReferenceSurface(ivb.ReferenceSurface):
         return points[0] if scalar_phi else points
 
 
-def create_validation_stellarator():
+def create_validation_invessel_build(native=False):
     """Build the four-layer, lined, plasma-to-exterior validation port."""
     toroidal_angles = [0.0, 10.0, 20.0, 30.0]
     poloidal_angles = [0.0, 90.0, 180.0, 270.0, 360.0]
@@ -111,7 +111,17 @@ def create_validation_stellarator():
     )
     model.populate_surfaces()
     model.calculate_loci()
-    model.generate_components_cadquery()
+    if native:
+        model.use_pydagmc = True
+        model.generate_components()
+    else:
+        model.generate_components_cadquery()
+    return model
+
+
+def create_validation_stellarator():
+    """Build the visual validation assembly, including filament magnets."""
+    model = create_validation_invessel_build()
 
     coils_path = (
         Path(__file__).resolve().parents[1]

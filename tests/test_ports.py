@@ -1157,7 +1157,7 @@ def test_generate_unported_geometry_unchanged_when_ports_empty_list():
     assert _component_volumes(with_list) == _component_volumes(with_no)
 
 
-def test_generate_with_use_pydagmc_and_ports_not_implemented():
+def test_generate_cartesian_port_with_use_pydagmc_not_implemented():
     radial_build = ivb.RadialBuild(
         TOROIDAL_ANGLES,
         POLOIDAL_ANGLES,
@@ -1171,7 +1171,7 @@ def test_generate_with_use_pydagmc_and_ports_not_implemented():
         use_pydagmc=True,
     )
     with pytest.raises(
-        NotImplementedError, match="Port geometry is not supported"
+        NotImplementedError, match="requires placement.mode='surface'"
     ):
         ivb_obj.generate_components()
 

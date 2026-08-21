@@ -169,10 +169,24 @@ explicit `ignore`.
 | CadQuery | Blanket cuts are driven by surface-intersection loops; comparison solids are regenerated from those loops |
 | STEP | Void and liner exported as independently named solids |
 | CAD-to-DAGMC | Not validated for surface-anchored ports in this implementation stage |
-| Gmsh | Port-aware conformal volumetric meshing is outside this implementation stage |
+| Gmsh discrete PLC | The shared native facet complex is tetrahedralized without OCC or CAD imports |
 | MOAB point cloud | Port-affected components explicitly rejected |
-| Direct PyDAGMC | Ports explicitly rejected; native faceted topology is not implemented |
+| Direct PyDAGMC | One surface-anchored port is exported from the verified aperture loops with shared facets and explicit senses |
 | Cubit | Not required or validated by the port implementation |
+
+For a native build, set `use_pydagmc=True` before generating components and
+then call `invessel_build.export_native_port_artifacts(output_dir)`. This
+writes distinct `*_native_dagmc.h5m` and `*_native_volume_mesh.h5m` files,
+VTK mirrors, local-frame images loaded from the DAGMC facets, structural
+ledgers, and per-region mesh validation. The native path does not call
+CadQuery Boolean operations, CAD-to-DAGMC, or
+`gmsh.model.occ.importShapesNativePointer`; the same unique vertex and facet
+ledger supplies PyDAGMC and the Gmsh discrete entities.
+
+Native export currently accepts exactly one `placement.mode: surface` port.
+The existing Cartesian CadQuery behavior and unported PyDAGMC/MOAB paths are
+unchanged. External `check_watertight`, `overlap_check`, and compiled OpenMC
+DAGMC transport remain environment-level validation gates.
 
 Volume closure uses `max(1e-7, 1e-7 * max(1, reference_volume))` in model
 volume units. Disconnected centerline intervals, ambiguous far-side hits,

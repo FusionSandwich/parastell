@@ -492,12 +492,12 @@ def _prismatic_regeneration(
     return solid
 
 
-def build_aperture_model(
+def build_aperture_loops(
     port,
     boundaries,
     geometric_tolerance=0.05,
 ):
-    """Intersect corresponding aperture rays and regenerate physical solids."""
+    """Intersect corresponding rays without creating any CAD geometry."""
     if not boundaries:
         raise ValueError(f"Port {port.name!r} has no radial boundaries")
     anchor = np.asarray(port.placement.anchor, dtype=float)
@@ -581,6 +581,25 @@ def build_aperture_model(
                 (),
             )
         )
+
+    return tuple(loops)
+
+
+def build_aperture_model(
+    port,
+    boundaries,
+    geometric_tolerance=0.05,
+):
+    """Regenerate optional CAD comparison solids from authoritative loops."""
+    loops = build_aperture_loops(port, boundaries, geometric_tolerance)
+    anchor = np.asarray(port.placement.anchor, dtype=float)
+    axis = np.asarray(port.placement.local_axis, dtype=float)
+    local_reference = np.asarray(port.placement.local_reference, dtype=float)
+    local_normal = np.asarray(port.placement.local_normal, dtype=float)
+    inner_uv = loops[0].inner_uv[:-1]
+    outer_uv = (
+        loops[0].outer_uv[:-1] if loops[0].outer_uv is not None else None
+    )
 
     all_points = [
         (

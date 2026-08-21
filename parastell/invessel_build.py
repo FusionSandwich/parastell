@@ -39,6 +39,7 @@ from .port_aperture import (
     build_aperture_model,
     line_triangle_intersections,
 )
+from .native_port_geometry import build_native_port_surface_complex
 from .pystell import read_vmec
 
 
@@ -633,14 +634,6 @@ class InVesselBuild(object):
 
     def generate_components(self):
         if self.use_pydagmc:
-            if self.ports:
-                e = NotImplementedError(
-                    "Port geometry is not supported in the "
-                    "PyDAGMC workflow yet."
-                )
-                self._logger.error(e.args[0])
-                raise e
-
             self.generate_components_pydagmc()
         else:
             self.generate_components_cadquery()
@@ -1725,6 +1718,12 @@ class InVesselBuild(object):
             "Generating DAGMC model of in-vessel components with PyDAGMC..."
         )
 
+        if self.ports:
+            self.native_port_complex = build_native_port_surface_complex(self)
+            self.dag_model = self.native_port_complex.to_pydagmc()
+            self.mbc = self.dag_model.mb
+            return
+
         if np.isclose(
             self.radial_build.toroidal_angles[-1]
             - self.radial_build.toroidal_angles[0],
@@ -1794,6 +1793,12 @@ class InVesselBuild(object):
                 ".step"
             )
             cq.exporters.export(component, str(export_path))
+
+    def export_native_port_artifacts(self, output_dir, **kwargs):
+        """Export native point-cloud DAGMC and conformal volume-mesh files."""
+        from .native_port_artifacts import export_native_port_artifacts
+
+        return export_native_port_artifacts(self, output_dir, **kwargs)
 
     def extract_solids_and_mat_tags(self):
         """Get a list of all cadquery solids, and a corresponding list of
