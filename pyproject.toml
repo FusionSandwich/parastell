@@ -74,6 +74,7 @@ Repository = "https://github.com/svalinn/parastell.git"
 "parastell-magnet-handoff" = "parastell.magnet_handoff_cli:main"
 "parastell-magnet-handoff-validate" = "parastell.magnet_handoff_validation:main"
 "parastell-openmc16-handoff" = "parastell.openmc16_cli:main"
+"parastell-activation" = "parastell.activation.cli:main"
 "parastell-comsol-fusion-magnets" = "parastell.comsol_fusion_magnets:main"
 
 [build-system]

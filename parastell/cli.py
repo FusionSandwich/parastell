@@ -11,6 +11,10 @@ def main(argv=None):
         from .energy_groups.cli import main as energy_groups_main
 
         return energy_groups_main(arguments[1:])
+    if arguments and arguments[0] == "activation":
+        from .activation.cli import main as activation_main
+
+        return activation_main(arguments[1:])
 
     from .parastell import parastell
 
