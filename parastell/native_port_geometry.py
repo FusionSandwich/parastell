@@ -8,7 +8,7 @@ used as fallback geometry.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha1
 import json
 from pathlib import Path
@@ -607,7 +607,18 @@ class NativePortSurfaceComplex:
             coordinate_map = {}
             coordinates = []
             connectivities = []
-            for surface in self.surfaces:
+            mesh_volumes = tuple(
+                volume for volume in self.volumes if volume.kind != "graveyard"
+            )
+            mesh_volume_names = {volume.name for volume in mesh_volumes}
+            plc_surfaces = tuple(
+                surface
+                for surface in self.surfaces
+                if mesh_volume_names.intersection(
+                    {surface.reverse_volume, surface.forward_volume}
+                )
+            )
+            for surface in plc_surfaces:
                 connectivity = []
                 for triangle in surface.triangles:
                     indices = []
@@ -620,7 +631,7 @@ class NativePortSurfaceComplex:
                     connectivity.append(indices)
                 connectivities.append(np.asarray(connectivity, dtype=np.int64))
 
-            for surface_id in range(1, len(self.surfaces) + 1):
+            for surface_id in range(1, len(plc_surfaces) + 1):
                 gmsh.model.addDiscreteEntity(2, surface_id)
             # Gmsh node tags are global. Classifying the shared PLC nodes on
             # one discrete surface keeps every interface vertex physically
@@ -649,12 +660,10 @@ class NativePortSurfaceComplex:
 
             gmsh.model.mesh.reclassifyNodes()
             volume_entities = []
-            for volume_id, volume in enumerate(self.volumes, start=1):
+            for volume_id, volume in enumerate(mesh_volumes, start=1):
                 boundary = [
                     surface_id
-                    for surface_id, surface in enumerate(
-                        self.surfaces, start=1
-                    )
+                    for surface_id, surface in enumerate(plc_surfaces, start=1)
                     if volume.name
                     in {surface.reverse_volume, surface.forward_volume}
                 ]
@@ -673,7 +682,7 @@ class NativePortSurfaceComplex:
                 )
             )
             regions = {}
-            for volume_id, volume in enumerate(self.volumes, start=1):
+            for volume_id, volume in enumerate(mesh_volumes, start=1):
                 element_types, _, element_nodes = gmsh.model.mesh.getElements(
                     3, volume_id
                 )
@@ -698,22 +707,34 @@ class NativePortSurfaceComplex:
                 regions[volume.name] = np.asarray(tetrahedra, dtype=np.int64)
             interface_faces = {
                 surface.name: connectivity
-                for surface, connectivity in zip(self.surfaces, connectivities)
+                for surface, connectivity in zip(plc_surfaces, connectivities)
             }
             interface_senses = {
                 surface.name: (
-                    surface.reverse_volume,
-                    surface.forward_volume,
+                    (
+                        surface.reverse_volume
+                        if surface.reverse_volume in mesh_volume_names
+                        else None
+                    ),
+                    (
+                        surface.forward_volume
+                        if surface.forward_volume in mesh_volume_names
+                        else None
+                    ),
                 )
-                for surface in self.surfaces
+                for surface in plc_surfaces
             }
             return NativeVolumeMesh(
-                tuple(self.volumes),
+                mesh_volumes,
                 coordinate_by_tag,
                 regions,
                 interface_faces,
                 interface_senses,
-                self.reference_volumes(),
+                {
+                    name: volume
+                    for name, volume in self.reference_volumes().items()
+                    if name in mesh_volume_names
+                },
             )
         finally:
             gmsh.clear()
@@ -1134,6 +1155,42 @@ def _cap_ring(inner, outer, desired):
     return np.asarray(triangles)
 
 
+def _box_triangles(lower, upper):
+    lower = np.asarray(lower, dtype=float)
+    upper = np.asarray(upper, dtype=float)
+    x0, y0, z0 = lower
+    x1, y1, z1 = upper
+    corners = np.asarray(
+        (
+            (x0, y0, z0),
+            (x1, y0, z0),
+            (x1, y1, z0),
+            (x0, y1, z0),
+            (x0, y0, z1),
+            (x1, y0, z1),
+            (x1, y1, z1),
+            (x0, y1, z1),
+        )
+    )
+    triangles = []
+    for indices, desired in (
+        ((0, 3, 7, 4), (-1.0, 0.0, 0.0)),
+        ((1, 5, 6, 2), (1.0, 0.0, 0.0)),
+        ((0, 4, 5, 1), (0.0, -1.0, 0.0)),
+        ((3, 2, 6, 7), (0.0, 1.0, 0.0)),
+        ((0, 1, 2, 3), (0.0, 0.0, -1.0)),
+        ((4, 7, 6, 5), (0.0, 0.0, 1.0)),
+    ):
+        a, b, c, d = corners[list(indices)]
+        triangles.extend(
+            (
+                _orient_triangle((a, b, c), desired),
+                _orient_triangle((a, c, d), desired),
+            )
+        )
+    return np.asarray(triangles)
+
+
 def build_native_port_surface_complex(model):
     """Build one native faceted complex from continuous surfaces and loops."""
     if len(model.ports) != 1:
@@ -1459,6 +1516,32 @@ def build_native_port_surface_complex(model):
             liner_name,
             end_region,
         )
+
+    graveyard_name = "graveyard"
+    volume_records.append(
+        NativeVolumeRecord(graveyard_name, "graveyard", "Graveyard")
+    )
+    records = [
+        (
+            replace(surface, forward_volume=graveyard_name)
+            if surface.forward_volume is None
+            else surface
+        )
+        for surface in records
+    ]
+    physical_points = np.concatenate(
+        [surface.triangles.reshape((-1, 3)) for surface in records], axis=0
+    )
+    graveyard_margin = max(50.0, float(port.extent.outer_extension) + 10.0)
+    lower = physical_points.min(axis=0) - graveyard_margin
+    upper = physical_points.max(axis=0) + graveyard_margin
+    add_surface(
+        "graveyard:outer_boundary",
+        "graveyard_boundary",
+        _box_triangles(lower, upper),
+        graveyard_name,
+        None,
+    )
 
     port_result = type(
         "NativePortResult",

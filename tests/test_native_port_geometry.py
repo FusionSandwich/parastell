@@ -27,11 +27,13 @@ def test_native_surface_complex_is_closed_and_unique():
     assert result.centerline_region_sequence == (
         "plasma",
         "surface_port__void",
+        "graveyard",
         "external",
     )
     assert result.liner_region_sequence == (
         "plasma",
         "surface_port__liner",
+        "graveyard",
         "external",
     )
     assert result.blanket_region_sequence == (
@@ -40,6 +42,7 @@ def test_native_surface_complex_is_closed_and_unique():
         "first_wall",
         "breeder",
         "shield",
+        "graveyard",
         "external",
     )
     assert all(
@@ -67,6 +70,7 @@ def test_native_h5m_independent_round_trip(tmp_path):
         "breeder",
         "shield",
         "steel",
+        "Graveyard",
     }
 
 
@@ -93,7 +97,9 @@ def test_native_volume_mesh_is_conformal_and_tagged(tmp_path):
     )
     mb.tag_get_handle("MATERIAL")
     file_result = mesh.validate_file(path)
-    assert file_result["region_count"] == len(complex_.volumes)
+    assert file_result["region_count"] == sum(
+        volume.kind != "graveyard" for volume in complex_.volumes
+    )
     assert file_result["tetrahedron_count"] == result.tetrahedron_count
 
 
