@@ -14,6 +14,18 @@ from .magnet_spectral_handoff import MeshSpec
 from .magnet_spectral_handoff import available_energy_group_structures
 from .magnet_spectral_handoff import load_energy_group_edges
 from .magnet_spectral_handoff import software_validation_energy_bounds
+from .magnet_boundary_envelope import CorrelatedBoundaryBank
+from .magnet_boundary_envelope import EnvelopeSurface
+from .magnet_boundary_envelope import MagnetBoundaryEnvelope
+from .magnet_boundary_envelope import authoritative_energy_edges
+from .magnet_boundary_envelope import build_correlated_bank
+from .magnet_boundary_envelope import condition_on_independent_current
+from .magnet_boundary_envelope import conservative_projection
+from .magnet_boundary_envelope import production_mu_edges
+from .magnet_boundary_envelope import production_phi_edges
+from .magnet_boundary_envelope import read_handoff
+from .magnet_boundary_envelope import source_mesh_provenance
+from .magnet_boundary_envelope import write_handoff
 
 
 __all__ = [
@@ -31,4 +43,16 @@ __all__ = [
     "available_energy_group_structures",
     "load_energy_group_edges",
     "software_validation_energy_bounds",
+    "CorrelatedBoundaryBank",
+    "EnvelopeSurface",
+    "MagnetBoundaryEnvelope",
+    "authoritative_energy_edges",
+    "build_correlated_bank",
+    "condition_on_independent_current",
+    "conservative_projection",
+    "production_mu_edges",
+    "production_phi_edges",
+    "read_handoff",
+    "source_mesh_provenance",
+    "write_handoff",
 ]

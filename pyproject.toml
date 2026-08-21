@@ -57,6 +57,8 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest", "pytest-cov"]
 
+openmc016 = ["openmc>=0.16.0"]
+
 format = ["black==25.*"]
 
 build = ["build"]
@@ -71,6 +73,7 @@ Repository = "https://github.com/svalinn/parastell.git"
 "parastell" = "parastell.parastell:parastell"
 "parastell-magnet-handoff" = "parastell.magnet_handoff_cli:main"
 "parastell-magnet-handoff-validate" = "parastell.magnet_handoff_validation:main"
+"parastell-openmc16-handoff" = "parastell.openmc16_cli:main"
 "parastell-comsol-fusion-magnets" = "parastell.comsol_fusion_magnets:main"
 
 [build-system]
