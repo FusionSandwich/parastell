@@ -8,7 +8,7 @@ a deprecated shorthand and converted to :class:`PortExtent` during parsing.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any, Mapping, Sequence
 import warnings
 
@@ -103,26 +103,147 @@ def _resolve_layer_indices(
 
 
 @dataclass(frozen=True)
+class PortSurfaceAnchor:
+    """A user-facing angular location on a continuous in-vessel surface."""
+
+    reference: str
+    toroidal_angle: float
+    poloidal_angle: float
+    layer: str | None = None
+
+    def __post_init__(self) -> None:
+        reference = _validate_string(
+            self.reference, "placement.anchor.reference"
+        ).lower()
+        allowed = {
+            "plasma_surface",
+            "wall_surface",
+            "layer_inner",
+            "layer_outer",
+        }
+        if reference not in allowed:
+            raise ValueError(
+                "placement.anchor.reference must be one of "
+                f"{sorted(allowed)}"
+            )
+        if reference.startswith("layer_"):
+            if self.layer is None:
+                raise ValueError(
+                    f"{reference} anchor requires placement.anchor.layer"
+                )
+            layer = _validate_string(self.layer, "placement.anchor.layer")
+        elif self.layer is not None:
+            raise ValueError(
+                f"{reference} anchor must not define placement.anchor.layer"
+            )
+        else:
+            layer = None
+        object.__setattr__(self, "reference", reference)
+        object.__setattr__(
+            self,
+            "toroidal_angle",
+            _validate_finite_scalar(
+                self.toroidal_angle, "placement.anchor.toroidal_angle"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "poloidal_angle",
+            _validate_finite_scalar(
+                self.poloidal_angle, "placement.anchor.poloidal_angle"
+            ),
+        )
+        object.__setattr__(self, "layer", layer)
+
+
+@dataclass(frozen=True)
+class PortSurfaceAxis:
+    """Outward-normal axis with optional signed surface-tangent tilts."""
+
+    mode: str = "outward_normal"
+    poloidal_tilt: float = 0.0
+    toroidal_tilt: float = 0.0
+
+    def __post_init__(self) -> None:
+        mode = _validate_string(self.mode, "placement.axis.mode").lower()
+        if mode != "outward_normal":
+            raise ValueError("placement.axis.mode must be 'outward_normal'")
+        poloidal_tilt = _validate_finite_scalar(
+            self.poloidal_tilt, "placement.axis.poloidal_tilt"
+        )
+        toroidal_tilt = _validate_finite_scalar(
+            self.toroidal_tilt, "placement.axis.toroidal_tilt"
+        )
+        if abs(poloidal_tilt) >= 90.0 or abs(toroidal_tilt) >= 90.0:
+            raise ValueError(
+                "surface-axis tilts must have magnitude below 90 degrees"
+            )
+        object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "poloidal_tilt", poloidal_tilt)
+        object.__setattr__(self, "toroidal_tilt", toroidal_tilt)
+
+
+@dataclass(frozen=True)
 class PortPlacement:
-    """Cartesian anchor and right-handed local frame.
+    """Declarative placement and resolved right-handed local frame.
 
     Positive distance along ``axis`` is from the plasma/inner side toward the
     blanket exterior. ``reference_direction`` controls aperture rotation.
     """
 
-    anchor: tuple[float, float, float]
-    axis: tuple[float, float, float]
-    reference_direction: tuple[float, float, float]
+    anchor: tuple[float, float, float] | None = None
+    axis: tuple[float, float, float] | None = None
+    reference_direction: tuple[float, float, float] | None = None
     mode: str = "cartesian"
     max_search_length: float | None = None
+    surface_anchor: PortSurfaceAnchor | None = None
+    surface_axis: PortSurfaceAxis | None = None
+    roll: float = 0.0
+    is_resolved: bool = False
     local_axis: tuple[float, float, float] | None = None
     local_reference: tuple[float, float, float] | None = None
     local_normal: tuple[float, float, float] | None = None
 
     def __post_init__(self) -> None:
         mode = _validate_string(self.mode, "placement.mode").lower()
-        if mode != "cartesian":
-            raise ValueError("placement.mode must be 'cartesian'")
+        if mode not in {"cartesian", "surface"}:
+            raise ValueError("placement.mode must be 'cartesian' or 'surface'")
+        roll = _validate_finite_scalar(self.roll, "placement.roll")
+        if mode == "surface" and not self.is_resolved:
+            if self.surface_anchor is None or self.surface_axis is None:
+                raise ValueError(
+                    "surface placement requires surface anchor and axis specifications"
+                )
+            if any(
+                value is not None
+                for value in (self.anchor, self.axis, self.reference_direction)
+            ):
+                raise ValueError(
+                    "unresolved surface placement must not contain Cartesian vectors"
+                )
+            max_search_length = (
+                1000.0
+                if self.max_search_length is None
+                else _validate_finite_scalar(
+                    self.max_search_length, "placement.max_search_length"
+                )
+            )
+            if max_search_length <= 0.0:
+                raise ValueError(
+                    "placement.max_search_length must be positive"
+                )
+            object.__setattr__(self, "mode", mode)
+            object.__setattr__(self, "roll", roll)
+            object.__setattr__(self, "max_search_length", max_search_length)
+            return
+        if (
+            self.anchor is None
+            or self.axis is None
+            or self.reference_direction is None
+        ):
+            raise ValueError(
+                "resolved placement requires anchor, axis, and reference"
+            )
         anchor = _to_vector3(self.anchor, "placement.anchor")
         axis = _normalize_vector(
             _to_vector3(self.axis, "placement.axis"), "placement.axis"
@@ -155,10 +276,31 @@ class PortPlacement:
         object.__setattr__(self, "axis", tuple(axis))
         object.__setattr__(self, "reference_direction", tuple(reference))
         object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "roll", roll)
+        object.__setattr__(self, "is_resolved", True)
         object.__setattr__(self, "max_search_length", float(max_search_length))
         object.__setattr__(self, "local_axis", tuple(axis))
         object.__setattr__(self, "local_reference", tuple(local_reference))
         object.__setattr__(self, "local_normal", tuple(local_normal))
+
+    def resolve_surface_frame(
+        self,
+        anchor,
+        axis,
+        local_reference,
+    ) -> "PortPlacement":
+        """Return a resolved copy without exposing point-cloud indices."""
+        if self.mode != "surface":
+            return self
+        return replace(
+            self,
+            anchor=tuple(np.asarray(anchor, dtype=float)),
+            axis=tuple(np.asarray(axis, dtype=float)),
+            reference_direction=tuple(
+                np.asarray(local_reference, dtype=float)
+            ),
+            is_resolved=True,
+        )
 
 
 @dataclass(frozen=True)
@@ -511,15 +653,77 @@ def parse_port_spec(
     _ensure_no_unexpected_keys(
         placement_data,
         f"port[{name!r}].placement",
-        {"mode", "anchor", "axis", "reference_direction", "max_search_length"},
+        {
+            "mode",
+            "anchor",
+            "axis",
+            "reference_direction",
+            "max_search_length",
+            "roll",
+        },
     )
-    placement = PortPlacement(
-        mode=placement_data.get("mode", "cartesian"),
-        anchor=placement_data["anchor"],
-        axis=placement_data["axis"],
-        reference_direction=placement_data["reference_direction"],
-        max_search_length=placement_data.get("max_search_length"),
-    )
+    placement_mode = _validate_string(
+        placement_data.get("mode", "cartesian"),
+        f"port[{name!r}].placement.mode",
+    ).lower()
+    if placement_mode == "surface":
+        if "reference_direction" in placement_data:
+            raise ValueError(
+                "surface placement uses placement.roll, not reference_direction"
+            )
+        anchor_data = _validate_mapping(
+            placement_data.get("anchor"),
+            f"port[{name!r}].placement.anchor",
+        )
+        _ensure_no_unexpected_keys(
+            anchor_data,
+            f"port[{name!r}].placement.anchor",
+            {"reference", "toroidal_angle", "poloidal_angle", "layer"},
+        )
+        axis_data = _validate_mapping(
+            placement_data.get("axis"),
+            f"port[{name!r}].placement.axis",
+        )
+        _ensure_no_unexpected_keys(
+            axis_data,
+            f"port[{name!r}].placement.axis",
+            {"mode", "poloidal_tilt", "toroidal_tilt"},
+        )
+        surface_anchor = PortSurfaceAnchor(
+            reference=anchor_data["reference"],
+            toroidal_angle=anchor_data["toroidal_angle"],
+            poloidal_angle=anchor_data["poloidal_angle"],
+            layer=anchor_data.get("layer"),
+        )
+        if (
+            surface_anchor.layer is not None
+            and surface_anchor.layer not in user_layer_names
+        ):
+            names = ", ".join(user_layer_names)
+            raise ValueError(
+                f"placement.anchor.layer ({surface_anchor.layer!r}) is not "
+                f"in radial build layers {names}"
+            )
+        placement = PortPlacement(
+            mode="surface",
+            surface_anchor=surface_anchor,
+            surface_axis=PortSurfaceAxis(
+                mode=axis_data.get("mode", "outward_normal"),
+                poloidal_tilt=axis_data.get("poloidal_tilt", 0.0),
+                toroidal_tilt=axis_data.get("toroidal_tilt", 0.0),
+            ),
+            roll=placement_data.get("roll", 0.0),
+            max_search_length=placement_data.get("max_search_length"),
+        )
+    else:
+        placement = PortPlacement(
+            mode=placement_mode,
+            anchor=placement_data["anchor"],
+            axis=placement_data["axis"],
+            reference_direction=placement_data["reference_direction"],
+            roll=placement_data.get("roll", 0.0),
+            max_search_length=placement_data.get("max_search_length"),
+        )
 
     if "cross_section" not in data:
         raise ValueError(f"port[{name!r}].cross_section is required")

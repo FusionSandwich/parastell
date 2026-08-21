@@ -52,15 +52,21 @@ def create_validation_stellarator():
             )
         },
     )
-    phi = np.deg2rad(15.0)
-    outward = np.array([np.cos(phi), np.sin(phi), 0.0])
     port = {
         "name": "real_heating_port",
         "placement": {
-            "mode": "cartesian",
-            "anchor": list(outward * 760.0),
-            "axis": list(outward),
-            "reference_direction": [0.0, 0.0, 1.0],
+            "mode": "surface",
+            "anchor": {
+                "reference": "plasma_surface",
+                "toroidal_angle": 15.0,
+                "poloidal_angle": 0.0,
+            },
+            "axis": {
+                "mode": "outward_normal",
+                "poloidal_tilt": 0.0,
+                "toroidal_tilt": 0.0,
+            },
+            "roll": 0.0,
             "max_search_length": 500.0,
         },
         "cross_section": {
@@ -140,7 +146,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     stellarator = create_validation_stellarator()
-    stellarator.export_port_visual_validation(args.output_dir)
+    stellarator.export_port_local_validation(args.output_dir)
 
 
 if __name__ == "__main__":

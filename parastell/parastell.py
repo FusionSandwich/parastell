@@ -13,6 +13,7 @@ from . import source_mesh as sm
 from .ports import PortCollisionRecord
 from .component_ledger import ComponentRecord, component_sort_key
 from .port_visualization import export_port_visual_validation
+from .port_local_visualization import export_port_local_validation
 from .cubit_utils import (
     create_new_cubit_instance,
     export_dagmc_cubit,
@@ -796,6 +797,10 @@ class Stellarator(object):
     def export_port_visual_validation(self, output_dir, **kwargs):
         """Export a human-visible validation package for finalized ports."""
         return export_port_visual_validation(self, output_dir, **kwargs)
+
+    def export_port_local_validation(self, output_dir, **kwargs):
+        """Export aperture-loop views in a surface-anchored port frame."""
+        return export_port_local_validation(self, output_dir, **kwargs)
 
     def export_cad_to_dagmc(
         self,

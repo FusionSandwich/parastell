@@ -1,9 +1,12 @@
 # Engineering ports and ducts
 
-ParaStell ports follow the governing axis-plus-cross-section model: an
-oriented axis establishes the duct centerline and a two-dimensional circle or
-rectangle establishes its clear opening. Positive distance along `axis` is
-from the plasma/inner side toward the blanket exterior.
+ParaStell's primary port model is a surface-anchored aperture. The anchor and
+right-handed local frame are interpolated from the same continuous surface and
+point cloud used by `InVesselBuild`; users specify toroidal/poloidal angles,
+not point-cloud indices. Corresponding aperture rays are intersected with each
+radial boundary to form ordered closed loops. Positive local `w` is outward,
+local `u` is poloidal, and local `v = w × u`. Cartesian placement remains an
+advanced legacy mode.
 
 Cross-section dimensions always describe the **clear aperture**. A liner grows
 outward from that opening: circular outer radius is `radius + thickness`, and
@@ -25,10 +28,16 @@ invessel_build:
   ports:
     - name: equatorial_heating_port
       placement:
-        mode: cartesian
-        anchor: [600.0, 0.0, 0.0]
-        axis: [1.0, 0.0, 0.0]
-        reference_direction: [0.0, 0.0, 1.0]
+        mode: surface
+        anchor:
+          reference: plasma_surface
+          toroidal_angle: 15.0
+          poloidal_angle: 0.0
+        axis:
+          mode: outward_normal
+          poloidal_tilt: 0.0
+          toroidal_tilt: 0.0
+        roll: 0.0
         max_search_length: 1000.0
       cross_section:
         shape: rectangle
@@ -87,6 +96,32 @@ is migrated to the same endpoint model. Supplying both `extent` and
 
 ## Visual validation package
 
+`stellarator.export_port_local_validation(output_dir)` writes eight headless
+1600 × 1000 views in the port-local frame plus a machine-readable semantic
+manifest. Longitudinal views use `(w,u)` and `(w,v)` directly; transverse
+views use equal-aspect `(u,v)` coordinates; the isometric view contains only a
+bounded patch around the aperture. The manifest records the resolved frame,
+loop counts, recovered dimensions, crop fractions, layer order, and the exact
+magnet solid selected by collision checking.
+
+![Surface anchor and local frame](images/ports/port_surface_anchor.png)
+
+![Longitudinal local u section](images/ports/port_local_longitudinal_u.png)
+
+![Longitudinal local v section](images/ports/port_local_longitudinal_v.png)
+
+![Transverse aperture at the inner boundary](images/ports/port_local_transverse_inner.png)
+
+![Transverse aperture inside the blanket](images/ports/port_local_transverse_blanket.png)
+
+![Transverse aperture at the outer boundary](images/ports/port_local_transverse_outer.png)
+
+![Bounded isometric aperture-loop cutaway](images/ports/port_local_isometric_cutaway.png)
+
+![Local magnet-clearance view](images/ports/port_local_magnet_clearance.png)
+
+The older global assembly exporter remains available for STEP/GLB inspection:
+
 `stellarator.export_port_visual_validation(output_dir)` exports a named,
 color-preserving STEP assembly, interactive GLBs, actual longitudinal and
 transverse cutaways, headless PNG renders, and a SHA-256 manifest. Axis
@@ -131,10 +166,10 @@ explicit `ignore`.
 
 | Backend | Port behavior |
 |---|---|
-| CadQuery | Finite void, liner, outer envelope, and blanket cuts supported |
+| CadQuery | Blanket cuts are driven by surface-intersection loops; comparison solids are regenerated from those loops |
 | STEP | Void and liner exported as independently named solids |
-| CAD-to-DAGMC | Separate void/liner solids and material tags supplied in memory |
-| Gmsh | Boolean-modified blanket, void, and liner solids accepted |
+| CAD-to-DAGMC | Not validated for surface-anchored ports in this implementation stage |
+| Gmsh | Port-aware conformal volumetric meshing is outside this implementation stage |
 | MOAB point cloud | Port-affected components explicitly rejected |
 | Direct PyDAGMC | Ports explicitly rejected; native faceted topology is not implemented |
 | Cubit | Not required or validated by the port implementation |

@@ -9,6 +9,7 @@ import parastell.parastell as ps
 import parastell.magnet_coils as magnet_coils
 from parastell.magnet_coils import MagnetSolidRecord
 from parastell.ports import parse_ports
+from parastell.port_aperture import sample_cross_section
 from parastell.utils import ribs_from_kisslinger_format
 
 
@@ -198,6 +199,229 @@ def _radial_build(layers):
         }
         for idx, layer in enumerate(layers)
     }
+
+
+def _surface_port(
+    *,
+    shape="circle",
+    poloidal_tilt=0.0,
+    toroidal_tilt=0.0,
+    roll=0.0,
+    anchor_reference="plasma_surface",
+    anchor_layer=None,
+):
+    anchor = {
+        "reference": anchor_reference,
+        "toroidal_angle": 15.0,
+        "poloidal_angle": 0.0,
+    }
+    if anchor_layer is not None:
+        anchor["layer"] = anchor_layer
+    cross_section = (
+        {"shape": "circle", "radius": 3.0}
+        if shape == "circle"
+        else {"shape": "rectangle", "width": 6.0, "height": 4.0}
+    )
+    return {
+        "name": "surface_port",
+        "placement": {
+            "mode": "surface",
+            "anchor": anchor,
+            "axis": {
+                "mode": "outward_normal",
+                "poloidal_tilt": poloidal_tilt,
+                "toroidal_tilt": toroidal_tilt,
+            },
+            "roll": roll,
+            "max_search_length": 500.0,
+        },
+        "cross_section": cross_section,
+        "extent": {
+            "start": {"reference": "plasma_surface"},
+            "end": {"reference": "layer", "layer": "shield", "fraction": 1.0},
+            "outer_extension": 10.0,
+        },
+        "liner": {"enabled": True, "thickness": 1.0, "mat_tag": "steel"},
+        "fill": {"mat_tag": "Vacuum"},
+        "repetition": {"mode": "single"},
+        "expected_layers": ["first_wall", "breeder", "shield"],
+    }
+
+
+def _surface_ivb(num_ribs=13, num_rib_pts=49, port=None):
+    angles = [0.0, 10.0, 20.0, 30.0]
+    poloidal = [0.0, 90.0, 180.0, 270.0, 360.0]
+    thickness = np.ones((4, 5)) * 5.0
+    build = ivb.RadialBuild(
+        angles,
+        poloidal,
+        WALL_S,
+        {
+            name: {"thickness_matrix": thickness}
+            for name in ("first_wall", "breeder", "shield")
+        },
+    )
+    model = ivb.InVesselBuild(
+        _SyntheticReferenceSurface(),
+        build,
+        num_ribs=num_ribs,
+        num_rib_pts=num_rib_pts,
+        ports=[port or _surface_port()],
+    )
+    model.populate_surfaces()
+    model.calculate_loci()
+    return model
+
+
+@pytest.mark.parametrize(
+    "reference,layer",
+    [
+        ("plasma_surface", None),
+        ("wall_surface", None),
+        ("layer_inner", "breeder"),
+        ("layer_outer", "breeder"),
+    ],
+)
+def test_surface_anchor_references_resolve_without_point_indices(
+    reference, layer
+):
+    model = _surface_ivb(
+        port=_surface_port(anchor_reference=reference, anchor_layer=layer)
+    )
+    placement = model.port_specs["surface_port"].placement
+    assert placement.is_resolved
+    assert placement.surface_anchor.reference == reference
+    assert np.isfinite(placement.anchor).all()
+
+
+def test_layer_surface_anchor_requires_named_layer():
+    with pytest.raises(ValueError, match="requires placement.anchor.layer"):
+        parse_ports(
+            [_surface_port(anchor_reference="layer_inner")],
+            ["first_wall", "breeder", "shield"],
+        )
+
+
+def test_surface_local_frame_tilts_roll_and_handedness():
+    model = _surface_ivb(
+        port=_surface_port(poloidal_tilt=7.0, toroidal_tilt=-4.0, roll=23.0)
+    )
+    placement = model.port_specs["surface_port"].placement
+    u = np.asarray(placement.local_reference)
+    v = np.asarray(placement.local_normal)
+    w = np.asarray(placement.local_axis)
+    assert np.dot(np.cross(w, u), v) == pytest.approx(1.0, abs=1e-12)
+    assert np.dot(u, v) == pytest.approx(0.0, abs=1e-12)
+    assert np.dot(u, w) == pytest.approx(0.0, abs=1e-12)
+    assert w[0] > 0.0
+    untilted = _surface_ivb().port_specs["surface_port"].placement
+    angle = np.degrees(
+        np.arccos(np.clip(np.dot(w, untilted.local_axis), -1.0, 1.0))
+    )
+    assert angle > 1.0
+    assert not np.allclose(u, untilted.local_reference)
+
+
+def test_surface_anchor_is_invariant_to_global_point_cloud_refinement():
+    observations = []
+    for num_ribs, num_rib_pts in ((9, 33), (13, 49), (21, 65)):
+        model = _surface_ivb(num_ribs, num_rib_pts)
+        port = model.port_specs["surface_port"]
+        start = model._resolve_port_endpoint(port, port.extent.start, {})
+        end = model._resolve_port_endpoint(port, port.extent.end, {})
+        intervals = [
+            model._port_layer_interval(port, name, None)
+            for name in ("first_wall", "breeder", "shield")
+        ]
+        observations.append(
+            (
+                np.asarray(port.placement.anchor),
+                np.asarray(port.placement.local_axis),
+                start,
+                end,
+                intervals,
+            )
+        )
+    baseline = observations[0]
+    for current in observations[1:]:
+        assert np.linalg.norm(current[0] - baseline[0]) < 1e-9
+        assert np.linalg.norm(current[1] - baseline[1]) < 1e-9
+        assert abs(current[2] - baseline[2]) < 1e-9
+        assert abs(current[3] - baseline[3]) < 1e-9
+        assert np.allclose(current[4], baseline[4], atol=1e-9)
+    assert all(
+        left[1] <= right[0] + 1e-3
+        for left, right in zip(baseline[4], baseline[4][1:])
+    )
+
+
+@pytest.mark.parametrize(
+    "shape,expected_count", [("circle", 20), ("rectangle", 4)]
+)
+def test_aperture_sampling_preserves_dimensions_and_order(
+    shape, expected_count
+):
+    spec = parse_ports(
+        [_surface_port(shape=shape)], ["first_wall", "breeder", "shield"]
+    )[0]
+    inner, outer = sample_cross_section(
+        spec.cross_section, spec.liner.thickness, 0.05
+    )
+    assert len(inner) == expected_count
+    assert len(outer) == expected_count
+    signed_area = 0.5 * np.sum(
+        inner[:, 0] * np.roll(inner[:, 1], -1)
+        - inner[:, 1] * np.roll(inner[:, 0], -1)
+    )
+    assert signed_area > 0.0
+    if shape == "circle":
+        assert np.linalg.norm(inner, axis=1) == pytest.approx(
+            np.full(expected_count, 3.0)
+        )
+        assert np.linalg.norm(outer, axis=1) == pytest.approx(
+            np.full(expected_count, 4.0)
+        )
+    else:
+        assert {tuple(point) for point in inner} == {
+            (-3.0, -2.0),
+            (3.0, -2.0),
+            (3.0, 2.0),
+            (-3.0, 2.0),
+        }
+
+
+def test_surface_plasma_to_exterior_aperture_loops_accept_geometry():
+    model = _surface_ivb()
+    model.generate_components_cadquery()
+    result = model.port_geometry_diagnostics["surface_port"]
+    aperture = model.port_aperture_models["surface_port"]
+    assert result.ordered_intersected_layers == (
+        "first_wall",
+        "breeder",
+        "shield",
+    )
+    assert aperture.maximum_loop_closure_error == 0.0
+    assert all(count == 20 for count in aperture.loop_point_counts)
+    assert aperture.recovered_dimensions()[
+        "liner_thickness_u"
+    ] == pytest.approx(1.0)
+    assert result.maximum_liner_overlap_with_plasma == 0.0
+    assert result.outer_extension > 0.0
+
+
+def test_surface_same_layer_blind_port():
+    config = _surface_port()
+    config["extent"] = {
+        "start": {"reference": "layer", "layer": "breeder", "fraction": 0.2},
+        "end": {"reference": "layer", "layer": "breeder", "fraction": 0.8},
+        "outer_extension": 0.0,
+    }
+    config["expected_layers"] = ["breeder"]
+    model = _surface_ivb(port=config)
+    model.generate_components_cadquery()
+    result = model.port_geometry_diagnostics["surface_port"]
+    assert result.ordered_intersected_layers == ("breeder",)
+    assert result.resolved_end > result.resolved_start
 
 
 def _synthetic_ivb_from_ports(

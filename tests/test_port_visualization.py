@@ -1,7 +1,11 @@
 import json
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 from PIL import Image, ImageStat
+import pytest
 
 import parastell.magnet_coils as magnet_coils
 import parastell.parastell as ps
@@ -64,6 +68,21 @@ def _visual_stellarator(tmp_path):
             "minimum_magnet_clearance": 5.0,
         },
     )
+    port["placement"] = {
+        "mode": "surface",
+        "anchor": {
+            "reference": "plasma_surface",
+            "toroidal_angle": 15.0,
+            "poloidal_angle": 0.0,
+        },
+        "axis": {
+            "mode": "outward_normal",
+            "poloidal_tilt": 0.0,
+            "toroidal_tilt": 0.0,
+        },
+        "roll": 0.0,
+        "max_search_length": 500.0,
+    }
     model = ivb.InVesselBuild(
         _SyntheticReferenceSurface(),
         radial_build,
@@ -154,3 +173,45 @@ def test_visual_package_exports_named_color_assembly(tmp_path):
             assert image.width >= 1200 and image.height >= 800
             extrema = ImageStat.Stat(image).extrema
             assert any(low != high for low, high in extrema)
+
+
+def test_port_local_views_have_semantic_geometry_checks(tmp_path):
+    stellarator = _visual_stellarator(tmp_path)
+    manifest = stellarator.export_port_local_validation(tmp_path)
+    required = {
+        "port_local_longitudinal_u.png",
+        "port_local_longitudinal_v.png",
+        "port_local_transverse_inner.png",
+        "port_local_transverse_blanket.png",
+        "port_local_transverse_outer.png",
+        "port_local_isometric_cutaway.png",
+        "port_local_magnet_clearance.png",
+        "port_surface_anchor.png",
+    }
+    assert required == set(manifest["generated_files"])
+    for filename in required:
+        image = Image.open(tmp_path / filename).convert("RGB")
+        assert image.size == (1600, 1000)
+        assert any(low != high for low, high in ImageStat.Stat(image).extrema)
+    dimensions = manifest["recovered_dimensions"]
+    assert dimensions["inner_width"] == pytest.approx(6.0)
+    assert dimensions["inner_height"] == pytest.approx(6.0)
+    assert dimensions["liner_thickness_u"] == pytest.approx(1.0)
+    assert dimensions["liner_thickness_v"] == pytest.approx(1.0)
+    assert manifest["local_frame"]["handedness"] == pytest.approx(1.0)
+    assert manifest["local_frame"][
+        "axis_normal_angle_degrees"
+    ] == pytest.approx(0.0)
+    assert manifest["views"]["longitudinal_u"]["centerline_slope"] == 0.0
+    assert manifest["views"]["transverse_blanket"]["port_center_uv"] == [
+        0.0,
+        0.0,
+    ]
+    assert (
+        manifest["views"]["transverse_blanket"]["aperture_width_fraction"]
+        >= 0.2
+    )
+    assert not manifest["views"]["isometric"]["contains_global_sector"]
+    assert manifest["views"]["magnet_clearance"][
+        "collision_solid_identity_preserved"
+    ]
