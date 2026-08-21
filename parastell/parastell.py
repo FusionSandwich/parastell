@@ -913,6 +913,13 @@ def check_inputs(invessel_build, magnet_coils, source_mesh, logger):
 
 def parastell():
     """Main method when run as a command line script."""
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "energy-groups":
+        from .energy_groups.cli import main as energy_groups_main
+
+        return energy_groups_main(sys.argv[2:])
+
     args = parse_args()
 
     all_data = read_yaml_config(args.filename)

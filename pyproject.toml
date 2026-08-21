@@ -84,6 +84,9 @@ build-backend = "setuptools.build_meta"
 line-length = 79
 target-version = ['py311', 'py312', 'py313']
 
+[tool.setuptools.package-data]
+"parastell.energy_groups" = ["data/*.json"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["parastell", "parastell.*"]

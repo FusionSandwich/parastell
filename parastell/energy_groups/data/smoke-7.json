@@ -1,0 +1,34 @@
+{
+  "name": "smoke-7",
+  "aliases": [
+    "PSTL-SMOKE-7"
+  ],
+  "particle": "neutron",
+  "intended_purposes": [
+    "software smoke tests only"
+  ],
+  "group_count": 7,
+  "edge_units": "eV",
+  "minimum_energy": 0.0,
+  "maximum_energy": 20000000.0,
+  "edge_ordering": "ascending",
+  "status": "test-only",
+  "edge_sha256": "1474acf0a44fe5a8483e96e0fdee375cf29f4a72573825a56751fc835cbaf778",
+  "authoritative_source": {
+    "organization": "ParaStell",
+    "repository": "https://github.com/FusionSandwich/parastell",
+    "revision": "2f68fcf7919006a30724b926565b34e54f957630",
+    "access_date": "2026-08-20",
+    "license_or_redistribution_note": "Project-defined non-production smoke structure."
+  },
+  "edges": [
+    0.0,
+    100000.0,
+    1000000.0,
+    5000000.0,
+    10000000.0,
+    14000000.0,
+    14200000.0,
+    20000000.0
+  ]
+}

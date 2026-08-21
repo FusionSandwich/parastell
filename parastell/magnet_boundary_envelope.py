@@ -86,23 +86,17 @@ def _hash(path: str | Path) -> str:
 
 
 def authoritative_energy_edges(name: str = "CCFE-709") -> np.ndarray:
-    """Return an exact OpenMC group structure; never synthesize CCFE-709."""
+    """Return a vendored, checksum-validated neutron structure."""
+
+    from .energy_groups import get_structure
+
     try:
-        from openmc.mgxs import GROUP_STRUCTURES
-    except ImportError as exc:
+        structure = get_structure(name, particle="neutron")
+    except (KeyError, ValueError) as exc:
         raise RuntimeError(
-            "OpenMC is required to resolve authoritative group structures"
+            f"authoritative energy structure {name!r} is unavailable"
         ) from exc
-    if name not in GROUP_STRUCTURES:
-        raise RuntimeError(
-            f"authoritative OpenMC energy structure {name!r} is unavailable"
-        )
-    values = _edges(GROUP_STRUCTURES[name], f"GROUP_STRUCTURES[{name!r}]")
-    if name == "CCFE-709" and len(values) != 710:
-        raise RuntimeError(
-            "OpenMC CCFE-709 does not contain exactly 709 groups"
-        )
-    return values.copy()
+    return _edges(structure.edges_eV, name)
 
 
 def production_mu_edges() -> np.ndarray:

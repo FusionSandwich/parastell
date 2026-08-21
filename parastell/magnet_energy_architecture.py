@@ -15,29 +15,18 @@ SMOKE_PHOTON_42 = np.geomspace(1.0e3, 30.0e6, 43)
 
 
 def authoritative_neutron_edges(name: str) -> np.ndarray:
-    if name == "7-group":
-        return SMOKE_NEUTRON_7.copy()
+    """Return a vendored, checksum-validated neutron structure."""
+
+    from .energy_groups import get_structure
+
+    registry_name = "smoke-7" if name == "7-group" else name
     try:
-        from openmc.mgxs import GROUP_STRUCTURES
-    except ImportError as exc:
-        raise RuntimeError(
-            "OpenMC is required for authoritative grids"
+        structure = get_structure(registry_name, particle="neutron")
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            f"unknown authoritative neutron structure {name!r}"
         ) from exc
-    aliases = {
-        "CCFE-709": ("CCFE-709", 709),
-        "UKAEA-1102": ("UKAEA-1102", 1102),
-    }
-    if name not in aliases:
-        raise ValueError(f"unknown authoritative neutron structure {name!r}")
-    key, count = aliases[name]
-    if key not in GROUP_STRUCTURES:
-        raise RuntimeError(f"OpenMC does not provide {key}")
-    edges = np.asarray(GROUP_STRUCTURES[key], dtype=float)
-    if len(edges) != count + 1 or np.any(np.diff(edges) <= 0.0):
-        raise RuntimeError(
-            f"{key} is not the expected {count}-group structure"
-        )
-    return edges.copy()
+    return np.asarray(structure.edges_eV, dtype=float)
 
 
 def photon_master_edges(

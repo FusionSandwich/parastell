@@ -23,6 +23,9 @@ import numpy as np
 import openmc
 import yaml
 
+from .energy_groups import get_structure
+from .energy_groups import list_structures
+
 
 SCHEMA_NAME = "parastell.magnet_boundary_source"
 SCHEMA_VERSION = "1.0.0"
@@ -56,16 +59,9 @@ _ROLE_OFFSETS = {
     "damage_energy": 5,
     "gas_production": 6,
 }
-SMOKE_NEUTRON_7_GROUP_BOUNDS_EV = (
-    0.0,
-    1.0e5,
-    1.0e6,
-    5.0e6,
-    10.0e6,
-    14.0e6,
-    14.2e6,
-    20.0e6,
-)
+SMOKE_NEUTRON_7_GROUP_BOUNDS_EV = get_structure(
+    "smoke-7", particle="neutron"
+).edges_eV
 
 
 def software_validation_energy_bounds() -> tuple[float, ...]:
@@ -76,11 +72,7 @@ def software_validation_energy_bounds() -> tuple[float, ...]:
     array sizing, serialization, and replay can be tested at useful scale.
     """
 
-    logarithmic = np.geomspace(1.0e-5, 20.0e6, 177)
-    fusion = np.asarray((13.5e6, 14.0e6, 14.1e6, 14.2e6, 14.5e6))
-    return tuple(
-        float(value) for value in np.unique(np.r_[0.0, logarithmic, fusion])
-    )
+    return get_structure("regression-182", particle="neutron").edges_eV
 
 
 PARASTELL_GROUP_STRUCTURES = {
@@ -93,16 +85,13 @@ def available_energy_group_structures() -> dict[str, dict[str, Any]]:
     """Return discoverable ParaStell and OpenMC energy structures."""
 
     structures = {
-        name: {
-            "group_count": len(edges) - 1,
-            "classification": (
-                "software_validation"
-                if name == "PSTL-SOFTWARE-175+"
-                else "fast_smoke_test"
-            ),
-            "source": "parastell",
+        structure.name: {
+            "group_count": structure.group_count,
+            "classification": structure.status,
+            "source": "parastell.energy_groups",
+            "particle": structure.particle,
         }
-        for name, edges in PARASTELL_GROUP_STRUCTURES.items()
+        for structure in list_structures()
     }
     try:
         from openmc.mgxs import GROUP_STRUCTURES
@@ -197,6 +186,12 @@ def _resolve_energy_bounds(
     structure = str(structure)
     if structure in PARASTELL_GROUP_STRUCTURES:
         return PARASTELL_GROUP_STRUCTURES[structure], structure
+    try:
+        registered = get_structure(structure, particle="neutron")
+    except (KeyError, ValueError):
+        registered = None
+    if registered is not None and registered.edges_eV is not None:
+        return registered.edges_eV, registered.name
     from openmc.mgxs import GROUP_STRUCTURES
 
     try:
