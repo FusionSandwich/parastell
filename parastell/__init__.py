@@ -10,6 +10,11 @@ from .magnet_spectral_handoff import CoordinateFrame
 from .magnet_spectral_handoff import MagnetRegion
 from .magnet_spectral_handoff import MagnetSpectralHandoff
 from .magnet_spectral_handoff import MeshSpec
+from .paraview_export import ParaViewBlock
+from .paraview_export import ParaViewExecutables
+from .paraview_export import discover_paraview_executables
+from .paraview_export import export_paraview_bundle
+from .paraview_export import run_paraview_batch
 
 
 __all__ = [
@@ -20,7 +25,12 @@ __all__ = [
     "MaterialResponseLibrary",
     "MeshSpec",
     "MultilayerStack",
+    "ParaViewBlock",
+    "ParaViewExecutables",
     "ReplaySummary",
+    "discover_paraview_executables",
+    "export_paraview_bundle",
     "replay_phase_space",
+    "run_paraview_batch",
     "verification_rebco_stack",
 ]

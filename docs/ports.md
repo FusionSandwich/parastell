@@ -126,27 +126,11 @@ The non-circular regression uses a 6 cm × 4 cm rectangular clear aperture,
 
 ![Rolled rectangular port cutaway](images/ports/port_rectangular_rolled_isometric.png)
 
-The older global assembly exporter remains available for STEP/GLB inspection:
-
-`stellarator.export_port_visual_validation(output_dir)` exports a named,
-color-preserving STEP assembly, interactive GLBs, actual longitudinal and
-transverse cutaways, headless PNG renders, and a SHA-256 manifest. Axis
-markers, outer envelopes, and clearance envelopes are marked visual-only and
-are never included in neutronics or volumetric-mesh geometry.
-
-The representative validation below is the finalized four-layer CadQuery
-sector with a circular clear aperture, an orange 1 cm liner, a 25 cm external
-extension, and filament-derived magnets.
-
-![Isometric view of the color-coded ported sector](images/ports/port_isometric.png)
-
-![Longitudinal section containing the port axis](images/ports/port_axis_section.png)
-
-![Blanket cutaway exposing the void and liner](images/ports/port_blanket_cutaway.png)
-
-![Port-to-magnet clearance view](images/ports/port_magnet_clearance.png)
-
-![Exploded blanket-layer view](images/ports/port_layers_exploded.png)
+The older global CadQuery assembly exporter remains available for STEP/GLB
+comparison, but its global-camera images are no longer used as primary
+validation evidence. `stellarator.export_port_visual_validation(output_dir)`
+marks axes, envelopes, and clearance objects as visual-only and excludes them
+from neutronics and volumetric geometry.
 
 ## Collision policies and report
 
@@ -228,13 +212,48 @@ unchanged. Production qualification uses independent `check_watertight` and
 cross-section library; the exact commands and results live in the validation
 artifact report rather than being inferred from file creation.
 
-The representative full-assembly qualification used OpenMC 0.16.0 commit
-`617d35a5063c57796b43428bc401e627d2011046` with DAGMC 3.2.4, PyDAGMC
-0.0.1, and MOAB/PyMOAB 5.5.1. Geometry-debug, port-centerline,
-liner, adjacent-blanket, and isotropic sector cases completed 26,000 total
-histories with nonzero tallies, zero lost particles, and zero DAGMC navigation
-errors against the magnet-inclusive global-graveyard H5M. The cross-section
-manifest records the locally mounted NNDC HDF5 library and its SHA-256.
+## Validation levels
+
+Local topology validation covers the synthetic four-layer sector, the
+surface-anchor frame, aperture loops, shared facets, surface senses, native
+PyDAGMC export, and discrete-PLC tetrahedralization.
+
+The earlier magnet-inclusive assembly validation is a translated-fixture
+regression only. It used the small unit-test filament set translated by
+`[0, 0, 1000]` cm, OpenMC 0.16.0 commit
+`617d35a5063c57796b43428bc401e627d2011046`, DAGMC 3.2.4, PyDAGMC 0.0.1,
+and MOAB/PyMOAB 5.5.1. Its 26,000-history result verifies software regression
+behavior but is not evidence of clearance or transport with physical reactor
+magnets.
+
+Actual reactor-scale validation uses `examples/wout_vmec.nc`, the complete
+radial build in `examples/config.yaml`, and the 40-filament four-field-period
+`examples/coils.example` file without coordinate translation. The original
+15-degree toroidal, zero-degree poloidal plasma-surface anchor does not reach
+the configured vacuum-vessel endpoint in this reactor-scale point cloud. A
+bounded angular/reference/tilt study and the 13 x 49, 17 x 65, and 21 x 81
+resolutions did not produce a native aperture complex that passed the existing
+loop and duplicate-facet gates. Consequently no actual-coordinate reactor H5M
+or OpenMC result is currently claimed. This negative gate is kept separate
+from the passing translated-fixture regression.
+
+## ParaView multiblock export
+
+`parastell.paraview_export.export_paraview_bundle(...)` converts named DAGMC
+volumes and named MOAB tetrahedron regions into VTK XML leaves and two named
+multiblock files. It consumes an H5M plus an optional ledger and has no
+dependency on port classes. Each block retains component name and kind,
+material tag, geometry/region ID, field-period and instance IDs, port name,
+and visual/transport/volumetric flags. The graveyard remains present but is
+hidden by default.
+
+The generated `full_reactor_render.py` is run with ParaView's off-screen
+`pvbatch` executable and writes a reusable `.pvsm` state, high-resolution PNGs,
+and a numerical validation JSON. Every manifest contains an explicit scope:
+`sector_transport_model`, `full_reactor_transport_model`, or
+`full_reactor_visual_only`. A bundle rendered from a translated or synthetic
+fixture must use its own non-production scope and must not be reported as a
+full-reactor result.
 
 Volume closure uses `max(1e-7, 1e-7 * max(1, reference_volume))` in model
 volume units. Disconnected centerline intervals, ambiguous far-side hits,
