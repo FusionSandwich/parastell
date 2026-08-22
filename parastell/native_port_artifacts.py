@@ -114,6 +114,8 @@ def render_native_dagmc(complex_, h5m_filename, output_dir):
     radial_limit = max(4.0 * (aperture + port.liner.thickness), 18.0)
     start = complex_.radial_data["port_result"].resolved_start
     end = complex_.radial_data["port_result"].resolved_end
+    external_termination = end + port.extent.outer_extension
+    chamber_end = float(complex_.loops[1].expected_w)
     w_limits = (start - 8.0, end + port.extent.outer_extension + 8.0)
 
     def decorate_2d(ax, title, xlabel, ylabel):
@@ -131,7 +133,25 @@ def render_native_dagmc(complex_, h5m_filename, output_dir):
             start, color="#0066cc", linestyle=":", linewidth=1.5, label="start"
         )
         ax.axvline(
-            end, color="#cc0066", linestyle=":", linewidth=1.5, label="end"
+            end,
+            color="#cc0066",
+            linestyle=":",
+            linewidth=1.5,
+            label="resolved blanket end",
+        )
+        ax.axvline(
+            external_termination,
+            color="#8a2be2",
+            linestyle="-.",
+            linewidth=1.5,
+            label="external termination",
+        )
+        ax.axvspan(
+            start,
+            chamber_end,
+            color="#4ea3ff",
+            alpha=0.08,
+            label="chamber interval",
         )
         ax.grid(alpha=0.2)
 
@@ -208,17 +228,31 @@ def render_native_dagmc(complex_, h5m_filename, output_dir):
             & np.all(np.abs(triangles[:, :, 1]) <= radial_limit, axis=1)
             & np.all(np.abs(triangles[:, :, 2]) <= radial_limit, axis=1)
         )
+        if record.kind == "liner_blanket_interface":
+            keep &= centers[:, 2] <= 0.0
         if np.any(keep):
             ax.add_collection3d(
                 Poly3DCollection(
                     triangles[keep],
                     facecolor=SURFACE_COLORS.get(record.kind, "#777777"),
                     edgecolor="none",
-                    alpha=0.35 if record.kind == "radial_surface" else 0.85,
+                    alpha=(
+                        0.25
+                        if record.kind == "liner_blanket_interface"
+                        else 0.35 if record.kind == "radial_surface" else 0.75
+                    ),
                 )
             )
     ax.plot([w_limits[0], w_limits[1]], [0, 0], [0, 0], "k--", linewidth=2)
-    ax.scatter([start, end], [0, 0], [0, 0], c=["#0066cc", "#cc0066"], s=60)
+    ax.scatter(
+        [start, end, external_termination],
+        [0, 0, 0],
+        [0, 0, 0],
+        c=["#0066cc", "#cc0066", "#8a2be2"],
+        s=60,
+    )
+    ax.text(end, 0, 0, "resolved blanket end", fontsize=8)
+    ax.text(external_termination, 0, 0, "external termination", fontsize=8)
     ax.set_xlim(*w_limits)
     ax.set_ylim(-radial_limit, radial_limit)
     ax.set_zlim(-radial_limit, radial_limit)
@@ -294,6 +328,7 @@ def export_native_port_artifacts(
         "images": [str(path) for path in images],
         "dagmc_validation": structural.to_dict(),
         "dagmc_file_audit": file_audit,
+        "topology_summary": complex_.topology_summary(),
     }
     if tetrahedralize:
         mesh = complex_.tetrahedralize(min_mesh_size, max_mesh_size)

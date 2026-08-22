@@ -120,6 +120,12 @@ magnet solid selected by collision checking.
 
 ![Local magnet-clearance view](images/ports/port_local_magnet_clearance.png)
 
+The non-circular regression uses a 6 cm × 4 cm rectangular clear aperture,
+23° roll, 7° poloidal tilt, and −4° toroidal tilt. Its distinct local `u` and
+`v` projections verify that rendering follows the resolved port frame.
+
+![Rolled rectangular port cutaway](images/ports/port_rectangular_rolled_isometric.png)
+
 The older global assembly exporter remains available for STEP/GLB inspection:
 
 `stellarator.export_port_visual_validation(output_dir)` exports a named,
@@ -170,23 +176,64 @@ explicit `ignore`.
 | STEP | Void and liner exported as independently named solids |
 | CAD-to-DAGMC | Not validated for surface-anchored ports in this implementation stage |
 | Gmsh discrete PLC | The shared native facet complex is tetrahedralized without OCC or CAD imports |
-| MOAB point cloud | Port-affected components explicitly rejected |
-| Direct PyDAGMC | One surface-anchored port is exported from the verified aperture loops with shared facets and explicit senses |
+| Legacy structured MOAB | Unported builds retain the existing one-tet-thick point-cloud mesh; ports are explicitly rejected |
+| Native discrete-PLC MOAB | A supported surface port uses the same conformal facet complex as direct PyDAGMC and writes distinct volumetric H5M/VTK files |
+| Direct native PyDAGMC | One surface-anchored port is exported from verified aperture loops with shared facets and explicit senses |
+| CAD comparison | CadQuery solids regenerated from the loops remain a quantitative/STEP comparison, never a silent native-source fallback |
 | Cubit | Not required or validated by the port implementation |
 
-For a native build, set `use_pydagmc=True` before generating components and
-then call `invessel_build.export_native_port_artifacts(output_dir)`. This
-writes distinct `*_native_dagmc.h5m` and `*_native_volume_mesh.h5m` files,
-VTK mirrors, local-frame images loaded from the DAGMC facets, structural
-ledgers, and per-region mesh validation. The native path does not call
-CadQuery Boolean operations, CAD-to-DAGMC, or
+The standard volumetric API selects the backend without changing legacy
+callers:
+
+```python
+stellarator.export_invessel_build_mesh_moab(
+    components,
+    "ported_sector_native_volume_mesh",
+    output_dir,
+    geometry_source="auto",  # auto, legacy_point_cloud, native_surface_complex
+    min_mesh_size=15.0,
+    max_mesh_size=45.0,
+    aperture_chord_tolerance=0.05,
+    vertex_merge_tolerance=1.0e-9,
+)
+```
+
+`auto` keeps the legacy structured path for unported builds and chooses the
+native discrete PLC for a supported port. The explicit legacy mode rejects any
+port, while the explicit native mode rejects unsupported configurations. The
+native path does not call CadQuery Boolean operations, CAD-to-DAGMC, or
 `gmsh.model.occ.importShapesNativePointer`; the same unique vertex and facet
-ledger supplies PyDAGMC and the Gmsh discrete entities.
+ledger supplies PyDAGMC and Gmsh discrete entities. The artifact helper remains
+available when a validation ledger, facet renders, and both H5M forms are
+needed together.
+
+Circular aperture sampling defaults to a 0.05 cm maximum chord deviation.
+Native vertex reuse defaults to a documented physical tolerance of 1e-9 cm;
+coordinate decimal rounding is not the public merge contract. Volumetric JSON
+reports include scaled Jacobian, mean ratio, radius ratio, dihedral extrema,
+edge-length range, and per-threshold failure counts. The conservative default
+failure thresholds are 1e-7 scaled Jacobian, 1e-5 mean ratio, 1e-12 radius
+ratio, 1e-5° minimum dihedral, and 179.9999° maximum dihedral.
+
+When magnets are present, native physical submodels are combined without local
+graveyards. ParaStell rejects conflicting graveyards, adds exactly one global
+graveyard after all physical volumes are present, fills every missing exterior
+sense, and retains the enclosing graveyard boundary as the sole one-sided
+surface.
 
 Native export currently accepts exactly one `placement.mode: surface` port.
 The existing Cartesian CadQuery behavior and unported PyDAGMC/MOAB paths are
-unchanged. External `check_watertight`, `overlap_check`, and compiled OpenMC
-DAGMC transport remain environment-level validation gates.
+unchanged. Production qualification uses independent `check_watertight` and
+`overlap_check` tools plus a compiled OpenMC/DAGMC fixed-source run with a real
+cross-section library; the exact commands and results live in the validation
+artifact report rather than being inferred from file creation.
+
+The representative full-assembly qualification used OpenMC 0.15.3 with DAGMC
+3.2.4, PyDAGMC 0.0.1, and MOAB/PyMOAB 5.5.1. Geometry-debug, port-centerline,
+liner, adjacent-blanket, and isotropic sector cases completed 26,000 total
+histories with nonzero tallies, zero lost particles, and zero DAGMC navigation
+errors against the magnet-inclusive global-graveyard H5M. The cross-section
+manifest records the locally mounted NNDC HDF5 library and its SHA-256.
 
 Volume closure uses `max(1e-7, 1e-7 * max(1, reference_volume))` in model
 volume units. Disconnected centerline intervals, ambiguous far-side hits,

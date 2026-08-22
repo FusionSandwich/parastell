@@ -4,6 +4,7 @@ import warnings
 
 import cadquery as cq
 import cad_to_dagmc
+import pydagmc
 from pymoab import core
 
 from . import log
@@ -21,6 +22,14 @@ from .cubit_utils import (
     make_material_block,
 )
 from .utils import read_yaml_config, filter_kwargs, m2cm, combine_dagmc_models
+from .dagmc_assembly import (
+    audit_dagmc_model,
+    assert_no_graveyard,
+    close_with_graveyard,
+    ensure_geometry_names,
+    tag_volume_component,
+)
+from .native_port_geometry import build_native_port_surface_complex
 from .pystell import read_vmec
 
 export_cubit_dagmc_allowed_kwargs = [
@@ -308,12 +317,22 @@ class Stellarator(object):
         self.invessel_build.export_step(export_dir=export_dir)
 
     def export_invessel_build_mesh_moab(
-        self, components, filename, export_dir=""
+        self,
+        components,
+        filename,
+        export_dir="",
+        geometry_source="auto",
+        min_mesh_size=5.0,
+        max_mesh_size=25.0,
+        quality_thresholds=None,
+        aperture_chord_tolerance=0.05,
+        vertex_merge_tolerance=1.0e-9,
     ):
-        """Creates a tetrahedral mesh of in-vessel component volumes via MOAB
-        and exports the mesh as a H5M file. Note that this mesh is created
-        using the point cloud of the specified components and as such, each
-        component's mesh will be one tetrahedron thick.
+        """Export a legacy structured or native discrete-PLC MOAB mesh.
+
+        ``auto`` preserves the structured point-cloud implementation for
+        unported models and selects the conformal native surface complex for a
+        supported surface port.
 
         Arguments:
             components (array of str): array containing the names of the
@@ -321,9 +340,66 @@ class Stellarator(object):
             filename (str): name of H5M output file.
             export_dir (str): directory to which to export the h5m output file
                 (defaults to empty string).
+            geometry_source (str): ``auto``, ``legacy_point_cloud``, or
+                ``native_surface_complex`` (defaults to ``auto``).
+            min_mesh_size (float): native PLC minimum element size.
+            max_mesh_size (float): native PLC maximum element size.
+            quality_thresholds (dict): optional native tetrahedron quality
+                failure thresholds.
+            aperture_chord_tolerance (float): maximum circular aperture chord
+                deviation in model units (defaults to 0.05 cm).
+            vertex_merge_tolerance (float): physical coordinate tolerance used
+                to reuse native PLC vertices (defaults to 1e-9 cm).
         """
-        self.invessel_build.mesh_components_moab(components)
-        self.invessel_build.export_mesh_moab(filename, export_dir=export_dir)
+        sources = {
+            "auto",
+            "legacy_point_cloud",
+            "native_surface_complex",
+        }
+        if geometry_source not in sources:
+            raise ValueError(
+                f"geometry_source must be one of {sorted(sources)}, got "
+                f"{geometry_source!r}"
+            )
+        ports = tuple(getattr(self.invessel_build, "ports", ()))
+        if geometry_source == "auto":
+            selected = (
+                "native_surface_complex" if ports else "legacy_point_cloud"
+            )
+        else:
+            selected = geometry_source
+        if selected == "legacy_point_cloud":
+            if ports:
+                raise ValueError(
+                    "legacy_point_cloud cannot represent a port; use "
+                    "geometry_source='native_surface_complex' or 'auto'"
+                )
+            self.invessel_build.mesh_components_moab(components)
+            self.invessel_build.export_mesh_moab(
+                filename, export_dir=export_dir
+            )
+            return Path(export_dir) / Path(filename).with_suffix(".h5m")
+
+        if len(ports) != 1 or ports[0].placement.mode != "surface":
+            raise NotImplementedError(
+                "native_surface_complex currently requires exactly one "
+                "surface-anchored port"
+            )
+        complex_ = getattr(self.invessel_build, "native_port_complex", None)
+        if complex_ is None:
+            complex_ = build_native_port_surface_complex(
+                self.invessel_build,
+                include_graveyard=False,
+                aperture_chord_tolerance=aperture_chord_tolerance,
+                vertex_merge_tolerance=vertex_merge_tolerance,
+            )
+            self.invessel_build.native_port_complex = complex_
+        mesh = complex_.tetrahedralize(min_mesh_size, max_mesh_size)
+        self.invessel_build.native_volume_mesh = mesh
+        self.invessel_build.native_volume_mesh_validation = mesh.validate(
+            quality_thresholds=quality_thresholds
+        )
+        return mesh.write(Path(export_dir) / filename)
 
     def export_invessel_build_mesh_gmsh(
         self,
@@ -901,6 +977,28 @@ class Stellarator(object):
                 50).
         """
 
+        native_port_assembly = bool(
+            self.invessel_build
+            and getattr(self.invessel_build, "ports", ())
+            and self.invessel_build.use_pydagmc
+        )
+        graveyard_margin = float(kwargs.pop("graveyard_margin", 50.0))
+        aperture_chord_tolerance = float(
+            kwargs.pop("aperture_chord_tolerance", 0.05)
+        )
+        vertex_merge_tolerance = float(
+            kwargs.pop("vertex_merge_tolerance", 1.0e-9)
+        )
+        if native_port_assembly and self.magnet_set:
+            # The standalone IVB model normally owns a graveyard. Rebuild only
+            # its ledger/senses without that nonphysical volume so all physical
+            # submodels can be closed together after combination.
+            self.invessel_build.generate_components_pydagmc(
+                include_graveyard=False,
+                aperture_chord_tolerance=aperture_chord_tolerance,
+                vertex_merge_tolerance=vertex_merge_tolerance,
+            )
+
         if self.magnet_set:
             if magnet_exporter == "cubit":
                 self.build_cubit_model()
@@ -929,9 +1027,44 @@ class Stellarator(object):
                 )
             magnet_mbc = core.Core()
             magnet_mbc.load_file(str(self.magnet_model_path))
+            ivb_model = self.invessel_build.dag_model
+            magnet_model = pydagmc.Model(magnet_mbc)
+            if native_port_assembly:
+                assert_no_graveyard(ivb_model, label="In-vessel submodel")
+                assert_no_graveyard(magnet_model, label="Magnet submodel")
             self.pydagmc_model = combine_dagmc_models(
-                [self.invessel_build.dag_model.mb, magnet_mbc]
+                [ivb_model.mb, magnet_mbc]
             )
+            if native_port_assembly:
+                physical_volumes = sorted(
+                    self.pydagmc_model.volumes, key=lambda volume: volume.id
+                )
+                magnet_volumes = physical_volumes[len(ivb_model.volumes) :]
+                magnet_records = tuple(
+                    record
+                    for record in self.component_ledger
+                    if record.kind in {"magnet_conductor", "magnet_casing"}
+                )
+                if len(magnet_volumes) != len(magnet_records):
+                    raise ValueError(
+                        "Combined magnet volume count does not match the stable "
+                        "component ledger: "
+                        f"{len(magnet_volumes)} != {len(magnet_records)}"
+                    )
+                self.magnet_volume_ids = {}
+                for volume, record in zip(magnet_volumes, magnet_records):
+                    tag_volume_component(
+                        self.pydagmc_model, volume, record.name
+                    )
+                    self.magnet_volume_ids[record.name] = int(volume.id)
+                ensure_geometry_names(self.pydagmc_model)
+                self.global_graveyard = close_with_graveyard(
+                    self.pydagmc_model, margin=graveyard_margin
+                )
+                self.pydagmc_validation = audit_dagmc_model(
+                    self.pydagmc_model,
+                    vertex_tolerance=vertex_merge_tolerance,
+                )
         else:
             self.pydagmc_model = self.invessel_build.dag_model
 

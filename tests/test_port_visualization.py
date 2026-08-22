@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from PIL import Image, ImageStat
+from PIL import Image, ImageChops, ImageStat
 import pytest
 
 import parastell.magnet_coils as magnet_coils
@@ -215,3 +215,23 @@ def test_port_local_views_have_semantic_geometry_checks(tmp_path):
     assert manifest["views"]["magnet_clearance"][
         "collision_solid_identity_preserved"
     ]
+
+
+def test_rectangular_rolled_tilted_local_views_are_oriented(tmp_path):
+    sys.path.insert(0, str(Path(__file__).parents[1] / "examples"))
+    from port_validation import create_validation_stellarator
+
+    stellarator = create_validation_stellarator(rectangular_rolled=True)
+    manifest = stellarator.export_port_local_validation(tmp_path)
+
+    dimensions = manifest["recovered_dimensions"]
+    assert dimensions["inner_width"] == pytest.approx(6.0, abs=1e-6)
+    assert dimensions["inner_height"] == pytest.approx(4.0, abs=1e-6)
+    assert manifest["local_frame"]["axis_normal_angle_degrees"] > 0.0
+    longitudinal_u = Image.open(
+        tmp_path / "port_local_longitudinal_u.png"
+    ).convert("RGB")
+    longitudinal_v = Image.open(
+        tmp_path / "port_local_longitudinal_v.png"
+    ).convert("RGB")
+    assert ImageChops.difference(longitudinal_u, longitudinal_v).getbbox()

@@ -30,7 +30,7 @@ class ValidationReferenceSurface(ivb.ReferenceSurface):
         return points[0] if scalar_phi else points
 
 
-def create_validation_invessel_build(native=False):
+def create_validation_invessel_build(native=False, rectangular_rolled=False):
     """Build the four-layer, lined, plasma-to-exterior validation port."""
     toroidal_angles = [0.0, 10.0, 20.0, 30.0]
     poloidal_angles = [0.0, 90.0, 180.0, 270.0, 360.0]
@@ -102,6 +102,18 @@ def create_validation_invessel_build(native=False):
             "vacuum_vessel",
         ],
     }
+    if rectangular_rolled:
+        port["name"] = "rectangular_rolled_port"
+        port["cross_section"] = {
+            "shape": "rectangle",
+            "width": 6.0,
+            "height": 4.0,
+            "dimensions_are": "clear_aperture",
+        }
+        port["placement"]["axis"].update(
+            {"poloidal_tilt": 7.0, "toroidal_tilt": -4.0}
+        )
+        port["placement"]["roll"] = 23.0
     model = ivb.InVesselBuild(
         ValidationReferenceSurface(),
         radial_build,
@@ -119,9 +131,11 @@ def create_validation_invessel_build(native=False):
     return model
 
 
-def create_validation_stellarator():
+def create_validation_stellarator(rectangular_rolled=False):
     """Build the visual validation assembly, including filament magnets."""
-    model = create_validation_invessel_build()
+    model = create_validation_invessel_build(
+        rectangular_rolled=rectangular_rolled
+    )
 
     coils_path = (
         Path(__file__).resolve().parents[1]
@@ -154,8 +168,11 @@ def create_validation_stellarator():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--rectangular-rolled", action="store_true")
     args = parser.parse_args()
-    stellarator = create_validation_stellarator()
+    stellarator = create_validation_stellarator(
+        rectangular_rolled=args.rectangular_rolled
+    )
     stellarator.export_port_local_validation(args.output_dir)
 
 

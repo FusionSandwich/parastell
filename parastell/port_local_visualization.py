@@ -109,6 +109,27 @@ def _longitudinal(path, model, port, result, aperture_model, coordinate):
         if aperture_model.loops[0].outer_uv is not None
         else inner
     )
+    first_layer_low = min(
+        _boundary_w(model, port, layer)[0]
+        for layer in result.ordered_intersected_layers
+    )
+    if first_layer_low > result.resolved_start:
+        ax.axvspan(
+            result.resolved_start,
+            first_layer_low,
+            color=_rgba("plasma_or_chamber")[:3],
+            alpha=0.16,
+            zorder=0,
+        )
+        ax.text(
+            (result.resolved_start + first_layer_low) / 2.0,
+            outer[:, 1].max() * 1.42,
+            "chamber interval",
+            rotation=90,
+            ha="center",
+            va="top",
+            fontsize=8,
+        )
     for layer in result.ordered_intersected_layers:
         low, high = _boundary_w(model, port, layer)
         color = _layer_color(layer)
@@ -151,8 +172,8 @@ def _longitudinal(path, model, port, result, aperture_model, coordinate):
     for value, label in (
         (0.0, "surface anchor"),
         (start_w, "start"),
-        (end_w, "end"),
-        (extension_w, "extension end"),
+        (end_w, "resolved blanket end"),
+        (extension_w, "external termination"),
     ):
         ax.axvline(
             value, color="black", lw=1.0, ls=":" if label != "start" else "-"
@@ -293,9 +314,11 @@ def _transverse(path, port, result, loop, label):
 def _isometric(path, model, port, result, aperture_model):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
+    local_loops = []
     for loop in aperture_model.loops:
         inner = _local(
             loop.inner_points,
@@ -304,6 +327,7 @@ def _isometric(path, model, port, result, aperture_model):
             aperture_model.local_reference,
             aperture_model.local_normal,
         )
+        outer = None
         ax.plot(
             inner[:, 0],
             inner[:, 1],
@@ -326,6 +350,59 @@ def _isometric(path, model, port, result, aperture_model):
                 color=_rgba("port_liner")[:3],
                 lw=2.4,
             )
+        local_loops.append((inner, outer))
+    void_panels = []
+    liner_panels = []
+    for (left_inner, left_outer), (right_inner, right_outer) in zip(
+        local_loops, local_loops[1:]
+    ):
+        for index in range(len(left_inner) - 1):
+            following = (index + 1) % (len(left_inner) - 1)
+            void_panels.append(
+                (
+                    left_inner[index],
+                    left_inner[following],
+                    right_inner[following],
+                    right_inner[index],
+                )
+            )
+            if (
+                left_outer is not None
+                and right_outer is not None
+                and np.mean(
+                    (
+                        left_outer[index, 2],
+                        left_outer[following, 2],
+                        right_outer[following, 2],
+                        right_outer[index, 2],
+                    )
+                )
+                >= 0.0
+            ):
+                liner_panels.append(
+                    (
+                        left_outer[index],
+                        left_outer[following],
+                        right_outer[following],
+                        right_outer[index],
+                    )
+                )
+    ax.add_collection3d(
+        Poly3DCollection(
+            void_panels,
+            facecolor=_rgba("port_void")[:3],
+            alpha=0.22,
+            edgecolor="none",
+        )
+    )
+    ax.add_collection3d(
+        Poly3DCollection(
+            liner_panels,
+            facecolor=_rgba("port_liner")[:3],
+            alpha=0.28,
+            edgecolor="none",
+        )
+    )
     w0, w1 = (
         result.resolved_start,
         result.resolved_end + result.outer_extension,
@@ -341,8 +418,8 @@ def _isometric(path, model, port, result, aperture_model):
     for w, name in (
         (0, "anchor"),
         (result.resolved_start, "start"),
-        (result.resolved_end, "end"),
-        (w1, "extension"),
+        (result.resolved_end, "resolved blanket end"),
+        (w1, "external termination"),
     ):
         ax.text(w, 0, 0, f" {name}", fontsize=8)
     for layer in result.ordered_intersected_layers:
@@ -388,9 +465,14 @@ def _isometric(path, model, port, result, aperture_model):
         handles=[
             Patch(
                 color=_rgba("port_void")[:3],
-                label="inner loops / clear aperture",
+                alpha=0.45,
+                label="continuous clear void",
             ),
-            Patch(color=_rgba("port_liner")[:3], label="outer loops / liner"),
+            Patch(
+                color=_rgba("port_liner")[:3],
+                alpha=0.45,
+                label="half-section translucent liner",
+            ),
         ]
     )
     _common_text(ax, port, result, "bounded local w/u/v isometric")

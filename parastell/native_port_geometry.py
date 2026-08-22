@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, replace
-from hashlib import sha1
+from hashlib import sha1, sha256
 import json
 from pathlib import Path
 
@@ -22,14 +22,36 @@ from .port_aperture import build_aperture_loops
 
 
 COORDINATE_DIGITS = 9
+DEFAULT_APERTURE_CHORD_TOLERANCE = 0.05
+DEFAULT_VERTEX_MERGE_TOLERANCE = 10.0 ** (-COORDINATE_DIGITS)
+
+# Conservative production floors: these reject collapsed/sliver-limit cells
+# while preserving the established representative PLC mesh. Callers may supply
+# stricter values to ``NativeVolumeMesh.validate``.
+DEFAULT_TET_QUALITY_THRESHOLDS = {
+    "scaled_jacobian": 1.0e-7,
+    "mean_ratio": 1.0e-5,
+    "radius_ratio": 1.0e-12,
+    "minimum_dihedral_angle": 1.0e-5,
+    "maximum_dihedral_angle": 179.9999,
+}
 
 
-def _coordinate_key(point):
-    return tuple(np.round(np.asarray(point, dtype=float), COORDINATE_DIGITS))
+def _coordinate_key(point, tolerance=DEFAULT_VERTEX_MERGE_TOLERANCE):
+    point = np.asarray(point, dtype=float)
+    tolerance = float(tolerance)
+    if np.isclose(
+        tolerance, DEFAULT_VERTEX_MERGE_TOLERANCE, rtol=0.0, atol=0.0
+    ):
+        # Preserve the established representative topology byte-for-byte.
+        return tuple(np.round(point, COORDINATE_DIGITS))
+    return tuple(np.rint(point / tolerance).astype(np.int64))
 
 
-def _facet_key(triangle):
-    return tuple(sorted(_coordinate_key(point) for point in triangle))
+def _facet_key(triangle, tolerance=DEFAULT_VERTEX_MERGE_TOLERANCE):
+    return tuple(
+        sorted(_coordinate_key(point, tolerance) for point in triangle)
+    )
 
 
 def _triangle_area(triangle):
@@ -53,6 +75,14 @@ def _orient_triangle(triangle, desired):
 def _disk_triangles(points, desired):
     points = np.asarray(points, dtype=float)[:-1]
     center = points.mean(axis=0)
+    # An axis-centered fan makes a directed centerline ray hit every triangle
+    # at one shared vertex. DAGMC's overlap-debug navigation then classifies
+    # both adjacent volumes at the crossing. Keep the same aperture polygon but
+    # move the fan seed deterministically into its interior so the centerline
+    # crosses exactly one facet.
+    center = (
+        center + 0.137 * (points[0] - center) + 0.071 * (points[1] - center)
+    )
     triangles = []
     for index in range(len(points)):
         triangle = np.asarray(
@@ -168,6 +198,15 @@ class NativeVolumeMeshResult:
     disconnected_region_count: int
     region_reference_volume: dict[str, float]
     region_relative_volume_error: dict[str, float]
+    region_minimum_scaled_jacobian: dict[str, float]
+    region_minimum_mean_ratio: dict[str, float]
+    region_minimum_radius_ratio: dict[str, float]
+    region_minimum_dihedral_angle: dict[str, float]
+    region_maximum_dihedral_angle: dict[str, float]
+    region_minimum_edge_length: dict[str, float]
+    region_maximum_edge_length: dict[str, float]
+    region_quality_threshold_counts: dict[str, dict[str, int]]
+    quality_thresholds: dict[str, float]
 
     def to_dict(self):
         return dict(self.__dict__)
@@ -176,13 +215,26 @@ class NativeVolumeMeshResult:
 class NativePortSurfaceComplex:
     """One conformal surface ledger with no coincident duplicate facets."""
 
-    def __init__(self, model, port, loops, surfaces, volumes, radial_data):
+    def __init__(
+        self,
+        model,
+        port,
+        loops,
+        surfaces,
+        volumes,
+        radial_data,
+        *,
+        aperture_chord_tolerance=DEFAULT_APERTURE_CHORD_TOLERANCE,
+        vertex_merge_tolerance=DEFAULT_VERTEX_MERGE_TOLERANCE,
+    ):
         self.source_model = model
         self.port = port
         self.loops = tuple(loops)
         self.surfaces = tuple(surfaces)
         self.volumes = tuple(volumes)
         self.radial_data = radial_data
+        self.aperture_chord_tolerance = float(aperture_chord_tolerance)
+        self.vertex_merge_tolerance = float(vertex_merge_tolerance)
         self.dag_model = None
         self.volume_ids = {}
         self.surface_ids = {}
@@ -191,9 +243,44 @@ class NativePortSurfaceComplex:
     def triangle_count(self):
         return sum(surface.triangle_count for surface in self.surfaces)
 
+    def topology_summary(self):
+        """Return a canonical regression summary of the native physical complex."""
+        surfaces = []
+        for surface in self.surfaces:
+            facet_keys = sorted(
+                repr(_facet_key(triangle, self.vertex_merge_tolerance))
+                for triangle in surface.triangles
+            )
+            surfaces.append(
+                {
+                    "name": surface.name,
+                    "kind": surface.kind,
+                    "reverse_volume": surface.reverse_volume,
+                    "forward_volume": surface.forward_volume,
+                    "triangle_count": surface.triangle_count,
+                    "facet_sha256": sha256(
+                        "\n".join(facet_keys).encode()
+                    ).hexdigest(),
+                }
+            )
+        summary = {
+            "schema_version": "1.0",
+            "aperture_chord_tolerance": self.aperture_chord_tolerance,
+            "vertex_merge_tolerance": self.vertex_merge_tolerance,
+            "loop_point_counts": [
+                len(loop.inner_points) - 1 for loop in self.loops
+            ],
+            "volumes": [record.__dict__ for record in self.volumes],
+            "surfaces": surfaces,
+        }
+        summary["sha256"] = sha256(
+            json.dumps(summary, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        return summary
+
     def _facet_counts(self):
         return Counter(
-            _facet_key(triangle)
+            _facet_key(triangle, self.vertex_merge_tolerance)
             for surface in self.surfaces
             for triangle in surface.triangles
         )
@@ -222,7 +309,10 @@ class NativePortSurfaceComplex:
             }:
                 continue
             for triangle in surface.triangles:
-                keys = [_coordinate_key(point) for point in triangle]
+                keys = [
+                    _coordinate_key(point, self.vertex_merge_tolerance)
+                    for point in triangle
+                ]
                 for left, right in ((0, 1), (1, 2), (2, 0)):
                     counts[tuple(sorted((keys[left], keys[right])))] += 1
         return counts
@@ -327,7 +417,7 @@ class NativePortSurfaceComplex:
             for triangle in surface.triangles:
                 indices = []
                 for point in triangle:
-                    key = _coordinate_key(point)
+                    key = _coordinate_key(point, self.vertex_merge_tolerance)
                     if key not in coordinate_map:
                         coordinate_map[key] = len(coordinates)
                         coordinates.append(np.asarray(point, dtype=float))
@@ -563,7 +653,9 @@ class NativePortSurfaceComplex:
             connectivity = list(mb.get_connectivity(triangle))
             referenced.update(connectivity)
             coordinates = mb.get_coords(connectivity).reshape((-1, 3))
-            facet_keys[_facet_key(coordinates)] += 1
+            facet_keys[
+                _facet_key(coordinates, self.vertex_merge_tolerance)
+            ] += 1
             zero_area += _triangle_area(coordinates) <= 1e-12
         all_vertices = set(mb.get_entities_by_type(root, types.MBVERTEX))
         duplicates = sum(
@@ -623,7 +715,9 @@ class NativePortSurfaceComplex:
                 for triangle in surface.triangles:
                     indices = []
                     for point in triangle:
-                        key = _coordinate_key(point)
+                        key = _coordinate_key(
+                            point, self.vertex_merge_tolerance
+                        )
                         if key not in coordinate_map:
                             coordinate_map[key] = len(coordinates) + 1
                             coordinates.append(np.asarray(point, dtype=float))
@@ -781,7 +875,102 @@ class NativeVolumeMesh:
             / 6.0
         )
 
-    def validate(self, tolerance=1e-12):
+    @staticmethod
+    def _quality_metrics(points, absolute_volumes):
+        edge_pairs = ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))
+        edge_lengths = np.column_stack(
+            [
+                np.linalg.norm(points[:, right] - points[:, left], axis=1)
+                for left, right in edge_pairs
+            ]
+        )
+        jacobians = []
+        for vertex in range(4):
+            others = [index for index in range(4) if index != vertex]
+            vectors = [
+                points[:, index] - points[:, vertex] for index in others
+            ]
+            determinant = np.abs(
+                np.einsum(
+                    "ij,ij->i", vectors[0], np.cross(vectors[1], vectors[2])
+                )
+            )
+            denominator = np.prod(
+                np.column_stack(
+                    [np.linalg.norm(vector, axis=1) for vector in vectors]
+                ),
+                axis=1,
+            )
+            jacobians.append(np.sqrt(2.0) * determinant / denominator)
+        scaled_jacobian = np.min(np.column_stack(jacobians), axis=1)
+        mean_ratio = (
+            12.0
+            * np.power(3.0 * absolute_volumes, 2.0 / 3.0)
+            / np.sum(edge_lengths**2, axis=1)
+        )
+
+        faces = ((0, 1, 2, 3), (0, 3, 1, 2), (0, 2, 3, 1), (1, 3, 2, 0))
+        normals = []
+        face_areas = []
+        for a, b, c, opposite in faces:
+            normal = np.cross(
+                points[:, b] - points[:, a], points[:, c] - points[:, a]
+            )
+            inward = (
+                np.einsum(
+                    "ij,ij->i", normal, points[:, opposite] - points[:, a]
+                )
+                > 0.0
+            )
+            normal[inward] *= -1.0
+            norm = np.linalg.norm(normal, axis=1)
+            normals.append(normal / norm[:, None])
+            face_areas.append(norm / 2.0)
+        surface_area = np.sum(np.column_stack(face_areas), axis=1)
+        inradius = 3.0 * absolute_volumes / surface_area
+
+        matrix = 2.0 * (points[:, 1:] - points[:, :1])
+        rhs = np.sum(points[:, 1:] ** 2, axis=2) - np.sum(
+            points[:, :1] ** 2, axis=2
+        )
+        circumcenter = np.linalg.solve(matrix, rhs)
+        circumradius = np.linalg.norm(circumcenter - points[:, 0], axis=1)
+        radius_ratio = 3.0 * inradius / circumradius
+
+        dihedrals = []
+        for left in range(4):
+            for right in range(left + 1, 4):
+                cosine = np.clip(
+                    np.einsum("ij,ij->i", normals[left], normals[right]),
+                    -1.0,
+                    1.0,
+                )
+                dihedrals.append(180.0 - np.degrees(np.arccos(cosine)))
+        dihedrals = np.column_stack(dihedrals)
+        return {
+            "scaled_jacobian": scaled_jacobian,
+            "mean_ratio": mean_ratio,
+            "radius_ratio": radius_ratio,
+            "minimum_dihedral_angle": np.min(dihedrals, axis=1),
+            "maximum_dihedral_angle": np.max(dihedrals, axis=1),
+            "minimum_edge_length": np.min(edge_lengths, axis=1),
+            "maximum_edge_length": np.max(edge_lengths, axis=1),
+        }
+
+    def validate(self, tolerance=1e-12, quality_thresholds=None):
+        thresholds = dict(DEFAULT_TET_QUALITY_THRESHOLDS)
+        if quality_thresholds is not None:
+            unknown = set(quality_thresholds) - set(thresholds)
+            if unknown:
+                raise ValueError(
+                    f"Unknown tetrahedron quality thresholds: {sorted(unknown)}"
+                )
+            thresholds.update(
+                {
+                    key: float(value)
+                    for key, value in quality_thresholds.items()
+                }
+            )
         counts = {}
         minima = {}
         maxima = {}
@@ -791,6 +980,14 @@ class NativeVolumeMesh:
         duplicate_keys = Counter()
         face_regions = {}
         disconnected_regions = 0
+        minimum_scaled_jacobian = {}
+        minimum_mean_ratio = {}
+        minimum_radius_ratio = {}
+        minimum_dihedral = {}
+        maximum_dihedral = {}
+        minimum_edge = {}
+        maximum_edge = {}
+        threshold_counts = {}
         for record in self.volumes:
             connectivity = self.regions[record.name]
             points = self._tetrahedron_points(connectivity)
@@ -798,10 +995,60 @@ class NativeVolumeMesh:
             inverted += int(np.sum(signed < -tolerance))
             zero += int(np.sum(np.abs(signed) <= tolerance))
             volumes = np.abs(signed)
+            quality = self._quality_metrics(points, volumes)
             counts[record.name] = len(connectivity)
             minima[record.name] = float(np.min(volumes))
             maxima[record.name] = float(np.max(volumes))
             totals[record.name] = float(np.sum(volumes))
+            minimum_scaled_jacobian[record.name] = float(
+                np.min(quality["scaled_jacobian"])
+            )
+            minimum_mean_ratio[record.name] = float(
+                np.min(quality["mean_ratio"])
+            )
+            minimum_radius_ratio[record.name] = float(
+                np.min(quality["radius_ratio"])
+            )
+            minimum_dihedral[record.name] = float(
+                np.min(quality["minimum_dihedral_angle"])
+            )
+            maximum_dihedral[record.name] = float(
+                np.max(quality["maximum_dihedral_angle"])
+            )
+            minimum_edge[record.name] = float(
+                np.min(quality["minimum_edge_length"])
+            )
+            maximum_edge[record.name] = float(
+                np.max(quality["maximum_edge_length"])
+            )
+            threshold_counts[record.name] = {
+                "scaled_jacobian": int(
+                    np.sum(
+                        quality["scaled_jacobian"]
+                        < thresholds["scaled_jacobian"]
+                    )
+                ),
+                "mean_ratio": int(
+                    np.sum(quality["mean_ratio"] < thresholds["mean_ratio"])
+                ),
+                "radius_ratio": int(
+                    np.sum(
+                        quality["radius_ratio"] < thresholds["radius_ratio"]
+                    )
+                ),
+                "minimum_dihedral_angle": int(
+                    np.sum(
+                        quality["minimum_dihedral_angle"]
+                        < thresholds["minimum_dihedral_angle"]
+                    )
+                ),
+                "maximum_dihedral_angle": int(
+                    np.sum(
+                        quality["maximum_dihedral_angle"]
+                        > thresholds["maximum_dihedral_angle"]
+                    )
+                ),
+            }
             for tetrahedron in connectivity:
                 duplicate_keys[
                     tuple(sorted(int(tag) for tag in tetrahedron))
@@ -855,12 +1102,18 @@ class NativeVolumeMesh:
             or duplicates
             or nonconformal
             or disconnected_regions
+            or any(
+                count
+                for region_counts in threshold_counts.values()
+                for count in region_counts.values()
+            )
         ):
             raise ValueError(
                 "Volumetric mesh audit failed: "
                 f"inverted={inverted}, zero={zero}, duplicates={duplicates}, "
                 f"nonconformal={nonconformal}, "
                 f"disconnected_regions={disconnected_regions}"
+                f", quality_threshold_failures={sum(sum(value.values()) for value in threshold_counts.values())}"
             )
         relative_errors = {
             name: abs(totals[name] - reference) / reference
@@ -879,6 +1132,15 @@ class NativeVolumeMesh:
             disconnected_regions,
             dict(self.reference_volumes),
             relative_errors,
+            minimum_scaled_jacobian,
+            minimum_mean_ratio,
+            minimum_radius_ratio,
+            minimum_dihedral,
+            maximum_dihedral,
+            minimum_edge,
+            maximum_edge,
+            threshold_counts,
+            thresholds,
         )
 
     def write(self, filename):
@@ -1191,8 +1453,25 @@ def _box_triangles(lower, upper):
     return np.asarray(triangles)
 
 
-def build_native_port_surface_complex(model):
-    """Build one native faceted complex from continuous surfaces and loops."""
+def build_native_port_surface_complex(
+    model,
+    *,
+    include_graveyard=True,
+    aperture_chord_tolerance=DEFAULT_APERTURE_CHORD_TOLERANCE,
+    vertex_merge_tolerance=DEFAULT_VERTEX_MERGE_TOLERANCE,
+):
+    """Build one native faceted complex from continuous surfaces and loops.
+
+    ``include_graveyard=False`` leaves the exterior physical surfaces one-sided
+    so this model can be combined with other physical submodels before a single
+    global graveyard is created.  It does not change any physical facet.
+    """
+    aperture_chord_tolerance = float(aperture_chord_tolerance)
+    vertex_merge_tolerance = float(vertex_merge_tolerance)
+    if aperture_chord_tolerance <= 0.0:
+        raise ValueError("aperture_chord_tolerance must be positive")
+    if vertex_merge_tolerance <= 0.0:
+        raise ValueError("vertex_merge_tolerance must be positive")
     if len(model.ports) != 1:
         raise NotImplementedError(
             "Native conformal port export currently requires exactly one port"
@@ -1217,7 +1496,9 @@ def build_native_port_surface_complex(model):
         resolved_start,
         resolved_end,
     )
-    loops = build_aperture_loops(port, boundaries)
+    loops = build_aperture_loops(
+        port, boundaries, geometric_tolerance=aperture_chord_tolerance
+    )
     # A layer-referenced end can intentionally coincide with that layer's
     # radial boundary. It is one physical aperture loop, not a microscopic
     # sidewall segment between two independently sampled copies.
@@ -1230,7 +1511,7 @@ def build_native_port_surface_complex(model):
                     loop.inner_points - unique_loops[-1].inner_points, axis=1
                 )
             )
-            <= 0.05
+            <= aperture_chord_tolerance
         ):
             if loop.boundary_name.startswith("end:"):
                 unique_loops[-1] = loop
@@ -1517,31 +1798,32 @@ def build_native_port_surface_complex(model):
             end_region,
         )
 
-    graveyard_name = "graveyard"
-    volume_records.append(
-        NativeVolumeRecord(graveyard_name, "graveyard", "Graveyard")
-    )
-    records = [
-        (
-            replace(surface, forward_volume=graveyard_name)
-            if surface.forward_volume is None
-            else surface
+    if include_graveyard:
+        graveyard_name = "graveyard"
+        volume_records.append(
+            NativeVolumeRecord(graveyard_name, "graveyard", "Graveyard")
         )
-        for surface in records
-    ]
-    physical_points = np.concatenate(
-        [surface.triangles.reshape((-1, 3)) for surface in records], axis=0
-    )
-    graveyard_margin = max(50.0, float(port.extent.outer_extension) + 10.0)
-    lower = physical_points.min(axis=0) - graveyard_margin
-    upper = physical_points.max(axis=0) + graveyard_margin
-    add_surface(
-        "graveyard:outer_boundary",
-        "graveyard_boundary",
-        _box_triangles(lower, upper),
-        graveyard_name,
-        None,
-    )
+        records = [
+            (
+                replace(surface, forward_volume=graveyard_name)
+                if surface.forward_volume is None
+                else surface
+            )
+            for surface in records
+        ]
+        physical_points = np.concatenate(
+            [surface.triangles.reshape((-1, 3)) for surface in records], axis=0
+        )
+        graveyard_margin = max(50.0, float(port.extent.outer_extension) + 10.0)
+        lower = physical_points.min(axis=0) - graveyard_margin
+        upper = physical_points.max(axis=0) + graveyard_margin
+        add_surface(
+            "graveyard:outer_boundary",
+            "graveyard_boundary",
+            _box_triangles(lower, upper),
+            graveyard_name,
+            None,
+        )
 
     port_result = type(
         "NativePortResult",
@@ -1568,4 +1850,6 @@ def build_native_port_surface_complex(model):
             "port_result": port_result,
             "radial_loop_indices": radial_loop_indices,
         },
+        aperture_chord_tolerance=aperture_chord_tolerance,
+        vertex_merge_tolerance=vertex_merge_tolerance,
     )

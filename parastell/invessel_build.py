@@ -1712,14 +1712,29 @@ class InVesselBuild(object):
             group.add_set(vol)
             layer_data["vol_id"] = vol.id
 
-    def generate_components_pydagmc(self):
-        """Use PyDAGMC to build a DAGMC model of the invessel components"""
+    def generate_components_pydagmc(
+        self,
+        *,
+        include_graveyard=True,
+        aperture_chord_tolerance=0.05,
+        vertex_merge_tolerance=1.0e-9,
+    ):
+        """Use PyDAGMC to build a DAGMC model of the invessel components.
+
+        Native port models can omit their graveyard while independent physical
+        models are assembled.  The default preserves the standalone behavior.
+        """
         self._logger.info(
             "Generating DAGMC model of in-vessel components with PyDAGMC..."
         )
 
         if self.ports:
-            self.native_port_complex = build_native_port_surface_complex(self)
+            self.native_port_complex = build_native_port_surface_complex(
+                self,
+                include_graveyard=include_graveyard,
+                aperture_chord_tolerance=aperture_chord_tolerance,
+                vertex_merge_tolerance=vertex_merge_tolerance,
+            )
             self.dag_model = self.native_port_complex.to_pydagmc()
             self.mbc = self.dag_model.mb
             return
