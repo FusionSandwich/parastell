@@ -230,10 +230,11 @@ def main():
     stellarator.export_pydagmc_model(h5m.name, export_dir=args.output_dir)
     vtk = h5m.with_suffix(".vtk")
     stellarator.pydagmc_model.mb.write_file(str(vtk))
-    reloaded_mb = core.Core()
-    reloaded_mb.load_file(str(h5m))
-    reloaded_model = pydagmc.Model(reloaded_mb)
-    audit = audit_dagmc_model(reloaded_model)
+    audit = audit_dagmc_model(stellarator.pydagmc_model)
+    loaded_mb = core.Core()
+    loaded_mb.load_file(str(h5m))
+    loaded_model = pydagmc.Model(str(h5m))
+    reloaded_audit = audit_dagmc_model(loaded_model)
     result = {
         "geometry_source": "native_point_cloud_aperture_plus_physical_magnets",
         "filament_magnet_translation": list(
@@ -241,7 +242,11 @@ def main():
         ),
         "filament_magnet_bounding_box": stellarator.validation_magnet_bounds,
         "dagmc": audit,
-        "reload": {"pymoab": True, "pydagmc": True},
+        "dagmc_file_audit": {
+            "pymoab_load": True,
+            "pydagmc_load": True,
+            **reloaded_audit,
+        },
         "magnet_volume_ids": stellarator.magnet_volume_ids,
         "port_volume_ids": {
             key: value
@@ -264,7 +269,6 @@ def main():
     }
     validation = args.output_dir / "full_assembly_validation.json"
     validation.write_text(json.dumps(result, indent=2) + "\n")
-    result["files"].append(file_record(validation))
     print(json.dumps(result, indent=2))
 
 

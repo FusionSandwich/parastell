@@ -386,7 +386,11 @@ class Stellarator(object):
                 "surface-anchored port"
             )
         complex_ = getattr(self.invessel_build, "native_port_complex", None)
-        if complex_ is None:
+        if complex_ is None or (
+            complex_.aperture_chord_tolerance
+            != float(aperture_chord_tolerance)
+            or complex_.vertex_merge_tolerance != float(vertex_merge_tolerance)
+        ):
             complex_ = build_native_port_surface_complex(
                 self.invessel_build,
                 include_graveyard=False,

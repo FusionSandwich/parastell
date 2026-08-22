@@ -228,8 +228,9 @@ unchanged. Production qualification uses independent `check_watertight` and
 cross-section library; the exact commands and results live in the validation
 artifact report rather than being inferred from file creation.
 
-The representative full-assembly qualification used OpenMC 0.15.3 with DAGMC
-3.2.4, PyDAGMC 0.0.1, and MOAB/PyMOAB 5.5.1. Geometry-debug, port-centerline,
+The representative full-assembly qualification used OpenMC 0.16.0 commit
+`617d35a5063c57796b43428bc401e627d2011046` with DAGMC 3.2.4, PyDAGMC
+0.0.1, and MOAB/PyMOAB 5.5.1. Geometry-debug, port-centerline,
 liner, adjacent-blanket, and isotropic sector cases completed 26,000 total
 histories with nonzero tallies, zero lost particles, and zero DAGMC navigation
 errors against the magnet-inclusive global-graveyard H5M. The cross-section

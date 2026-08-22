@@ -25,13 +25,31 @@ EXTERNAL_TERMINATION = np.asarray((780.0430602755628, 209.0119080623386, 0.0))
 
 
 def conda_package_version(name):
-    records = sorted((Path(sys.prefix) / "conda-meta").glob(f"{name}-*.json"))
-    if records:
-        return json.loads(records[-1].read_text()).get("version")
+    prefixes = {Path(sys.prefix)}
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        path = Path(entry)
+        if path.name == "bin":
+            prefixes.add(path.parent)
+    for prefix in sorted(prefixes):
+        records = sorted((prefix / "conda-meta").glob(f"{name}-*.json"))
+        if records:
+            return json.loads(records[-1].read_text()).get("version")
     try:
         return metadata.version(name)
     except metadata.PackageNotFoundError:
         return None
+
+
+def openmc_git_sha():
+    completed = subprocess.run(
+        ["openmc", "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=True,
+    )
+    match = re.search(r"^Commit hash:\s*([0-9a-f]+)$", completed.stdout, re.M)
+    return match.group(1) if match else None
 
 
 def materials(cross_sections):
@@ -220,6 +238,7 @@ def main():
         )
     report = {
         "openmc_version": openmc.__version__,
+        "openmc_git_sha": openmc_git_sha(),
         "dagmc_enabled": bool(openmc.lib._dagmc_enabled()),
         "dagmc_version": conda_package_version("dagmc"),
         "pydagmc_version": conda_package_version("pydagmc"),
