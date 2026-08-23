@@ -445,6 +445,132 @@ def _inspect_magnet(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _build_combined(args: argparse.Namespace) -> dict[str, Any]:
+    from .combined_openmc16_model import build_combined_geometry
+
+    _, geometry = build_combined_geometry(
+        args.config,
+        vmec_path=args.vmec,
+        coils_path=args.coils,
+        output_directory=args.output_dir,
+        dagmc_filename=args.dagmc_filename,
+        source_filename=args.source_filename,
+        source_mesh_shape=tuple(args.source_mesh_shape),
+        casing_thickness_cm=args.casing_thickness_cm,
+        min_mesh_size_cm=args.minimum_mesh_size_cm,
+        max_mesh_size_cm=args.maximum_mesh_size_cm,
+    )
+    inventory = discover_magnet_volumes(geometry.dagmc_path)
+    result = {
+        "geometry": {
+            "dagmc_path": str(geometry.dagmc_path.resolve()),
+            "source_mesh_path": str(geometry.source_mesh_path.resolve()),
+            "dagmc_sha256": geometry.dagmc_sha256,
+            "source_mesh_sha256": geometry.source_mesh_sha256,
+            "material_tags": list(geometry.material_tags),
+            "source_mesh_shape": list(geometry.source_mesh_shape),
+        },
+        "magnet_inventory": inventory.to_dict(),
+    }
+    output = Path(args.output_dir) / "combined_geometry_inventory.json"
+    output.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    _write_result(result)
+    return result
+
+
+def _load_magnet_frames(path: Path) -> dict[int, dict[str, list[float]]]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("magnet frame file must contain an object keyed by volume ID")
+    frames = {}
+    for key, frame in data.items():
+        if not isinstance(frame, dict):
+            raise ValueError(f"magnet frame {key!r} must be an object")
+        frames[int(key)] = frame
+    return frames
+
+
+def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
+    from .combined_openmc16_model import build_combined_geometry
+    from .combined_openmc16_model import prepare_combined_multimagnet_model
+    from .energy_groups import get_structure
+    from .openmc16_export import export_openmc16_handoffs
+
+    stellarator, geometry = build_combined_geometry(
+        args.config,
+        vmec_path=args.vmec,
+        coils_path=args.coils,
+        output_directory=args.output_dir,
+        dagmc_filename=args.dagmc_filename,
+        source_filename=args.source_filename,
+        source_mesh_shape=tuple(args.source_mesh_shape),
+        casing_thickness_cm=args.casing_thickness_cm,
+        min_mesh_size_cm=args.minimum_mesh_size_cm,
+        max_mesh_size_cm=args.maximum_mesh_size_cm,
+    )
+    inventory = discover_magnet_volumes(geometry.dagmc_path)
+    selected = select_winding_pack_volumes(inventory, args.volume_id)
+    volume_ids = tuple(item.volume_id for item in selected)
+    frames = _load_magnet_frames(args.frames)
+    neutron_edges = get_structure(
+        args.neutron_groups, particle="neutron"
+    ).edges_eV
+    photon_edges = get_structure(
+        args.photon_groups, particle="photon"
+    ).edges_eV
+    prepared = prepare_combined_multimagnet_model(
+        stellarator,
+        geometry,
+        cross_sections=args.cross_sections,
+        winding_pack_volume_ids=volume_ids,
+        frames_by_volume=frames,
+        neutron_edges_eV=neutron_edges,
+        photon_edges_eV=photon_edges,
+        particles_per_batch=args.particles,
+        batches=args.batches,
+        threads=args.threads,
+    )
+    output_dir = Path(args.output_dir).resolve()
+    prepared.model.export_to_model_xml(output_dir)
+    statepoint_path = _resolve_run_output(
+        prepared.model.run(cwd=output_dir, threads=args.threads), output_dir
+    )
+    surface_sources = _surface_source_paths(output_dir)
+    if not surface_sources:
+        raise RuntimeError("OpenMC completed without a surface-source file")
+    collection = export_openmc16_handoffs(
+        output_dir / "handoffs",
+        statepoint_path=statepoint_path,
+        surface_source_paths=surface_sources,
+        envelopes=prepared.envelopes,
+        histories=int(args.particles) * int(args.batches),
+        energy_edges_by_particle={
+            "neutron": neutron_edges,
+            "photon": photon_edges,
+        },
+        physical_source_rate_per_s=args.physical_source_rate,
+        parastell_commit=args.parastell_commit,
+        source_definition_sha256=geometry.source_mesh_sha256,
+        adaptive_patch_target_ess=args.adaptive_patch_target_ess,
+        adaptive_patch_minimum_records=args.adaptive_patch_minimum_records,
+        adaptive_patch_maximum_depth=args.adaptive_patch_maximum_depth,
+    )
+    result = {
+        "histories": int(args.particles) * int(args.batches),
+        "batches": int(args.batches),
+        "particles_per_batch": int(args.particles),
+        "threads": int(args.threads),
+        "statepoint": str(statepoint_path),
+        "surface_sources": [str(path.resolve()) for path in surface_sources],
+        "geometry": json.loads(json.dumps(prepared.metadata, default=str)),
+        "collection": collection,
+    }
+    report = output_dir / "combined_transport_report.json"
+    report.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    _write_result(result)
+    return result
+
+
 def _inspect_planes(args: argparse.Namespace) -> dict[str, Any]:
     handoff = MagnetSpectralHandoff.from_yaml(args.config)
     result = {
@@ -556,6 +682,59 @@ def build_parser() -> argparse.ArgumentParser:
         "--casing-material", action="append", default=["magnet_casing"]
     )
     inspect_magnet.set_defaults(handler=_inspect_magnet)
+
+    def add_combined_geometry_arguments(command):
+        command.add_argument("--config", required=True, type=Path)
+        command.add_argument("--vmec", required=True, type=Path)
+        command.add_argument("--coils", required=True, type=Path)
+        command.add_argument("--output-dir", required=True, type=Path)
+        command.add_argument(
+            "--source-mesh-shape", nargs=3, type=int, default=[11, 81, 61]
+        )
+        command.add_argument(
+            "--dagmc-filename", default="combined_reactor_magnet.h5m"
+        )
+        command.add_argument("--source-filename", default="source_mesh.h5m")
+        command.add_argument("--casing-thickness-cm", type=float, default=5.0)
+        command.add_argument("--minimum-mesh-size-cm", type=float, default=20.0)
+        command.add_argument("--maximum-mesh-size-cm", type=float, default=50.0)
+
+    build_combined = subparsers.add_parser(
+        "build-combined",
+        help="build and inventory the port-free reactor/magnet DAGMC model",
+    )
+    add_combined_geometry_arguments(build_combined)
+    build_combined.set_defaults(handler=_build_combined)
+
+    run_combined = subparsers.add_parser(
+        "run-combined",
+        help="build, run, and export a coupled multi-magnet OpenMC handoff",
+    )
+    add_combined_geometry_arguments(run_combined)
+    run_combined.add_argument(
+        "--cross-sections", required=True, type=Path
+    )
+    run_combined.add_argument(
+        "--volume-id", required=True, action="append", type=int
+    )
+    run_combined.add_argument("--frames", required=True, type=Path)
+    run_combined.add_argument("--particles", type=int, default=1000)
+    run_combined.add_argument("--batches", type=int, default=10)
+    run_combined.add_argument("--threads", type=int, default=1)
+    run_combined.add_argument("--neutron-groups", default="smoke-7")
+    run_combined.add_argument("--photon-groups", default="smoke-42")
+    run_combined.add_argument("--physical-source-rate", type=float)
+    run_combined.add_argument("--parastell-commit", required=True)
+    run_combined.add_argument(
+        "--adaptive-patch-target-ess", type=float, default=25.0
+    )
+    run_combined.add_argument(
+        "--adaptive-patch-minimum-records", type=int, default=4
+    )
+    run_combined.add_argument(
+        "--adaptive-patch-maximum-depth", type=int, default=5
+    )
+    run_combined.set_defaults(handler=_run_combined)
 
     prepare = subparsers.add_parser(
         "prepare",

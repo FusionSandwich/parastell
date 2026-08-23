@@ -50,6 +50,31 @@ def test_production_inventory_subcommands_are_public():
     assert listing.winding_pack_material == ["winding_pack"]
     assert inspect.volume_id == 17
 
+    combined = parser.parse_args(
+        [
+            "run-combined",
+            "--config",
+            "production.yaml",
+            "--vmec",
+            "wout.nc",
+            "--coils",
+            "coils.example",
+            "--output-dir",
+            "run",
+            "--cross-sections",
+            "cross_sections.xml",
+            "--volume-id",
+            "17",
+            "--frames",
+            "frames.json",
+            "--parastell-commit",
+            "abc123",
+        ]
+    )
+    assert combined.source_mesh_shape == [11, 81, 61]
+    assert combined.neutron_groups == "smoke-7"
+    assert combined.photon_groups == "smoke-42"
+
 
 def test_inventory_uses_material_tags_and_never_guesses(tmp_path, monkeypatch):
     dagmc = tmp_path / "combined.h5m"
