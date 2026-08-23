@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Mapping, Sequence
 
 import h5py
@@ -307,6 +308,9 @@ def replay_phase_space(
     y_edges_cm: Sequence[float] | None = None,
     minimum_incident_cosine: float = 1.0e-8,
     provenance: Mapping[str, Any] | None = None,
+    source_phase_space_provenance: str | Path | None = None,
+    source_spectra_provenance: str | Path | None = None,
+    normalization_mode_override: str | None = None,
 ) -> ReplaySummary:
     """Replay a weighted boundary source through explicit HTS layers.
 
@@ -348,6 +352,11 @@ def replay_phase_space(
         tally_direction=tally_direction,
         record_direction=record_direction,
     )
+    if normalization_mode_override is not None:
+        normalization = {
+            **normalization,
+            "mode": str(normalization_mode_override),
+        }
 
     direction = np.asarray(phase["direction_global"], dtype=float)
     mu_inward, direction_basis = _resolve_incident_cosine(
@@ -480,8 +489,10 @@ def replay_phase_space(
     manifest = {
         "schema": REPLAY_SCHEMA,
         "schema_version": REPLAY_SCHEMA_VERSION,
-        "source_phase_space": str(phase_space_path),
-        "source_spectra": str(spectra_path),
+        "source_phase_space": str(
+            source_phase_space_provenance or phase_space_path
+        ),
+        "source_spectra": str(source_spectra_provenance or spectra_path),
         "source_region": region_name,
         "phase_space_metadata": phase_metadata,
         "boundary_tally_name": tally_name,
@@ -530,6 +541,166 @@ def replay_phase_space(
         group_index=group_index,
     )
     return summary
+
+
+def replay_magnet_boundary_source(
+    boundary_source_path: str | Path,
+    output_path: str | Path,
+    *,
+    stack: MultilayerStack,
+    response_library: MaterialResponseLibrary,
+    direction: str = "incoming",
+    minimum_incident_cosine: float = 1.0e-8,
+) -> ReplaySummary:
+    """Replay a schema-v2 correlated bank without renormalizing its weights."""
+
+    if direction not in {"incoming", "outgoing"}:
+        raise ValueError(
+            "boundary-source replay direction must be incoming or outgoing"
+        )
+
+    from .magnet_boundary_envelope import read_handoff
+
+    source_path = Path(boundary_source_path)
+    manifest, envelope, bank = read_handoff(source_path)
+    columns = bank.columns
+    particle = _as_strings(columns["particle"])
+    crossing_sense = _as_strings(columns["crossing_sense"])
+    surface = np.asarray(columns["surface_id"], dtype=int)
+    energy = np.asarray(columns["energy_eV"], dtype=float)
+    weight = np.asarray(columns["weight"], dtype=float)
+    weight_std_dev = np.asarray(columns["weight_std_dev"], dtype=float)
+    if np.any(weight < 0.0) or not np.all(np.isfinite(weight)):
+        raise ValueError(
+            "boundary-source weights must be finite and nonnegative"
+        )
+
+    string_dtype = h5py.string_dtype("utf-8")
+    energy_upper = float(
+        np.nextafter(
+            max(
+                float(np.max(energy)),
+                response_library.energy_bounds_eV[-1],
+            ),
+            np.inf,
+        )
+    )
+    tally_rows: list[tuple[str, int, str, float, float]] = []
+    for name in sorted(set(particle.tolist())):
+        particle_mask = particle == name
+        for surface_id in sorted(set(surface[particle_mask].tolist())):
+            for sense in ("incoming", "outgoing", "grazing"):
+                mask = particle_mask & (surface == surface_id)
+                mask &= crossing_sense == sense
+                if np.any(mask):
+                    tally_rows.append(
+                        (
+                            name,
+                            int(surface_id),
+                            sense,
+                            float(np.sum(weight[mask])),
+                            float(
+                                np.sqrt(
+                                    np.sum(np.square(weight_std_dev[mask]))
+                                )
+                            ),
+                        )
+                    )
+
+    with TemporaryDirectory(prefix="parastell-boundary-replay-") as temporary:
+        temporary_path = Path(temporary)
+        phase_path = temporary_path / "phase_space.h5"
+        spectra_path = temporary_path / "spectra.h5"
+        with h5py.File(phase_path, "w") as output:
+            output.attrs["region"] = envelope.envelope_id
+            output.attrs["record_count"] = len(weight)
+            phase = output.create_group("phase_space")
+            phase.create_dataset(
+                "position_local_cm", data=columns["position_local_cm"]
+            )
+            phase.create_dataset(
+                "direction_global", data=columns["direction_global"]
+            )
+            phase.create_dataset(
+                "direction_local", data=columns["direction_local"]
+            )
+            phase.create_dataset("energy_eV", data=energy)
+            phase.create_dataset("weight", data=weight)
+            phase.create_dataset("surface_id_abs", data=surface)
+            phase.create_dataset(
+                "particle_name",
+                data=np.asarray(particle, dtype=object),
+                dtype=string_dtype,
+            )
+            phase.create_dataset(
+                "magnet_direction",
+                data=np.asarray(crossing_sense, dtype=object),
+                dtype=string_dtype,
+            )
+            phase.create_dataset("mu_outward", data=columns["mu"])
+            output.create_dataset(
+                "metadata_json",
+                data=json.dumps(
+                    {
+                        "source_schema": manifest["schema"],
+                        "adapter": "v2_absolute_current_identity",
+                    }
+                ),
+            )
+        with h5py.File(spectra_path, "w") as output:
+            tally = output.create_group("tallies").create_group("boundary")
+            tally.attrs["role"] = "boundary_current"
+            tally.attrs["region"] = envelope.envelope_id
+            tally.create_dataset(
+                "particle",
+                data=np.asarray([row[0] for row in tally_rows], dtype=object),
+                dtype=string_dtype,
+            )
+            tally.create_dataset(
+                "surface", data=[row[1] for row in tally_rows]
+            )
+            tally.create_dataset(
+                "magnet_direction",
+                data=np.asarray([row[2] for row in tally_rows], dtype=object),
+                dtype=string_dtype,
+            )
+            tally.create_dataset("mean", data=[row[3] for row in tally_rows])
+            tally.create_dataset(
+                "std_dev", data=[row[4] for row in tally_rows]
+            )
+            tally.create_dataset(
+                "energy_low_ev", data=np.zeros(len(tally_rows))
+            )
+            tally.create_dataset(
+                "energy_high_ev",
+                data=np.full(len(tally_rows), energy_upper),
+            )
+
+        return replay_phase_space(
+            phase_path,
+            spectra_path,
+            output_path,
+            stack=stack,
+            response_library=response_library,
+            tally_direction=direction,
+            record_direction=direction,
+            per_record_inward_normals_global=-np.asarray(
+                columns["outward_normal_global"], dtype=float
+            ),
+            minimum_incident_cosine=minimum_incident_cosine,
+            provenance={
+                "source_schema": manifest["schema"],
+                "source_boundary_path": str(source_path),
+                "normalization_adapter": (
+                    "identity; no forced renormalization"
+                ),
+            },
+            source_phase_space_provenance=source_path,
+            source_spectra_provenance=source_path,
+            normalization_mode_override=(
+                "absolute_v2_record_weights_identity"
+            ),
+        )
 
 
 def analytic_transmission(

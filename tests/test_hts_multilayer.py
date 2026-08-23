@@ -5,11 +5,15 @@ import h5py
 import numpy as np
 import pytest
 
+import parastell.hts_multilayer as hts_multilayer
+import parastell.magnet_boundary_envelope as boundary_envelope
+
 from parastell.hts_multilayer import analytic_transmission
 from parastell.hts_multilayer import constant_response_library
 from parastell.hts_multilayer import HTSLayer
 from parastell.hts_multilayer import MultilayerStack
 from parastell.hts_multilayer import replay_phase_space
+from parastell.hts_multilayer import ReplaySummary
 from parastell.hts_multilayer import verification_rebco_stack
 from parastell.hts_multilayer import zero_response_library
 
@@ -127,6 +131,72 @@ def test_zero_response_replay_closes_current(tmp_path):
         assert replay["records"]["normalised_current_per_source"][
             :
         ].sum() == pytest.approx(2.0)
+
+
+def test_v2_boundary_source_adapter_preserves_absolute_record_weights(
+    tmp_path, monkeypatch
+):
+    columns = {
+        "particle": np.asarray(["neutron", "photon"]),
+        "crossing_sense": np.asarray(["incoming", "incoming"]),
+        "surface_id": np.asarray([11, 11]),
+        "energy_eV": np.asarray([14.1e6, 1.0e6]),
+        "weight": np.asarray([0.25, 0.05]),
+        "weight_std_dev": np.asarray([0.0, 0.0]),
+        "position_local_cm": np.zeros((2, 3)),
+        "direction_global": np.asarray([[-1.0, 0.0, 0.0]] * 2),
+        "direction_local": np.asarray([[-1.0, 0.0, 0.0]] * 2),
+        "outward_normal_global": np.asarray([[1.0, 0.0, 0.0]] * 2),
+        "mu": np.asarray([-1.0, -1.0]),
+    }
+    bank = type("Bank", (), {"columns": columns})()
+    envelope = type("Envelope", (), {"envelope_id": "magnet-11"})()
+    monkeypatch.setattr(
+        boundary_envelope,
+        "read_handoff",
+        lambda path: (
+            {"schema": "parastell.magnet_boundary_source/v2.0.0"},
+            envelope,
+            bank,
+        ),
+    )
+
+    def fake_replay(phase_path, spectra_path, output_path, **kwargs):
+        with h5py.File(phase_path) as phase_file:
+            assert phase_file["phase_space/weight"][:] == pytest.approx(
+                [0.25, 0.05]
+            )
+        with h5py.File(spectra_path) as spectra_file:
+            mean = spectra_file["tallies/boundary/mean"][:]
+            assert mean.sum() == pytest.approx(0.3)
+        assert kwargs["source_phase_space_provenance"] == (
+            tmp_path / "source.h5"
+        )
+        return ReplaySummary(
+            0.3,
+            0.3,
+            0.0,
+            0.0,
+            0.0,
+            2,
+            0,
+            "boundary",
+            "identity",
+            "normal",
+        )
+
+    monkeypatch.setattr(hts_multilayer, "replay_phase_space", fake_replay)
+    stack = verification_rebco_stack()
+    response = zero_response_library(
+        stack, [0.0, 20.0e6], ["neutron", "photon"]
+    )
+    summary = hts_multilayer.replay_magnet_boundary_source(
+        tmp_path / "source.h5",
+        tmp_path / "replay.h5",
+        stack=stack,
+        response_library=response,
+    )
+    assert summary.input_current_per_source == pytest.approx(0.3)
 
 
 def test_constant_response_matches_exact_characteristic(tmp_path):

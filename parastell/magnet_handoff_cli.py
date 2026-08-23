@@ -23,6 +23,7 @@ from .magnet_spectral_handoff import (
 )
 from .hts_multilayer import (
     constant_response_library,
+    replay_magnet_boundary_source,
     replay_phase_space,
     verification_rebco_stack,
     zero_response_library,
@@ -473,7 +474,9 @@ def _build_combined(args: argparse.Namespace) -> dict[str, Any]:
         "magnet_inventory": inventory.to_dict(),
     }
     output = Path(args.output_dir) / "combined_geometry_inventory.json"
-    output.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    output.write_text(
+        json.dumps(result, indent=2, sort_keys=True), encoding="utf-8"
+    )
     _write_result(result)
     return result
 
@@ -481,7 +484,9 @@ def _build_combined(args: argparse.Namespace) -> dict[str, Any]:
 def _load_magnet_frames(path: Path) -> dict[int, dict[str, list[float]]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError("magnet frame file must contain an object keyed by volume ID")
+        raise ValueError(
+            "magnet frame file must contain an object keyed by volume ID"
+        )
     frames = {}
     for key, frame in data.items():
         if not isinstance(frame, dict):
@@ -566,7 +571,9 @@ def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
         "collection": collection,
     }
     report = output_dir / "combined_transport_report.json"
-    report.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    report.write_text(
+        json.dumps(result, indent=2, sort_keys=True), encoding="utf-8"
+    )
     _write_result(result)
     return result
 
@@ -629,11 +636,71 @@ def _validate_energy_groups(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _replay(args: argparse.Namespace) -> dict[str, Any]:
-    handoff = MagnetSpectralHandoff.from_yaml(args.config)
     stack = verification_rebco_stack()
     output = Path(args.output)
     args.stack = stack
-    result = _replay_summary(args, handoff=handoff)
+    if args.boundary_source is not None:
+        if any(
+            value is not None
+            for value in (args.config, args.spectra, args.phase_space)
+        ):
+            raise ValueError(
+                "--boundary-source cannot be combined with --config, "
+                "--spectra, or --phase-space"
+            )
+        from .magnet_boundary_envelope import read_handoff
+
+        manifest, _, _ = read_handoff(args.boundary_source)
+        energy_edges = np.unique(
+            np.concatenate(
+                [
+                    np.asarray(edges, dtype=float)
+                    for edges in manifest["energy_axes"].values()
+                ]
+            )
+        )
+        particles = tuple(manifest["particles"])
+        if args.response_mode == "zero":
+            response = zero_response_library(
+                stack=stack,
+                energy_bounds_eV=energy_edges,
+                particles=particles,
+            )
+        else:
+            response = constant_response_library(
+                stack=stack,
+                energy_bounds_eV=energy_edges,
+                particles=particles,
+                removal_xs_cm_1=args.removal_xs_cm_1,
+                deposition_fraction=args.deposition_fraction,
+            )
+        if args.tally_direction != args.record_direction:
+            raise ValueError("tally and record directions must match")
+        summary = replay_magnet_boundary_source(
+            args.boundary_source,
+            output,
+            stack=stack,
+            response_library=response,
+            direction=args.record_direction,
+            minimum_incident_cosine=args.minimum_incident_cosine,
+        )
+        result = {
+            "replay_summary": summary.to_dict(),
+            "response_mode": args.response_mode,
+            "stack": stack.to_dict(),
+            "source_schema": manifest["schema"],
+        }
+    else:
+        if any(
+            value is None
+            for value in (args.config, args.spectra, args.phase_space)
+        ):
+            raise ValueError(
+                "legacy replay requires --config, --spectra, and "
+                "--phase-space"
+            )
+        handoff = MagnetSpectralHandoff.from_yaml(args.config)
+        result = _replay_summary(args, handoff=handoff)
     args.output = output
     _write_result(result)
     return result
@@ -696,8 +763,12 @@ def build_parser() -> argparse.ArgumentParser:
         )
         command.add_argument("--source-filename", default="source_mesh.h5m")
         command.add_argument("--casing-thickness-cm", type=float, default=5.0)
-        command.add_argument("--minimum-mesh-size-cm", type=float, default=20.0)
-        command.add_argument("--maximum-mesh-size-cm", type=float, default=50.0)
+        command.add_argument(
+            "--minimum-mesh-size-cm", type=float, default=20.0
+        )
+        command.add_argument(
+            "--maximum-mesh-size-cm", type=float, default=50.0
+        )
 
     build_combined = subparsers.add_parser(
         "build-combined",
@@ -711,9 +782,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="build, run, and export a coupled multi-magnet OpenMC handoff",
     )
     add_combined_geometry_arguments(run_combined)
-    run_combined.add_argument(
-        "--cross-sections", required=True, type=Path
-    )
+    run_combined.add_argument("--cross-sections", required=True, type=Path)
     run_combined.add_argument(
         "--volume-id", required=True, action="append", type=int
     )
@@ -936,9 +1005,10 @@ def build_parser() -> argparse.ArgumentParser:
         "replay",
         help="replay phase-space through an explicit HTS stack",
     )
-    replay.add_argument("--config", required=True, type=Path)
-    replay.add_argument("--spectra", required=True, type=Path)
-    replay.add_argument("--phase-space", required=True, type=Path)
+    replay.add_argument("--config", type=Path)
+    replay.add_argument("--spectra", type=Path)
+    replay.add_argument("--phase-space", type=Path)
+    replay.add_argument("--boundary-source", type=Path)
     replay.add_argument("--output", required=True, type=Path)
     replay.add_argument(
         "--response-mode",

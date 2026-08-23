@@ -37,17 +37,15 @@ def _find_prohibited_port_keys(
     if isinstance(value, Mapping):
         for key, item in value.items():
             next_path = (*path, str(key))
-            if (
-                _is_port_key(key)
-                and next_path != ("geometry_features", "ports")
+            if _is_port_key(key) and next_path != (
+                "geometry_features",
+                "ports",
             ):
                 found.append(".".join(next_path))
             found.extend(_find_prohibited_port_keys(item, next_path))
     elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
-            found.extend(
-                _find_prohibited_port_keys(item, (*path, str(index)))
-            )
+            found.extend(_find_prohibited_port_keys(item, (*path, str(index))))
     return found
 
 

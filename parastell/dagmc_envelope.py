@@ -323,13 +323,7 @@ class MagnetVolumeInventory:
 
 
 def _material_key(value: Any) -> str:
-    return (
-        str(value or "")
-        .strip()
-        .lower()
-        .replace("-", "_")
-        .replace(" ", "_")
-    )
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def discover_magnet_volumes(
@@ -360,8 +354,7 @@ def discover_magnet_volumes(
             continue
         surface_ids = tuple(
             sorted(
-                int(surface.id)
-                for surface in getattr(volume, "surfaces", ())
+                int(surface.id) for surface in getattr(volume, "surfaces", ())
             )
         )
         if not surface_ids:
@@ -449,9 +442,7 @@ def extract_closed_envelopes(
                 magnet_id=f"magnet-{volume_id}",
                 plasma_direction_global=frame["plasma_direction_global"],
                 toroidal_direction_global=frame["toroidal_direction_global"],
-                poloidal_direction_global=frame[
-                    "poloidal_direction_global"
-                ],
+                poloidal_direction_global=frame["poloidal_direction_global"],
                 spatial_bins=spatial_bins,
             )
         )
@@ -504,7 +495,9 @@ def validate_dagmc_watertightness(
             for triangle in np.round(triangles, edge_round_decimals):
                 for first, second in ((0, 1), (1, 2), (2, 0)):
                     edge = tuple(
-                        sorted((tuple(triangle[first]), tuple(triangle[second])))
+                        sorted(
+                            (tuple(triangle[first]), tuple(triangle[second]))
+                        )
                     )
                     edge_counts[edge] = edge_counts.get(edge, 0) + 1
         unmatched = sum(count != 2 for count in edge_counts.values())

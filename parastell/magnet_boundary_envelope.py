@@ -408,9 +408,7 @@ class CorrelatedBoundaryBank:
                     else 0.0
                 ),
                 "relative_counting_uncertainty": (
-                    float(np.sqrt(square_sum) / total)
-                    if total > 0.0
-                    else 0.0
+                    float(np.sqrt(square_sum) / total) if total > 0.0 else 0.0
                 ),
             }
 
@@ -1045,7 +1043,8 @@ def assign_adaptive_surface_patches(
     if minimum_records <= 0 or maximum_depth < 0:
         raise ValueError("adaptive patch limits are invalid")
     columns = {
-        name: np.array(value, copy=True) for name, value in bank.columns.items()
+        name: np.array(value, copy=True)
+        for name, value in bank.columns.items()
     }
     positions = np.asarray(columns["position_local_cm"], dtype=float)
     weights = np.asarray(columns["weight"], dtype=float)
@@ -1085,7 +1084,9 @@ def assign_adaptive_surface_patches(
             u0, u1, v0, v1 = bounds
             local = positions[selected, :2]
             spans = np.asarray([u1 - u0, v1 - v0])
-            variances = np.var(local, axis=0) / np.maximum(spans * spans, 1e-30)
+            variances = np.var(local, axis=0) / np.maximum(
+                spans * spans, 1e-30
+            )
             axis = int(np.argmax(variances))
             midpoint = (bounds[2 * axis] + bounds[2 * axis + 1]) / 2.0
             lower_mask = local[:, axis] < midpoint
@@ -1111,9 +1112,7 @@ def assign_adaptive_surface_patches(
         area_sum = 0.0
         for patch_id, (selected, bounds, depth) in enumerate(leaves):
             patch_ids[selected] = patch_id
-            rectangle_area = (bounds[1] - bounds[0]) * (
-                bounds[3] - bounds[2]
-            )
+            rectangle_area = (bounds[1] - bounds[0]) * (bounds[3] - bounds[2])
             area = float(surface.area_cm2 * rectangle_area / root_area)
             area_sum += area
             patch_metadata.append(
@@ -1135,7 +1134,9 @@ def assign_adaptive_surface_patches(
                 f"adaptive patch areas do not close on surface {surface.surface_id}"
             )
     if np.any(patch_ids < 0):
-        raise RuntimeError("adaptive patch assignment omitted boundary records")
+        raise RuntimeError(
+            "adaptive patch assignment omitted boundary records"
+        )
     columns["patch_id"] = patch_ids
     metadata = dict(bank.metadata)
     metadata["adaptive_surface_patches"] = {

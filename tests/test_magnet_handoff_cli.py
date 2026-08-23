@@ -157,3 +157,16 @@ def test_plane_and_energy_group_subcommands_are_public():
     assert parser.parse_args(["list-energy-groups"]).command == (
         "list-energy-groups"
     )
+
+
+def test_replay_parser_accepts_v2_boundary_source():
+    args = build_parser().parse_args(
+        [
+            "replay",
+            "--boundary-source",
+            "boundary.h5",
+            "--output",
+            "replay.h5",
+        ]
+    )
+    assert args.boundary_source == Path("boundary.h5")
