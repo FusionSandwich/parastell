@@ -162,9 +162,19 @@ def test_correlated_condition_projection_and_round_trip(tmp_path):
     ]
     conditioned = condition_on_independent_current(bank, rows)
     assert conditioned.integrated_current == pytest.approx(0.7)
-    assert conservative_projection(conditioned)["mean"].sum() == pytest.approx(
-        0.7
+    projection = conservative_projection(conditioned)
+    assert projection["mean"].sum() == pytest.approx(0.7)
+    assert projection["mean"].shape == (
+        len(envelope.surface_ids),
+        4,
+        2,
+        (len(production_mu_edges()) - 1) * (len(production_phi_edges()) - 1),
+        2,
+        3,
     )
+    assert projection["surface_ids"].tolist() == list(envelope.surface_ids)
+    assert projection["surface_patch_counts"].tolist() == [4] * 6
+    assert np.count_nonzero(projection["mean"][1:]) == 0
     output = tmp_path / "handoff.h5"
     write_handoff(
         output,

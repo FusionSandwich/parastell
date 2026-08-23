@@ -7,11 +7,13 @@ import pytest
 from parastell.dagmc_envelope import discover_magnet_volumes
 from parastell.dagmc_envelope import select_winding_pack_volumes
 from parastell.dagmc_envelope import validate_dagmc_watertightness
+from parastell.combined_openmc16_model import _magnet_material_tag
 from parastell.magnet_boundary_envelope import CorrelatedBoundaryBank
 from parastell.magnet_boundary_envelope import EnvelopeSurface
 from parastell.magnet_boundary_envelope import MagnetBoundaryEnvelope
 from parastell.magnet_boundary_envelope import assign_adaptive_surface_patches
 from parastell.magnet_handoff_cli import build_parser
+from parastell.openmc16_export import _select_envelope_records
 from parastell.production_handoff import validate_no_port_configuration
 
 
@@ -73,8 +75,29 @@ def test_production_inventory_subcommands_are_public():
         ]
     )
     assert combined.source_mesh_shape == [11, 81, 61]
+    assert combined.casing_thickness_cm == 0.0
+    assert combined.minimum_mesh_size_cm == 5.0
+    assert combined.maximum_mesh_size_cm == 20.0
     assert combined.neutron_groups == "smoke-7"
     assert combined.photon_groups == "smoke-42"
+
+
+@pytest.mark.parametrize(
+    ("case_thickness", "expected_tag"),
+    [(0.0, "winding_pack"), (5.0, ("magnet_casing", "winding_pack"))],
+)
+def test_combined_geometry_material_tags_follow_casing(
+    case_thickness, expected_tag
+):
+    assert _magnet_material_tag(case_thickness) == expected_tag
+
+
+def test_empty_selected_envelope_records_fail_explicitly():
+    records = np.zeros(1, dtype=[("surf_id", np.int64)])
+    records["surf_id"] = 41
+
+    with pytest.raises(ValueError, match="no surface-source records crossed"):
+        _select_envelope_records(records, (73, 74))
 
 
 def test_inventory_uses_material_tags_and_never_guesses(tmp_path, monkeypatch):
@@ -249,3 +272,51 @@ def test_production_modules_do_not_import_port_geometry():
         source = open(module.__file__, encoding="utf-8").read()
         assert "from .ports" not in source
         assert "import parastell.ports" not in source
+
+
+def test_raw_directional_statepoint_respects_dagmc_surface_sense(tmp_path):
+    import h5py
+    from types import SimpleNamespace
+
+    from parastell.openmc16_export import _directional_current_from_statepoint
+
+    path = tmp_path / "statepoint.h5"
+    with h5py.File(path, "w") as statepoint:
+        tallies = statepoint.create_group("tallies")
+        filters = tallies.create_group("filters")
+        definitions = (
+            (1, "surface", [11, 12]),
+            (2, "musurface", [-1.0, 0.0, 1.0]),
+            (3, "particle", [b"neutron"]),
+            (4, "energy", [0.0, 20.0e6]),
+        )
+        for filter_id, filter_type, bins in definitions:
+            group = filters.create_group(f"filter {filter_id}")
+            group["type"] = np.bytes_(filter_type)
+            group["bins"] = bins
+            group["n_bins"] = len(bins) - (
+                filter_type in {"musurface", "energy"}
+            )
+        tally = tallies.create_group("tally 1")
+        tally["name"] = np.bytes_("pstl_envelope_neutron_directional_current")
+        tally["filters"] = [1, 2, 3, 4]
+        tally["n_realizations"] = 10
+        means = np.asarray([-0.2, 0.3, -0.4, 0.5])
+        results = np.zeros((4, 1, 2))
+        results[:, 0, 0] = 10.0 * means
+        results[:, 0, 1] = 10.0 * means**2
+        tally["results"] = results
+
+    signs = {11: 1, 12: -1}
+    schema = SimpleNamespace(
+        surface=lambda surface_id: SimpleNamespace(
+            openmc_normal_sign=signs[surface_id]
+        )
+    )
+    envelope = SimpleNamespace(envelope=schema)
+    current = _directional_current_from_statepoint(path, "neutron", envelope)
+
+    assert current[11]["incoming"][0] == pytest.approx(0.2)
+    assert current[11]["outgoing"][0] == pytest.approx(0.3)
+    assert current[12]["incoming"][0] == pytest.approx(0.5)
+    assert current[12]["outgoing"][0] == pytest.approx(0.4)

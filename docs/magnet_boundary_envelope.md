@@ -6,11 +6,34 @@ direction, particle, energy, crossing sense, face role, and weight remain on
 the same record. The multidimensional projection is derived from those records
 and must conserve their integrated partial current.
 
+The projection axes are fixed by the complete envelope plus the configured
+spatial, particle-energy, and angular grids. Surfaces and bins with no sampled
+crossings are retained explicitly with zero mean and uncertainty; projection
+shape never depends on which bins happened to be populated in one Monte Carlo
+run.
+
+The production example retains a 1 cm radial clearance between the reactor
+shield/vacuum-vessel build and the 5 cm magnet casing. Combined models default
+to 5–20 cm CAD-to-DAGMC faceting; the looser 20–50 cm smoke tessellation can
+hide near-tangent intersections and is not an overlap-acceptance mesh.
+
 The normal is outward from the magnet DAGMC volume. Therefore
 `mu = Omega dot n_outward` is negative for entry, positive for exit, and close
 to zero for grazing crossings. No global coordinate sign is used to infer
 sense. Every face stores its area, centroid, right-handed toroidal/poloidal/
 normal frame, spatial patch edges, role, and OpenMC surface-sense sign.
+
+The OpenMC-to-outward sign is derived from the target volume's DAGMC
+forward/reverse sense. This is required for one-sided end faces, whose native
+facet normal can point into the winding pack. Independent closure is read from
+the named directional-current tally directly in the statepoint HDF5, so an
+unrelated OpenMC 0.16 filter cannot prevent export. The manifest reports
+entering, leaving, net, and total current with uncertainty and z-score for
+every face and the whole envelope; the surface bank is never renormalized.
+
+Large numeric record and projection arrays use lossless gzip compression.
+Fixed zero bins remain present and deterministic solvers see the same dense
+shape after HDF5 decompression.
 
 Production neutron runs request OpenMC's exact `CCFE-709` edges. ParaStell
 raises an error if that authoritative structure is absent. The default angular

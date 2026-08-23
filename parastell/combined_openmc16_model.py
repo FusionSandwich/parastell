@@ -60,6 +60,15 @@ class CombinedMultiMagnetModelResult:
     metadata: Mapping[str, Any]
 
 
+def _magnet_material_tag(case_thickness_cm: float) -> str | tuple[str, str]:
+    """Return one material tag for every CAD solid emitted per magnet."""
+    return (
+        ("magnet_casing", "winding_pack")
+        if case_thickness_cm > 0.0
+        else "winding_pack"
+    )
+
+
 def build_combined_geometry(
     config_path: str | Path,
     *,
@@ -69,9 +78,9 @@ def build_combined_geometry(
     dagmc_filename: str = "combined_reactor_magnet.h5m",
     source_filename: str = "source_mesh.h5m",
     source_mesh_shape: tuple[int, int, int] = (11, 81, 61),
-    casing_thickness_cm: float = 5.0,
-    min_mesh_size_cm: float = 20.0,
-    max_mesh_size_cm: float = 50.0,
+    casing_thickness_cm: float = 0.0,
+    min_mesh_size_cm: float = 5.0,
+    max_mesh_size_cm: float = 20.0,
 ) -> tuple[Stellarator, CombinedGeometryResult]:
     """Generate reactor structures and magnets in one CAD-to-DAGMC model."""
     load_and_validate_no_port_configuration(config_path)
@@ -82,16 +91,16 @@ def build_combined_geometry(
     ivb = dict(data["invessel_build"])
     stellarator.construct_invessel_build(**ivb)
     magnet = dict(data["magnet_coils"])
+    case_thickness = float(magnet.get("case_thickness", casing_thickness_cm))
+    magnet_material_tag = _magnet_material_tag(case_thickness)
     stellarator.construct_magnets_from_filaments(
         str(coils_path),
         float(magnet["width"]),
         float(magnet["thickness"]),
         float(magnet["toroidal_extent"]),
-        case_thickness=float(
-            magnet.get("case_thickness", casing_thickness_cm)
-        ),
+        case_thickness=case_thickness,
         sample_mod=int(magnet.get("sample_mod", 6)),
-        mat_tag=("magnet_casing", "winding_pack"),
+        mat_tag=magnet_material_tag,
     )
     dagmc_name = Path(dagmc_filename).stem
     if stellarator.use_pydagmc:

@@ -28,6 +28,242 @@ def _vectors(values, field: str) -> np.ndarray:
     return np.column_stack([values[field][axis] for axis in "xyz"])
 
 
+def _select_envelope_records(records, surface_ids):
+    record_surface_ids = np.asarray(records["surf_id"]).reshape(-1)
+    keep = np.isin(
+        record_surface_ids, tuple(int(item) for item in surface_ids)
+    )
+    selected = records[keep]
+    if len(selected) == 0:
+        raise ValueError(
+            "no surface-source records crossed the selected magnet envelope"
+        )
+    return selected, record_surface_ids[keep]
+
+
+def _decode_hdf5_text(value) -> str:
+    return (
+        value.decode() if isinstance(value, (bytes, np.bytes_)) else str(value)
+    )
+
+
+def _directional_current_from_statepoint(
+    statepoint_path: str | Path,
+    particle: str,
+    envelope: DagmcEnvelope,
+) -> dict[int, dict[str, tuple[float, float]]]:
+    """Read one directional-current tally without loading unrelated filters."""
+    tally_name = f"pstl_envelope_{particle}_directional_current"
+    with h5py.File(statepoint_path) as statepoint:
+        tallies = statepoint["tallies"]
+        tally = next(
+            (
+                value
+                for key, value in tallies.items()
+                if key.startswith("tally ")
+                and _decode_hdf5_text(value["name"][()]) == tally_name
+            ),
+            None,
+        )
+        if tally is None:
+            raise ValueError(f"statepoint has no tally named {tally_name!r}")
+        filter_ids = [int(value) for value in tally["filters"][:]]
+        filters = [tallies[f"filters/filter {value}"] for value in filter_ids]
+        filter_types = [
+            _decode_hdf5_text(value["type"][()]) for value in filters
+        ]
+        required = {"surface", "musurface", "particle", "energy"}
+        if not required.issubset(filter_types):
+            raise ValueError(
+                f"{tally_name} filters {filter_types} omit {sorted(required)}"
+            )
+        particle_filter = filters[filter_types.index("particle")]
+        scored_particles = {
+            _decode_hdf5_text(value) for value in particle_filter["bins"][:]
+        }
+        if scored_particles != {particle}:
+            raise ValueError(
+                f"{tally_name} particle filter is {sorted(scored_particles)}"
+            )
+        dimensions = tuple(int(value["n_bins"][()]) for value in filters)
+        results = tally["results"][:]
+        sums = results[..., 0].reshape(dimensions + (-1,))
+        sum_squares = results[..., 1].reshape(dimensions + (-1,))
+        realizations = int(tally["n_realizations"][()])
+        if realizations <= 0:
+            raise ValueError(f"{tally_name} has no realizations")
+        mean = sums / realizations
+        if realizations == 1:
+            standard_deviation = np.zeros_like(mean)
+        else:
+            variance = np.maximum(
+                0.0,
+                (sum_squares / realizations - mean**2) / (realizations - 1),
+            )
+            standard_deviation = np.sqrt(variance)
+        surface_axis = filter_types.index("surface")
+        mu_axis = filter_types.index("musurface")
+        surface_ids = np.asarray(filters[surface_axis]["bins"][:], dtype=int)
+        mu_edges = np.asarray(filters[mu_axis]["bins"][:], dtype=float)
+        if len(mu_edges) != dimensions[mu_axis] + 1:
+            raise ValueError(f"{tally_name} has malformed mu-surface edges")
+        output = {
+            int(surface_id): {
+                "incoming": (0.0, 0.0),
+                "outgoing": (0.0, 0.0),
+            }
+            for surface_id in surface_ids
+        }
+        for surface_index, surface_id in enumerate(surface_ids):
+            normal_sign = envelope.envelope.surface(
+                int(surface_id)
+            ).openmc_normal_sign
+            for mu_index, (mu_low, mu_high) in enumerate(
+                zip(mu_edges[:-1], mu_edges[1:])
+            ):
+                if mu_high <= 0.0:
+                    native_sense = -1
+                elif mu_low >= 0.0:
+                    native_sense = 1
+                else:
+                    raise ValueError(
+                        f"{tally_name} has a mu bin straddling zero"
+                    )
+                selection = [slice(None)] * mean.ndim
+                selection[surface_axis] = surface_index
+                selection[mu_axis] = mu_index
+                values = mean[tuple(selection)]
+                deviations = standard_deviation[tuple(selection)]
+                value = float(abs(values.sum()))
+                deviation = float(np.sqrt(np.sum(deviations**2)))
+                sense = (
+                    "outgoing"
+                    if normal_sign * native_sense > 0
+                    else "incoming"
+                )
+                prior_value, prior_deviation = output[int(surface_id)][sense]
+                output[int(surface_id)][sense] = (
+                    prior_value + value,
+                    float(np.hypot(prior_deviation, deviation)),
+                )
+    return output
+
+
+def _closure_quantity(tally, tally_std, bank, bank_std):
+    combined = float(np.hypot(tally_std, bank_std))
+    difference = float(bank - tally)
+    return {
+        "tally_current_per_source": float(tally),
+        "tally_std_dev": float(tally_std),
+        "bank_current_per_source": float(bank),
+        "bank_poisson_std_dev": float(bank_std),
+        "difference": difference,
+        "combined_std_dev": combined,
+        "z_score": difference / combined if combined else 0.0,
+        "passes_three_sigma": abs(difference) <= 3.0 * combined + 1.0e-14,
+    }
+
+
+def _independent_directional_closure(
+    statepoint_path,
+    envelope,
+    bank,
+    particles,
+    surface_ids,
+    transport_weights,
+):
+    crossing_sense = np.asarray(bank.columns["crossing_sense"]).astype(str)
+    closure = {}
+    for particle in sorted(set(particles)):
+        tally = _directional_current_from_statepoint(
+            statepoint_path, particle, envelope
+        )
+        by_surface = []
+        surface_values = []
+        for surface_id in envelope.envelope.surface_ids:
+            values = {}
+            for sense in ("incoming", "outgoing"):
+                tally_value, tally_std = tally[int(surface_id)][sense]
+                mask = (
+                    (particles == particle)
+                    & (surface_ids == int(surface_id))
+                    & (crossing_sense == sense)
+                )
+                weights = transport_weights[mask]
+                values[sense] = (
+                    tally_value,
+                    tally_std,
+                    float(weights.sum()),
+                    float(np.sqrt(np.sum(weights**2))),
+                )
+            incoming = values["incoming"]
+            outgoing = values["outgoing"]
+            surface = {
+                "surface_id": int(surface_id),
+                "openmc_normal_sign": envelope.envelope.surface(
+                    int(surface_id)
+                ).openmc_normal_sign,
+                "incoming": _closure_quantity(*incoming),
+                "outgoing": _closure_quantity(*outgoing),
+                "net": _closure_quantity(
+                    outgoing[0] - incoming[0],
+                    float(np.hypot(outgoing[1], incoming[1])),
+                    outgoing[2] - incoming[2],
+                    float(np.hypot(outgoing[3], incoming[3])),
+                ),
+                "total_crossing": _closure_quantity(
+                    outgoing[0] + incoming[0],
+                    float(np.hypot(outgoing[1], incoming[1])),
+                    outgoing[2] + incoming[2],
+                    float(np.hypot(outgoing[3], incoming[3])),
+                ),
+            }
+            surface["passes_three_sigma"] = all(
+                surface[name]["passes_three_sigma"]
+                for name in ("incoming", "outgoing", "net", "total_crossing")
+            )
+            by_surface.append(surface)
+            surface_values.append(values)
+        whole_values = {}
+        for sense in ("incoming", "outgoing"):
+            selected = [value[sense] for value in surface_values]
+            whole_values[sense] = (
+                float(sum(value[0] for value in selected)),
+                float(np.sqrt(sum(value[1] ** 2 for value in selected))),
+                float(sum(value[2] for value in selected)),
+                float(np.sqrt(sum(value[3] ** 2 for value in selected))),
+            )
+        incoming = whole_values["incoming"]
+        outgoing = whole_values["outgoing"]
+        whole = {
+            "incoming": _closure_quantity(*incoming),
+            "outgoing": _closure_quantity(*outgoing),
+            "net": _closure_quantity(
+                outgoing[0] - incoming[0],
+                float(np.hypot(outgoing[1], incoming[1])),
+                outgoing[2] - incoming[2],
+                float(np.hypot(outgoing[3], incoming[3])),
+            ),
+            "total_crossing": _closure_quantity(
+                outgoing[0] + incoming[0],
+                float(np.hypot(outgoing[1], incoming[1])),
+                outgoing[2] + incoming[2],
+                float(np.hypot(outgoing[3], incoming[3])),
+            ),
+        }
+        whole["passes_three_sigma"] = all(
+            whole[name]["passes_three_sigma"]
+            for name in ("incoming", "outgoing", "net", "total_crossing")
+        )
+        closure[particle] = {
+            "whole_envelope": whole,
+            "by_surface": by_surface,
+            "passes_three_sigma": whole["passes_three_sigma"]
+            and all(value["passes_three_sigma"] for value in by_surface),
+        }
+    return closure
+
+
 def export_openmc16_handoff(
     output_path: str | Path,
     *,
@@ -60,10 +296,9 @@ def export_openmc16_handoff(
     if not arrays:
         raise ValueError("at least one surface-source file is required")
     records = np.concatenate(arrays)
-    surface_ids = np.asarray(records["surf_id"]).reshape(-1)
-    keep = np.isin(surface_ids, envelope.envelope.surface_ids)
-    records = records[keep]
-    surface_ids = surface_ids[keep]
+    records, surface_ids = _select_envelope_records(
+        records, envelope.envelope.surface_ids
+    )
     pdg = np.asarray(records["particle"]).reshape(-1)
     inverse_pdg = {value: name for name, value in PDG_PARTICLES.items()}
     unsupported = set(np.unique(pdg)) - set(inverse_pdg)
@@ -100,30 +335,14 @@ def export_openmc16_handoff(
     # in quadrature yields sqrt(sum(w_i**2))/histories in each projected bin.
     bank.columns["weight_std_dev"] = transport_weights.copy()
 
-    statepoint = openmc.StatePoint(statepoint_path)
-    closure = {}
-    for particle in sorted(set(particles)):
-        tally = statepoint.get_tally(
-            name=f"pstl_envelope_{particle}_directional_current"
-        )
-        tally_total = float(np.sum(np.abs(tally.mean)))
-        tally_sigma = float(np.sqrt(np.sum(tally.std_dev**2)))
-        mask = particles == particle
-        bank_total = float(transport_weights[mask].sum())
-        bank_sigma = float(np.sqrt(np.sum(transport_weights[mask] ** 2)))
-        combined = float(np.hypot(tally_sigma, bank_sigma))
-        difference = bank_total - tally_total
-        closure[particle] = {
-            "tally_total_crossing_current": tally_total,
-            "tally_std_dev_quadrature": tally_sigma,
-            "bank_total_crossing_current": bank_total,
-            "bank_poisson_std_dev": bank_sigma,
-            "difference": difference,
-            "combined_std_dev": combined,
-            "z_score": difference / combined if combined else 0.0,
-            "passes_three_sigma": abs(difference) <= 3.0 * combined + 1.0e-14,
-        }
-    statepoint.close()
+    closure = _independent_directional_closure(
+        statepoint_path,
+        envelope,
+        bank,
+        particles,
+        surface_ids,
+        transport_weights,
+    )
     bank.metadata.update(
         {
             "independent_closure": closure,

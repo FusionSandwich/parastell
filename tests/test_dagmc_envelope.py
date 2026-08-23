@@ -1,9 +1,31 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 from parastell.dagmc_envelope import extract_closed_envelope
+from parastell.dagmc_envelope import _openmc_to_outward_normal_sign
+
+
+def test_openmc_normal_sign_uses_target_volume_sense():
+    volume = SimpleNamespace(id=16)
+    outside = SimpleNamespace(id=15)
+    reverse = SimpleNamespace(
+        id=73, forward_volume=outside, reverse_volume=volume
+    )
+    forward = SimpleNamespace(
+        id=82, forward_volume=volume, reverse_volume=None
+    )
+
+    assert _openmc_to_outward_normal_sign(reverse, volume.id) == 1
+    assert _openmc_to_outward_normal_sign(forward, volume.id) == -1
+
+    missing = SimpleNamespace(
+        id=99, forward_volume=outside, reverse_volume=None
+    )
+    with pytest.raises(ValueError, match="no sense"):
+        _openmc_to_outward_normal_sign(missing, volume.id)
 
 
 def test_real_magnet_volume_is_closed_when_asset_available():

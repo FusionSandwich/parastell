@@ -125,6 +125,19 @@ def _role(centroid, volume_centroid, plasma, toroidal, poloidal):
     return name if score >= 0.55 else "other"
 
 
+def _openmc_to_outward_normal_sign(surface, volume_id: int) -> int:
+    """Return the sign mapping an OpenMC/DAGMC facet normal to outward."""
+    reverse_id = getattr(surface.reverse_volume, "id", None)
+    forward_id = getattr(surface.forward_volume, "id", None)
+    if reverse_id == int(volume_id):
+        return 1
+    if forward_id == int(volume_id):
+        return -1
+    raise ValueError(
+        f"surface {surface.id} has no sense for DAGMC volume {volume_id}"
+    )
+
+
 def extract_closed_envelope(
     dagmc_path: str | Path,
     volume_id: int,
@@ -173,16 +186,8 @@ def extract_closed_envelope(
         # DAGMC facet normals point from the reverse volume toward the forward
         # volume.  Use that topological sense directly: centroid tests are not
         # valid for concave or toroidal magnet volumes.
-        reverse_id = getattr(surface.reverse_volume, "id", None)
-        forward_id = getattr(surface.forward_volume, "id", None)
-        if reverse_id == volume.id:
-            pass
-        elif forward_id == volume.id:
-            normals *= -1.0
-        else:
-            raise ValueError(
-                f"surface {surface.id} has no sense for DAGMC volume {volume.id}"
-            )
+        openmc_normal_sign = _openmc_to_outward_normal_sign(surface, volume.id)
+        normals *= openmc_normal_sign
         role = _role(centroid, volume_centroid, plasma, toroidal, poloidal)
         faceted.append(
             FacetedSurface(
@@ -222,6 +227,7 @@ def extract_closed_envelope(
                 poloidal_direction_global=tuple(width),
                 u_edges_cm=tuple(u_edges),
                 v_edges_cm=tuple(v_edges),
+                openmc_normal_sign=openmc_normal_sign,
                 vector_area_global_cm2=tuple(area_vector),
             )
         )

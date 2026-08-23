@@ -735,6 +735,14 @@ def build_correlated_bank(
         columns,
         {
             "history_id_available": history_id is not None,
+            "surface_ids": list(envelope.surface_ids),
+            "surface_patch_counts": {
+                str(surface.surface_id): (
+                    (len(surface.u_edges_cm) - 1)
+                    * (len(surface.v_edges_cm) - 1)
+                )
+                for surface in envelope.surfaces
+            },
             "mu_edges": m_edges.tolist(),
             "phi_edges_rad": p_edges.tolist(),
             "energy_axes": {
@@ -828,14 +836,46 @@ def conservative_projection(
 ) -> dict[str, np.ndarray]:
     """Project complete correlated records to surface/patch/E/angle/species/sense."""
     c = bank.columns
-    particles = sorted(set(c["particle"].astype(str)))
+    observed_particles = set(c["particle"].astype(str))
+    energy_group_counts = {}
+    for name, edges in bank.metadata.get("energy_axes", {}).items():
+        if name.endswith("_energy_edges_eV"):
+            particle = name.removesuffix("_energy_edges_eV")
+            energy_group_counts[particle] = len(edges) - 1
+    particles = sorted(observed_particles | set(energy_group_counts))
     senses = ("incoming", "outgoing", "grazing")
-    surface_ids = sorted(set(int(item) for item in c["surface_id"]))
+    observed_surface_ids = set(int(item) for item in c["surface_id"])
+    surface_ids = sorted(
+        set(int(item) for item in bank.metadata.get("surface_ids", ()))
+        | observed_surface_ids
+    )
+    patch_counts = {
+        int(surface_id): int(count)
+        for surface_id, count in bank.metadata.get(
+            "surface_patch_counts", {}
+        ).items()
+    }
+    for patch in bank.metadata.get("adaptive_surface_patches", {}).get(
+        "patches", ()
+    ):
+        surface_id = int(patch["surface_id"])
+        patch_counts[surface_id] = max(
+            patch_counts.get(surface_id, 0), int(patch["patch_id"]) + 1
+        )
+    observed_patch_count = int(np.max(c["patch_id"])) + 1
+    patch_count = max([observed_patch_count, *patch_counts.values()])
+    observed_energy_count = int(np.max(c["energy_group"])) + 1
+    energy_count = max([observed_energy_count, *energy_group_counts.values()])
+    mu_count = max(len(bank.metadata.get("mu_edges", ())) - 1, 0)
+    phi_count = max(len(bank.metadata.get("phi_edges_rad", ())) - 1, 0)
+    configured_angle_count = mu_count * phi_count
+    observed_angle_count = int(np.max(c["angle_bin_id"])) + 1
+    angle_count = max(configured_angle_count, observed_angle_count)
     shape = (
         len(surface_ids),
-        int(np.max(c["patch_id"])) + 1,
-        int(np.max(c["energy_group"])) + 1,
-        int(np.max(c["angle_bin_id"])) + 1,
+        patch_count,
+        energy_count,
+        angle_count,
         len(particles),
         len(senses),
     )
@@ -865,8 +905,22 @@ def conservative_projection(
         "mean": mean,
         "std_dev": np.sqrt(variance),
         "surface_ids": np.asarray(surface_ids),
+        "surface_patch_counts": np.asarray(
+            [
+                patch_counts.get(surface_id, observed_patch_count)
+                for surface_id in surface_ids
+            ]
+        ),
         "particles": np.asarray(particles, dtype=object),
+        "particle_energy_group_counts": np.asarray(
+            [
+                energy_group_counts.get(particle, observed_energy_count)
+                for particle in particles
+            ]
+        ),
         "senses": np.asarray(senses, dtype=object),
+        "mu_bin_count": np.asarray(mu_count),
+        "phi_bin_count": np.asarray(phi_count),
     }
 
 
@@ -919,6 +973,15 @@ def write_handoff(
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
     strings = h5py.string_dtype("utf-8")
+
+    def create_numeric_dataset(group, name, array):
+        options = (
+            {"compression": "gzip", "compression_opts": 4, "shuffle": True}
+            if array.ndim > 0 and array.size >= 1024
+            else {}
+        )
+        return group.create_dataset(name, data=array, **options)
+
     with h5py.File(output, "w") as target:
         target.attrs["schema"] = SCHEMA_URI
         target.attrs["schema_version"] = SCHEMA_VERSION
@@ -935,7 +998,7 @@ def write_handoff(
                     name, data=array.astype(object), dtype=strings
                 )
                 if array.dtype.kind in "OU"
-                else records.create_dataset(name, data=array)
+                else create_numeric_dataset(records, name, array)
             )
         projected = target.create_group("projection")
         for name, value in projection.items():
@@ -945,7 +1008,7 @@ def write_handoff(
                     name, data=array.astype(object), dtype=strings
                 )
                 if array.dtype.kind in "OU"
-                else projected.create_dataset(name, data=array)
+                else create_numeric_dataset(projected, name, array)
             )
     return manifest
 
@@ -1146,6 +1209,13 @@ def assign_adaptive_surface_patches(
         "patches": patch_metadata,
         "area_conservative": True,
         "canonical_records_modified": False,
+    }
+    metadata["surface_patch_counts"] = {
+        str(surface.surface_id): sum(
+            patch["surface_id"] == surface.surface_id
+            for patch in patch_metadata
+        )
+        for surface in envelope.surfaces
     }
     output = CorrelatedBoundaryBank(columns, metadata)
     if not np.isclose(

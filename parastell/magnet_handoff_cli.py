@@ -762,12 +762,10 @@ def build_parser() -> argparse.ArgumentParser:
             "--dagmc-filename", default="combined_reactor_magnet.h5m"
         )
         command.add_argument("--source-filename", default="source_mesh.h5m")
-        command.add_argument("--casing-thickness-cm", type=float, default=5.0)
+        command.add_argument("--casing-thickness-cm", type=float, default=0.0)
+        command.add_argument("--minimum-mesh-size-cm", type=float, default=5.0)
         command.add_argument(
-            "--minimum-mesh-size-cm", type=float, default=20.0
-        )
-        command.add_argument(
-            "--maximum-mesh-size-cm", type=float, default=50.0
+            "--maximum-mesh-size-cm", type=float, default=20.0
         )
 
     build_combined = subparsers.add_parser(
