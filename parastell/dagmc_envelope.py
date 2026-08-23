@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
@@ -264,3 +264,195 @@ def extract_closed_envelope(
         0,
         closure,
     )
+
+
+@dataclass(frozen=True)
+class MagnetVolumeRecord:
+    """Stable identity for one magnet-related DAGMC volume."""
+
+    volume_id: int
+    material: str
+    component_role: str
+    surface_ids: tuple[int, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "volume_id": self.volume_id,
+            "material": self.material,
+            "component_role": self.component_role,
+            "surface_ids": list(self.surface_ids),
+        }
+
+
+@dataclass(frozen=True)
+class MagnetVolumeInventory:
+    """Deterministic inventory used before any envelope is selected."""
+
+    dagmc_path: str
+    dagmc_geometry_sha256: str
+    volumes: tuple[MagnetVolumeRecord, ...]
+
+    @property
+    def winding_packs(self) -> tuple[MagnetVolumeRecord, ...]:
+        return tuple(
+            item
+            for item in self.volumes
+            if item.component_role == "winding_pack"
+        )
+
+    @property
+    def casings(self) -> tuple[MagnetVolumeRecord, ...]:
+        return tuple(
+            item
+            for item in self.volumes
+            if item.component_role == "magnet_casing"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dagmc_path": self.dagmc_path,
+            "dagmc_geometry_sha256": self.dagmc_geometry_sha256,
+            "volumes": [item.to_dict() for item in self.volumes],
+            "winding_pack_volume_ids": [
+                item.volume_id for item in self.winding_packs
+            ],
+            "magnet_casing_volume_ids": [
+                item.volume_id for item in self.casings
+            ],
+        }
+
+
+def _material_key(value: Any) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+
+
+def discover_magnet_volumes(
+    dagmc_path: str | Path,
+    *,
+    winding_pack_materials: Sequence[str] = ("winding_pack",),
+    casing_materials: Sequence[str] = ("magnet_casing",),
+) -> MagnetVolumeInventory:
+    """Inventory magnet volumes by stable DAGMC IDs and exact material tags."""
+    import pydagmc
+
+    path = Path(dagmc_path).resolve()
+    model = pydagmc.Model(str(path))
+    winding_keys = {_material_key(item) for item in winding_pack_materials}
+    casing_keys = {_material_key(item) for item in casing_materials}
+    overlap = winding_keys & casing_keys
+    if overlap:
+        raise ValueError(f"magnet material roles overlap: {sorted(overlap)}")
+    records = []
+    for volume_id, volume in sorted(model.volumes_by_id.items()):
+        material = str(getattr(volume, "material", "") or "")
+        key = _material_key(material)
+        if key in winding_keys:
+            role = "winding_pack"
+        elif key in casing_keys:
+            role = "magnet_casing"
+        else:
+            continue
+        surface_ids = tuple(
+            sorted(
+                int(surface.id)
+                for surface in getattr(volume, "surfaces", ())
+            )
+        )
+        if not surface_ids:
+            raise ValueError(
+                f"magnet DAGMC volume {volume_id} has no boundary surfaces"
+            )
+        records.append(
+            MagnetVolumeRecord(
+                volume_id=int(volume_id),
+                material=material,
+                component_role=role,
+                surface_ids=surface_ids,
+            )
+        )
+    inventory = MagnetVolumeInventory(str(path), _hash(path), tuple(records))
+    if not inventory.winding_packs:
+        raise ValueError(
+            "DAGMC geometry has no winding-pack volume with an accepted "
+            "material tag"
+        )
+    return inventory
+
+
+def select_winding_pack_volumes(
+    inventory: MagnetVolumeInventory,
+    volume_ids: Sequence[int] | None = None,
+) -> tuple[MagnetVolumeRecord, ...]:
+    """Select winding packs without silently choosing among multiple magnets."""
+    candidates = {item.volume_id: item for item in inventory.winding_packs}
+    if volume_ids is None:
+        if len(candidates) != 1:
+            raise ValueError(
+                "multiple winding-pack volumes are present; explicit volume "
+                "IDs are required"
+            )
+        return tuple(candidates.values())
+    requested = tuple(int(item) for item in volume_ids)
+    if not requested or len(requested) != len(set(requested)):
+        raise ValueError("winding-pack volume IDs must be nonempty and unique")
+    missing = sorted(set(requested) - set(candidates))
+    if missing:
+        raise ValueError(
+            f"requested IDs are not winding-pack volumes: {missing}; "
+            f"available IDs: {sorted(candidates)}"
+        )
+    return tuple(candidates[item] for item in requested)
+
+
+def extract_closed_envelopes(
+    dagmc_path: str | Path,
+    volume_ids: Sequence[int],
+    *,
+    frames_by_volume: Mapping[int, Mapping[str, Sequence[float]]],
+    spatial_bins: tuple[int, int] = (4, 4),
+) -> tuple[DagmcEnvelope, ...]:
+    """Extract multiple envelopes using an explicit frame for every magnet."""
+    selected = tuple(int(item) for item in volume_ids)
+    if not selected or len(selected) != len(set(selected)):
+        raise ValueError("envelope volume IDs must be nonempty and unique")
+    frame_ids = {int(key) for key in frames_by_volume}
+    missing_frames = sorted(set(selected) - frame_ids)
+    if missing_frames:
+        raise ValueError(
+            "local orientation frames are missing for magnet volumes "
+            f"{missing_frames}"
+        )
+    results = []
+    for volume_id in selected:
+        frame = frames_by_volume[volume_id]
+        required = {
+            "plasma_direction_global",
+            "toroidal_direction_global",
+            "poloidal_direction_global",
+        }
+        missing = required - set(frame)
+        if missing:
+            raise ValueError(
+                f"magnet volume {volume_id} frame is missing {sorted(missing)}"
+            )
+        results.append(
+            extract_closed_envelope(
+                dagmc_path,
+                volume_id,
+                envelope_id=f"winding-pack-{volume_id}",
+                magnet_id=f"magnet-{volume_id}",
+                plasma_direction_global=frame["plasma_direction_global"],
+                toroidal_direction_global=frame["toroidal_direction_global"],
+                poloidal_direction_global=frame[
+                    "poloidal_direction_global"
+                ],
+                spatial_bins=spatial_bins,
+            )
+        )
+    return tuple(results)

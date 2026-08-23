@@ -387,6 +387,55 @@ class CorrelatedBoundaryBank:
             "grazing_fraction": float(weight[np.abs(mu) <= 0.1].sum() / total),
         }
 
+    def population_statistics(self) -> dict[str, Any]:
+        """Report count, weighted count, and ESS by species and crossing sense."""
+        weights = np.asarray(self.columns["weight"], dtype=float)
+        particles = np.asarray(self.columns["particle"]).astype(str)
+        senses = np.asarray(self.columns["crossing_sense"]).astype(str)
+        surface_ids = np.asarray(self.columns["surface_id"], dtype=int)
+
+        def summarize(mask: np.ndarray) -> dict[str, float | int]:
+            selected = weights[mask]
+            total = float(selected.sum())
+            square_sum = float(np.dot(selected, selected))
+            return {
+                "record_count": int(mask.sum()),
+                "weighted_count": total,
+                "sum_weight_squared": square_sum,
+                "effective_sample_size": (
+                    float(total * total / square_sum)
+                    if square_sum > 0.0
+                    else 0.0
+                ),
+                "relative_counting_uncertainty": (
+                    float(np.sqrt(square_sum) / total)
+                    if total > 0.0
+                    else 0.0
+                ),
+            }
+
+        rows = []
+        for surface_id in sorted(set(surface_ids.tolist())):
+            for particle in sorted(set(particles.tolist())):
+                for sense in ("incoming", "outgoing", "grazing"):
+                    mask = (
+                        (surface_ids == surface_id)
+                        & (particles == particle)
+                        & (senses == sense)
+                    )
+                    rows.append(
+                        {
+                            "surface_id": int(surface_id),
+                            "particle": particle,
+                            "crossing_sense": sense,
+                            **summarize(mask),
+                        }
+                    )
+        return {
+            "overall": summarize(np.ones(len(self), dtype=bool)),
+            "by_surface_particle_sense": rows,
+        }
+
 
 @dataclass(frozen=True)
 class IndependentClosure:
@@ -864,6 +913,7 @@ def write_handoff(
         "normalization": dict(normalization),
         "provenance": dict(provenance),
         "angular_metrics": bank.angular_metrics(),
+        "population_statistics": bank.population_statistics(),
         "record_count": len(bank),
         "integrated_current": bank.integrated_current,
         "bank_metadata": bank.metadata,

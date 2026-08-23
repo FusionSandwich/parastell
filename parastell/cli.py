@@ -15,6 +15,10 @@ def main(argv=None):
         from .activation.cli import main as activation_main
 
         return activation_main(arguments[1:])
+    if arguments and arguments[0] == "magnet-handoff":
+        from .magnet_handoff_cli import main as magnet_handoff_main
+
+        return magnet_handoff_main(arguments[1:])
 
     from .parastell import parastell
 

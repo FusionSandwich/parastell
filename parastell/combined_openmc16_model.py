@@ -17,6 +17,7 @@ from .openmc16 import TallyInventory
 from .openmc16 import add_envelope_tallies
 from .openmc16 import configure_transport
 from .parastell import Stellarator
+from .production_handoff import load_and_validate_no_port_configuration
 from .utils import read_yaml_config
 
 
@@ -61,6 +62,7 @@ def build_combined_geometry(
     max_mesh_size_cm: float = 50.0,
 ) -> tuple[Stellarator, CombinedGeometryResult]:
     """Generate reactor structures and magnets in one CAD-to-DAGMC model."""
+    load_and_validate_no_port_configuration(config_path)
     data = read_yaml_config(config_path)
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)

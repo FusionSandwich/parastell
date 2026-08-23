@@ -14,6 +14,8 @@ import h5py
 import numpy as np
 import openmc
 
+from .dagmc_envelope import discover_magnet_volumes
+from .dagmc_envelope import select_winding_pack_volumes
 from .magnet_spectral_handoff import (
     MagnetSpectralHandoff,
     available_energy_group_structures,
@@ -25,6 +27,7 @@ from .hts_multilayer import (
     verification_rebco_stack,
     zero_response_library,
 )
+from .production_handoff import load_and_validate_no_port_configuration
 
 
 _DEFAULT_MANIFEST = "magnet_spectral_handoff_manifest.json"
@@ -409,6 +412,39 @@ def _inspect(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _validate_production_config(args: argparse.Namespace) -> dict[str, Any]:
+    _, audit = load_and_validate_no_port_configuration(args.config)
+    result = audit.to_dict()
+    _write_result(result)
+    return result
+
+
+def _list_magnets(args: argparse.Namespace) -> dict[str, Any]:
+    inventory = discover_magnet_volumes(
+        args.dagmc,
+        winding_pack_materials=args.winding_pack_material,
+        casing_materials=args.casing_material,
+    )
+    result = inventory.to_dict()
+    _write_result(result)
+    return result
+
+
+def _inspect_magnet(args: argparse.Namespace) -> dict[str, Any]:
+    inventory = discover_magnet_volumes(
+        args.dagmc,
+        winding_pack_materials=args.winding_pack_material,
+        casing_materials=args.casing_material,
+    )
+    selected = select_winding_pack_volumes(inventory, [args.volume_id])
+    result = {
+        "dagmc_geometry_sha256": inventory.dagmc_geometry_sha256,
+        "magnet": selected[0].to_dict(),
+    }
+    _write_result(result)
+    return result
+
+
 def _inspect_planes(args: argparse.Namespace) -> dict[str, Any]:
     handoff = MagnetSpectralHandoff.from_yaml(args.config)
     result = {
@@ -486,6 +522,40 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    production_config = subparsers.add_parser(
+        "validate-production-config",
+        help="enforce the port-free production geometry contract",
+    )
+    production_config.add_argument("--config", required=True, type=Path)
+    production_config.set_defaults(handler=_validate_production_config)
+
+    list_magnets = subparsers.add_parser(
+        "list-magnets",
+        help="list stable winding-pack and casing DAGMC volume IDs",
+    )
+    list_magnets.add_argument("--dagmc", required=True, type=Path)
+    list_magnets.add_argument(
+        "--winding-pack-material", action="append", default=["winding_pack"]
+    )
+    list_magnets.add_argument(
+        "--casing-material", action="append", default=["magnet_casing"]
+    )
+    list_magnets.set_defaults(handler=_list_magnets)
+
+    inspect_magnet = subparsers.add_parser(
+        "inspect-magnet",
+        help="inspect one explicitly selected winding-pack DAGMC volume",
+    )
+    inspect_magnet.add_argument("--dagmc", required=True, type=Path)
+    inspect_magnet.add_argument("--volume-id", required=True, type=int)
+    inspect_magnet.add_argument(
+        "--winding-pack-material", action="append", default=["winding_pack"]
+    )
+    inspect_magnet.add_argument(
+        "--casing-material", action="append", default=["magnet_casing"]
+    )
+    inspect_magnet.set_defaults(handler=_inspect_magnet)
 
     prepare = subparsers.add_parser(
         "prepare",
