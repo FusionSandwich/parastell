@@ -381,6 +381,8 @@ class InVesselBuild(object):
         self.port_aperture_models = {}
         self.port_specs = {port.name: port for port in self.ports}
         self.port_geometry_diagnostics = {}
+        self.port_axis_diagnostics = {}
+        self.port_point_cloud_intersection_diagnostics = []
         # Private aliases are retained for downstream Prompt-2 callers.
         self._port_fill_components = self.port_void_components
         self._port_fill_specs = self.port_specs
@@ -541,6 +543,34 @@ class InVesselBuild(object):
         [surface.calculate_loci() for surface in self.Surfaces.values()]
         self._resolve_surface_port_placements()
 
+    def native_radial_stack(self):
+        """Return the authoritative ordered radial surfaces for native export.
+
+        ``RadialBuild`` already inserts the plasma and SOL surfaces for a split
+        chamber.  An unsplit chamber instead needs the independent plasma
+        reference surface prepended to its chamber and user-layer surfaces.
+        """
+
+        stack = list(self.Surfaces.items())
+        if not self.radial_build.split_chamber:
+            stack.insert(
+                0,
+                (
+                    "plasma",
+                    self._anchor_reference_surface("plasma_surface"),
+                ),
+            )
+        names = [name for name, _ in stack]
+        duplicates = sorted(
+            name for name in set(names) if names.count(name) > 1
+        )
+        if duplicates:
+            raise ValueError(
+                "Native radial stack contains duplicate region names: "
+                + ", ".join(duplicates)
+            )
+        return tuple(stack)
+
     def _anchor_reference_surface(self, reference, layer=None):
         """Resolve an anchor reference to a point-cloud-backed surface."""
         if reference in {"layer_inner", "layer_outer"}:
@@ -601,10 +631,24 @@ class InVesselBuild(object):
             anchor, poloidal, toroidal, outward = surface.local_surface_frame(
                 phi, theta
             )
+            radial_outward = surface.radial_build_normal(phi, theta)
+            outer_surface = self.native_radial_stack()[-1][1]
+            through = outer_surface.evaluate(phi, theta) - anchor
+            through_norm = np.linalg.norm(through)
+            if through_norm <= 1e-12:
+                raise ValueError(
+                    f"Port {port.name!r} through-build axis is degenerate"
+                )
+            through /= through_norm
+            base_axis = {
+                "outward_normal": outward,
+                "radial_build_normal": radial_outward,
+                "through_build": through,
+            }[axis_spec.mode]
             poloidal_tilt = np.deg2rad(axis_spec.poloidal_tilt)
             toroidal_tilt = np.deg2rad(axis_spec.toroidal_tilt)
             tilted = (
-                np.cos(poloidal_tilt) * outward
+                np.cos(poloidal_tilt) * base_axis
                 + np.sin(poloidal_tilt) * poloidal
             )
             axis = (
@@ -616,6 +660,25 @@ class InVesselBuild(object):
                 raise ValueError(
                     f"Port {port.name!r} surface axis does not point outward"
                 )
+            radial_stack = self.native_radial_stack()
+            radial_coordinates = np.asarray(
+                [
+                    np.dot(item.evaluate(phi, theta) - anchor, axis)
+                    for _, item in radial_stack
+                ]
+            )
+            if axis_spec.mode in {"radial_build_normal", "through_build"}:
+                differences = np.diff(radial_coordinates)
+                if np.any(differences <= 1e-7):
+                    raise ValueError(
+                        f"Port {port.name!r} {axis_spec.mode!r} axis does not "
+                        "cross radial boundaries monotonically"
+                    )
+                if radial_coordinates[-1] <= 0.0:
+                    raise ValueError(
+                        f"Port {port.name!r} {axis_spec.mode!r} axis does not "
+                        "point through the radial build"
+                    )
             local_reference = poloidal - np.dot(poloidal, axis) * axis
             local_reference /= np.linalg.norm(local_reference)
             local_normal = np.cross(axis, local_reference)
@@ -629,6 +692,29 @@ class InVesselBuild(object):
                 anchor, axis, local_reference
             )
             resolved_ports.append(replace(port, placement=resolved_placement))
+
+            def angle_degrees(left, right):
+                cosine = np.clip(np.dot(left, right), -1.0, 1.0)
+                return float(np.rad2deg(np.arccos(cosine)))
+
+            self.port_axis_diagnostics[port.name] = {
+                "axis_mode": axis_spec.mode,
+                "full_differential_normal": outward.tolist(),
+                "radial_build_normal": radial_outward.tolist(),
+                "through_build_axis": through.tolist(),
+                "selected_axis": axis.tolist(),
+                "full_to_radial_angle_degrees": angle_degrees(
+                    outward, radial_outward
+                ),
+                "full_to_through_angle_degrees": angle_degrees(
+                    outward, through
+                ),
+                "radial_to_through_angle_degrees": angle_degrees(
+                    radial_outward, through
+                ),
+                "radial_boundary_names": [name for name, _ in radial_stack],
+                "radial_boundary_coordinates": radial_coordinates.tolist(),
+            }
         self.ports = tuple(resolved_ports)
         self.port_specs = {port.name: port for port in self.ports}
 
@@ -929,19 +1015,99 @@ class InVesselBuild(object):
         candidates = line_triangle_intersections(anchor, axis, triangles)
         half = port.placement.max_search_length / 2.0
         candidates = candidates[np.abs(candidates) <= half]
-        nearby = candidates[np.abs(candidates - expected) <= 10.0]
+        triangle_points = np.asarray(triangles, dtype=float).reshape(
+            (-1, 3, 3)
+        )
+        edge_lengths = np.linalg.norm(
+            np.concatenate(
+                (
+                    triangle_points[:, 1] - triangle_points[:, 0],
+                    triangle_points[:, 2] - triangle_points[:, 1],
+                    triangle_points[:, 0] - triangle_points[:, 2],
+                )
+            ),
+            axis=1,
+        )
+        local_edge = float(np.median(edge_lengths[edge_lengths > 1e-12]))
+        adjacent_scale = 0.0
+        if port.placement.surface_anchor is not None:
+            anchor_spec = port.placement.surface_anchor
+            phi = np.deg2rad(anchor_spec.toroidal_angle)
+            theta = np.deg2rad(anchor_spec.poloidal_angle)
+            radial_points = np.asarray(
+                [
+                    surface.evaluate(phi, theta)
+                    for _, surface in self.native_radial_stack()
+                ]
+            )
+            separations = np.linalg.norm(
+                radial_points - expected_point, axis=1
+            )
+            positive = separations[separations > 1e-7]
+            if len(positive):
+                adjacent_scale = float(np.min(positive))
+        geometric_tolerance = 0.05
+        allowed = min(
+            half,
+            max(
+                adjacent_scale,
+                2.0 * local_edge,
+                2.0 * self._port_aperture_half_width(port),
+                10.0 * geometric_tolerance,
+            ),
+        )
+        nearby = np.sort(candidates[np.abs(candidates - expected) <= allowed])
+        distinct = []
+        for candidate in nearby:
+            if not distinct or abs(candidate - distinct[-1]) > 1e-5:
+                distinct.append(float(candidate))
+        nearby = np.asarray(distinct)
+        centroids = triangle_points.mean(axis=1)
+        closest_index = int(
+            np.argmin(np.linalg.norm(centroids - expected_point, axis=1))
+        )
+        triangle = triangle_points[closest_index]
+        surface_normal = np.cross(
+            triangle[1] - triangle[0], triangle[2] - triangle[0]
+        )
+        surface_normal /= np.linalg.norm(surface_normal)
+        if np.dot(surface_normal, axis) < 0.0:
+            surface_normal = -surface_normal
+        normal_angle = float(
+            np.rad2deg(
+                np.arccos(np.clip(np.dot(surface_normal, axis), -1.0, 1.0))
+            )
+        )
+        diagnostic = {
+            "port_name": port.name,
+            "boundary_name": description,
+            "expected_axial_coordinate": expected,
+            "candidate_line_intersections": candidates.tolist(),
+            "selected_coordinate": None,
+            "allowed_search_interval": [
+                expected - allowed,
+                expected + allowed,
+            ],
+            "adjacent_layer_scale": adjacent_scale,
+            "local_point_cloud_edge_length": local_edge,
+            "aperture_outer_radius": self._port_aperture_half_width(port),
+            "geometric_tolerance": geometric_tolerance,
+            "local_surface_normal": surface_normal.tolist(),
+            "port_axis_angle_to_normal_degrees": normal_angle,
+        }
+        self.port_point_cloud_intersection_diagnostics.append(diagnostic)
         if len(nearby) == 0:
             raise ValueError(
                 f"Port {port.name!r} centerline has no point-cloud intersection "
                 f"with {description}."
             )
-        coordinate = float(nearby[np.argmin(np.abs(nearby - expected))])
-        equally_near = nearby[np.abs(nearby - coordinate) <= 1e-5]
-        if len(equally_near) > 1:
+        if len(nearby) > 1:
             raise ValueError(
-                f"Port {port.name!r} has ambiguous point-cloud intersections "
-                f"with {description}."
+                f"Port {port.name!r} has multiple far-side point-cloud "
+                f"intersections with {description}."
             )
+        coordinate = float(nearby[0])
+        diagnostic["selected_coordinate"] = coordinate
         return coordinate
 
     def _layer_boundary_surfaces(self, layer_name):
@@ -2277,6 +2443,23 @@ class Surface(object):
             poloidal = -poloidal
             outward = -outward
         return self.evaluate(phi, theta), poloidal, toroidal, outward
+
+    def radial_build_normal(self, toroidal_angle, poloidal_angle):
+        """Return the poloidal-rib normal used for radial-build offsets."""
+
+        phi, theta = self._canonical_angles(toroidal_angle, poloidal_angle)
+        poloidal = np.asarray(
+            self.ref_surf.calculate_tangents(
+                phi, np.array([theta]), self.s, self.scale
+            ),
+            dtype=float,
+        ).reshape(-1, 3)[0]
+        toroidal_plane_normal = np.array(
+            [-np.sin(phi), np.cos(phi), 0.0], dtype=float
+        )
+        outward = np.cross(toroidal_plane_normal, poloidal)
+        outward /= np.linalg.norm(outward)
+        return outward
 
     def triangulated_point_cloud(self):
         """Triangulate the refined rib loci without creating a CAD surface."""

@@ -10,16 +10,18 @@ import pytest
 from pymoab import core, types
 
 import parastell.parastell as ps
+import parastell.invessel_build as ivb
 from parastell.dagmc_assembly import (
     audit_dagmc_model,
     close_with_graveyard,
     ensure_geometry_names,
 )
-from parastell.native_port_geometry import _box_triangles
+from parastell.native_port_geometry import _box_triangles, _disk_triangles
 from parastell.utils import combine_dagmc_models
 
 sys.path.insert(0, str(Path(__file__).parent))
 from test_ports import _surface_ivb, _surface_port  # noqa: E402
+from test_ports import _SyntheticReferenceSurface  # noqa: E402
 
 
 def _native_model():
@@ -27,6 +29,165 @@ def _native_model():
     model.use_pydagmc = True
     model.generate_components()
     return model
+
+
+def test_nonconvex_sector_cap_triangulation_stays_inside_boundary():
+    points = np.asarray(
+        (
+            (0.0, 0.0, 0.0),
+            (3.0, 0.0, 0.0),
+            (3.0, 1.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (1.0, 3.0, 0.0),
+            (0.0, 3.0, 0.0),
+            (0.0, 0.0, 0.0),
+        )
+    )
+
+    triangles = _disk_triangles(points, (0.0, 0.0, 1.0))
+    triangle_area = sum(
+        np.linalg.norm(
+            np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
+        )
+        / 2.0
+        for triangle in triangles
+    )
+    signed_z = [
+        np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])[2]
+        for triangle in triangles
+    ]
+
+    assert len(triangles) == len(points) - 3
+    assert triangle_area == pytest.approx(5.0)
+    assert min(signed_z) > 0.0
+
+
+@pytest.mark.parametrize(
+    ("split_chamber", "expected_names"),
+    (
+        (
+            True,
+            (
+                "plasma",
+                "sol",
+                "first_wall",
+                "breeder",
+                "back_wall",
+                "shield",
+                "vacuum_vessel",
+            ),
+        ),
+        (
+            False,
+            (
+                "plasma",
+                "chamber",
+                "first_wall",
+                "breeder",
+                "back_wall",
+                "shield",
+                "vacuum_vessel",
+            ),
+        ),
+    ),
+)
+def test_native_radial_stack_is_unique_and_chamber_aware(
+    split_chamber, expected_names
+):
+    angles = [0.0, 10.0, 20.0, 30.0]
+    poloidal = [0.0, 90.0, 180.0, 270.0, 360.0]
+    thickness = np.ones((4, 5)) * 5.0
+    material_options = (
+        {
+            "plasma_mat_tag": "plasma_material",
+            "sol_mat_tag": "sol_material",
+        }
+        if split_chamber
+        else {"chamber_mat_tag": "chamber_material"}
+    )
+    build = ivb.RadialBuild(
+        angles,
+        poloidal,
+        1.08,
+        {
+            name: {
+                "thickness_matrix": thickness,
+                "mat_tag": f"material_{name}",
+            }
+            for name in (
+                "first_wall",
+                "breeder",
+                "back_wall",
+                "shield",
+                "vacuum_vessel",
+            )
+        },
+        split_chamber=split_chamber,
+        **material_options,
+    )
+    model = ivb.InVesselBuild(
+        _SyntheticReferenceSurface(), build, num_ribs=9, num_rib_pts=33
+    )
+    model.populate_surfaces()
+    model.calculate_loci()
+
+    stack = model.native_radial_stack()
+    names = tuple(name for name, _ in stack)
+
+    assert names == expected_names
+    assert len(names) == len(set(names))
+    assert names.count("plasma") == 1
+    assert names.count("sol") == int(split_chamber)
+    assert names.count("chamber") == int(not split_chamber)
+    assert names.count("back_wall") == 1
+
+
+def test_split_chamber_native_volume_names_materials_and_ids_are_unique():
+    model = _surface_ivb(num_ribs=9, num_rib_pts=33)
+    model.radial_build._split_chamber = True
+    # Construct a true split stack using the public RadialBuild behavior.
+    thickness = np.ones((4, 5)) * 5.0
+    model.radial_build = ivb.RadialBuild(
+        [0.0, 10.0, 20.0, 30.0],
+        [0.0, 90.0, 180.0, 270.0, 360.0],
+        1.08,
+        {
+            name: {"thickness_matrix": thickness}
+            for name in ("first_wall", "breeder", "shield")
+        },
+        split_chamber=True,
+        plasma_mat_tag="plasma_material",
+        sol_mat_tag="sol_material",
+    )
+    model.Surfaces = {}
+    model._anchor_reference_surfaces = {}
+    model.populate_surfaces()
+    model.calculate_loci()
+    model.use_pydagmc = True
+    model.generate_components()
+    complex_ = model.native_port_complex
+    names = [record.name for record in complex_.volumes]
+    physical = [
+        record for record in complex_.volumes if record.kind != "graveyard"
+    ]
+    dag_model = complex_.to_pydagmc()
+
+    assert len(names) == len(set(names))
+    assert names.count("plasma") == 1
+    assert names.count("sol") == 1
+    assert {record.name: record.kind for record in physical}["sol"] == (
+        "plasma_or_chamber"
+    )
+    assert {record.name: record.material_tag for record in physical}[
+        "plasma"
+    ] == ("plasma_material")
+    assert {record.name: record.material_tag for record in physical}[
+        "sol"
+    ] == ("sol_material")
+    assert len(complex_.volume_ids.values()) == len(
+        set(complex_.volume_ids.values())
+    )
+    assert len(dag_model.volumes) == len(complex_.volumes)
 
 
 def test_native_surface_complex_is_closed_and_unique():

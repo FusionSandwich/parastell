@@ -74,6 +74,74 @@ def _orient_triangle(triangle, desired):
 
 def _disk_triangles(points, desired):
     points = np.asarray(points, dtype=float)[:-1]
+    normal = np.asarray(desired, dtype=float)
+    projection_axes = [
+        index for index in range(3) if index != np.argmax(abs(normal))
+    ]
+    projected = points[:, projection_axes]
+    turns = np.asarray(
+        [
+            np.cross(
+                projected[(index + 1) % len(points)] - projected[index],
+                projected[(index + 2) % len(points)]
+                - projected[(index + 1) % len(points)],
+            )
+            for index in range(len(points))
+        ]
+    )
+    nonzero_turns = turns[np.abs(turns) > 1.0e-10]
+    convex = (
+        not len(nonzero_turns)
+        or np.all(nonzero_turns > 0.0)
+        or np.all(nonzero_turns < 0.0)
+    )
+    if not convex:
+        signed_area = 0.5 * sum(
+            np.cross(projected[index], projected[(index + 1) % len(points)])
+            for index in range(len(points))
+        )
+        indices = list(range(len(points)))
+        if signed_area < 0.0:
+            indices.reverse()
+
+        def point_in_triangle(point, a, b, c):
+            crosses = (
+                np.cross(b - a, point - a),
+                np.cross(c - b, point - b),
+                np.cross(a - c, point - c),
+            )
+            return min(crosses) >= -1.0e-10
+
+        triangles = []
+        while len(indices) > 3:
+            clipped = False
+            for offset, middle in enumerate(indices):
+                previous = indices[offset - 1]
+                following = indices[(offset + 1) % len(indices)]
+                a, b, c = projected[[previous, middle, following]]
+                if np.cross(b - a, c - b) <= 1.0e-10:
+                    continue
+                if any(
+                    point_in_triangle(projected[candidate], a, b, c)
+                    for candidate in indices
+                    if candidate not in {previous, middle, following}
+                ):
+                    continue
+                triangles.append(
+                    _orient_triangle(
+                        points[[previous, middle, following]], desired
+                    )
+                )
+                indices.pop(offset)
+                clipped = True
+                break
+            if not clipped:
+                raise ValueError(
+                    "Non-convex sector cap could not be triangulated"
+                )
+        triangles.append(_orient_triangle(points[indices], desired))
+        return np.asarray(triangles)
+
     center = points.mean(axis=0)
     # An axis-centered fan makes a directed centerline ray hit every triangle
     # at one shared vertex. DAGMC's overlap-debug navigation then classifies
@@ -681,7 +749,13 @@ class NativePortSurfaceComplex:
             "unreferenced_vertex_count": len(all_vertices - referenced),
         }
 
-    def tetrahedralize(self, min_mesh_size=5.0, max_mesh_size=25.0):
+    def tetrahedralize(
+        self,
+        min_mesh_size=5.0,
+        max_mesh_size=25.0,
+        terminal_output=False,
+        algorithm_3d=1,
+    ):
         """Tetrahedralize this exact discrete PLC without a CAD/OCC import."""
         if self.duplicate_facets() or self.zero_area_triangles():
             raise ValueError("Discrete PLC failed its facet audit")
@@ -692,10 +766,10 @@ class NativePortSurfaceComplex:
         gmsh.initialize()
         try:
             gmsh.model.add("parastell_native_port_plc")
-            gmsh.option.setNumber("General.Terminal", 0)
+            gmsh.option.setNumber("General.Terminal", int(terminal_output))
             gmsh.option.setNumber("Mesh.MeshSizeMin", min_mesh_size)
             gmsh.option.setNumber("Mesh.MeshSizeMax", max_mesh_size)
-            gmsh.option.setNumber("Mesh.Algorithm3D", 1)
+            gmsh.option.setNumber("Mesh.Algorithm3D", int(algorithm_3d))
             coordinate_map = {}
             coordinates = []
             connectivities = []
@@ -1523,21 +1597,24 @@ def build_native_port_surface_complex(
     axis = np.asarray(port.placement.local_axis)
     reference = np.asarray(port.placement.local_reference)
     normal = np.asarray(port.placement.local_normal)
-    plasma_surface = model._anchor_reference_surface("plasma_surface")
-    radial_names = ["plasma", *list(model.Surfaces)]
-    radial_surfaces = [plasma_surface, *list(model.Surfaces.values())]
+    radial_stack = model.native_radial_stack()
+    radial_names = [name for name, _ in radial_stack]
+    radial_surfaces = [surface for _, surface in radial_stack]
+    if len(radial_names) != len(set(radial_names)):
+        raise ValueError("Native radial stack contains duplicate region names")
     volume_names = list(radial_names)
     volume_records = []
     for name in volume_names:
-        if name == "plasma":
-            material = "Vacuum"
-            kind = "plasma_or_chamber"
-        else:
+        if name in model.radial_build.radial_build:
             data = model.radial_build.radial_build[name]
             material = data.get("mat_tag", name)
-            kind = (
-                "plasma_or_chamber" if name == "chamber" else "blanket_layer"
-            )
+        else:
+            material = "Vacuum"
+        kind = (
+            "plasma_or_chamber"
+            if name in {"plasma", "sol", "chamber"}
+            else "blanket_layer"
+        )
         volume_records.append(NativeVolumeRecord(name, kind, material))
     volume_records.append(
         NativeVolumeRecord(
@@ -1555,6 +1632,7 @@ def build_native_port_surface_complex(
     phi = np.deg2rad(anchor_spec.toroidal_angle)
     theta = np.deg2rad(anchor_spec.poloidal_angle)
     delta = 1e-5
+    plasma_surface = radial_surfaces[0]
     phi_speed = np.linalg.norm(
         plasma_surface.evaluate(phi + delta, theta)
         - plasma_surface.evaluate(phi - delta, theta)

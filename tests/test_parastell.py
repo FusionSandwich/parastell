@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import cadquery as cq
 import numpy as np
 import pytest
 import pydagmc
@@ -25,6 +26,55 @@ files_to_remove = [
     "step_export.log",
     "magnet_model.h5m",
 ]
+
+
+def test_shape_distance_rejects_out_of_bounds_occ_solution(monkeypatch):
+    class Point:
+        def X(self):
+            return 1000.0
+
+        def Y(self):
+            return 1000.0
+
+        def Z(self):
+            return 1000.0
+
+    class InvalidDistance:
+        def __init__(self, *_):
+            pass
+
+        def SetMultiThread(self, _):
+            pass
+
+        def Perform(self):
+            pass
+
+        def IsDone(self):
+            return True
+
+        def NbSolution(self):
+            return 1
+
+        def Value(self):
+            return 0.0
+
+        def PointOnShape1(self, _):
+            return Point()
+
+        def PointOnShape2(self, _):
+            return Point()
+
+    monkeypatch.setattr(ps, "BRepExtrema_DistShapeShape", InvalidDistance)
+    first = cq.Workplane("XY").box(2.0, 2.0, 2.0).val()
+    second = cq.Workplane("XY").box(2.0, 2.0, 2.0).translate((10, 0, 0)).val()
+
+    evidence = ps.Stellarator._shape_distance_evidence(first, second)
+
+    assert evidence == {
+        "distance": pytest.approx(8.0),
+        "evidence": "bounding_box_lower_bound",
+        "closest_points": None,
+    }
 
 
 def remove_files():

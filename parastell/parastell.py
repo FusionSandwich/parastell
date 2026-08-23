@@ -4,8 +4,10 @@ import warnings
 
 import cadquery as cq
 import cad_to_dagmc
+import numpy as np
 import pydagmc
 from pymoab import core
+from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 
 from . import log
 from . import invessel_build as ivb
@@ -262,12 +264,10 @@ class Stellarator(object):
                 else:
                     status = "clear"
                     policy = "report"
-                try:
-                    minimum_distance = float(
-                        outer_envelope.distance(magnet.solid)
-                    )
-                except Exception:
-                    minimum_distance = None
+                distance = self._shape_distance_evidence(
+                    outer_envelope, magnet.solid
+                )
+                minimum_distance = distance["distance"]
                 record = PortCollisionRecord(
                     port_name=port_name,
                     coil_id=magnet.coil_id,
@@ -277,6 +277,8 @@ class Stellarator(object):
                     required_clearance=port.collision.minimum_magnet_clearance,
                     estimated_minimum_distance=minimum_distance,
                     status=status,
+                    distance_evidence=distance["evidence"],
+                    closest_point_coordinates=distance["closest_points"],
                 )
                 records.append(record)
                 if status == "clear" or policy in {"report", "ignore"}:
@@ -306,6 +308,75 @@ class Stellarator(object):
         if errors:
             raise ValueError(" ".join(errors))
         return list(records)
+
+    @staticmethod
+    def _shape_distance_evidence(first, second, tolerance=1.0e-7):
+        """Return checked exact distance or a conservative box lower bound."""
+
+        first_box = first.BoundingBox()
+        second_box = second.BoundingBox()
+        first_bounds = np.asarray(
+            (
+                (first_box.xmin, first_box.xmax),
+                (first_box.ymin, first_box.ymax),
+                (first_box.zmin, first_box.zmax),
+            )
+        )
+        second_bounds = np.asarray(
+            (
+                (second_box.xmin, second_box.xmax),
+                (second_box.ymin, second_box.ymax),
+                (second_box.zmin, second_box.zmax),
+            )
+        )
+        gaps = np.maximum(
+            np.maximum(
+                first_bounds[:, 0] - second_bounds[:, 1],
+                second_bounds[:, 0] - first_bounds[:, 1],
+            ),
+            0.0,
+        )
+        box_lower_bound = float(np.linalg.norm(gaps))
+        try:
+            calculation = BRepExtrema_DistShapeShape(
+                first.wrapped, second.wrapped
+            )
+            calculation.SetMultiThread(False)
+            calculation.Perform()
+            if not calculation.IsDone() or calculation.NbSolution() < 1:
+                raise RuntimeError("distance calculation has no solution")
+            distance = float(calculation.Value())
+            first_point = calculation.PointOnShape1(1)
+            second_point = calculation.PointOnShape2(1)
+            closest = np.asarray(
+                (
+                    (first_point.X(), first_point.Y(), first_point.Z()),
+                    (second_point.X(), second_point.Y(), second_point.Z()),
+                )
+            )
+            inside_first = np.all(
+                (closest[0] >= first_bounds[:, 0] - tolerance)
+                & (closest[0] <= first_bounds[:, 1] + tolerance)
+            )
+            inside_second = np.all(
+                (closest[1] >= second_bounds[:, 0] - tolerance)
+                & (closest[1] <= second_bounds[:, 1] + tolerance)
+            )
+            if not inside_first or not inside_second:
+                raise RuntimeError(
+                    "distance calculation returned a point outside its shape bounds"
+                )
+            return {
+                "distance": distance,
+                "evidence": "exact",
+                "closest_points": tuple(tuple(row) for row in closest),
+            }
+        except Exception:
+            return {
+                "distance": box_lower_bound,
+                "evidence": "bounding_box_lower_bound",
+                "closest_points": None,
+            }
 
     def export_invessel_build_step(self, export_dir=""):
         """Exports InVesselBuild component STEP files.

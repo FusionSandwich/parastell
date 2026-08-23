@@ -11,6 +11,7 @@ from parastell.paraview_export import (
     audit_public_names,
     discover_paraview_executables,
     export_paraview_bundle,
+    full_reactor_render_eligibility,
     write_polydata,
     write_unstructured_grid,
     write_vtm,
@@ -115,18 +116,60 @@ def test_clean_public_naming_audit():
 
 
 def test_dagmc_bundle_names_blocks_and_materials(tmp_path):
-    h5m = Path("files_for_tests") / "one_cube.h5m"
+    h5m = Path(__file__).parent / "files_for_tests" / "one_cube.h5m"
     manifest = export_paraview_bundle(
         tmp_path,
         dagmc_h5m=h5m,
         repository_sha="0123456789abcdef",
-        scope="sector_transport_model",
+        scope="translated_fixture_regression",
+        reactor_metadata={
+            "field_periods": 1,
+            "coil_count": 2,
+            "magnet_translation": [0.0, 0.0, 1000.0],
+            "actual_full_reactor_state": None,
+        },
     )
 
-    assert (tmp_path / "full_reactor_dagmc.vtm").is_file()
-    assert (tmp_path / "full_reactor_volume_mesh.vtm").is_file()
-    assert (tmp_path / "full_reactor_render.py").is_file()
+    assert (tmp_path / "translated_fixture_dagmc.vtm").is_file()
+    assert (tmp_path / "translated_fixture_volume_mesh.vtm").is_file()
+    assert (tmp_path / "translated_fixture_render.py").is_file()
+    assert (tmp_path / "translated_fixture_manifest.json").is_file()
+    assert not list(tmp_path.glob("full_reactor_*"))
     assert manifest["dagmc_blocks"]
     assert all(block["component_name"] for block in manifest["dagmc_blocks"])
     assert all("material_tag" in block for block in manifest["dagmc_blocks"])
     assert manifest["graveyard_hidden_by_default"]
+
+
+def test_full_reactor_render_is_blocked_without_actual_geometry(tmp_path):
+    h5m = Path(__file__).parent / "files_for_tests" / "one_cube.h5m"
+    metadata = {
+        "field_periods": 1,
+        "coil_count": 2,
+        "magnet_translation": [0.0, 0.0, 1000.0],
+        "layer_sequence": ["first_wall"],
+        "collision_report_status": "not_run",
+        "actual_full_reactor_state": None,
+    }
+    blockers = full_reactor_render_eligibility(metadata, "full_reactor_visual")
+    manifest = export_paraview_bundle(
+        tmp_path,
+        dagmc_h5m=h5m,
+        repository_sha="0123456789abcdef",
+        scope="full_reactor_visual",
+        reactor_metadata=metadata,
+    )
+
+    assert blockers
+    assert manifest["render_status"] == "not_run"
+    assert not (tmp_path / "full_reactor_render.py").exists()
+    assert not list(tmp_path.glob("full_reactor_*.png"))
+    assert (tmp_path / "full_reactor_render_status.json").is_file()
+
+
+def test_back_wall_has_independent_component_class():
+    from parastell.paraview_export import _component_class
+
+    assert _component_class("back_wall") == "back_wall"
+    assert _component_class("back_wall", "blanket_layer") == "back_wall"
+    assert _component_class("back_wall") != _component_class("shield")

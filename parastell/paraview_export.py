@@ -24,24 +24,28 @@ import numpy as np
 
 COMPONENT_CLASS_IDS = {
     "plasma": 1,
-    "chamber": 2,
-    "first_wall": 3,
-    "breeder": 4,
-    "shield": 5,
-    "vacuum_vessel": 6,
-    "port_void": 7,
-    "port_liner": 8,
-    "magnet_conductor": 9,
-    "magnet_casing": 10,
-    "graveyard": 11,
-    "blanket_layer": 12,
+    "sol": 2,
+    "chamber": 3,
+    "first_wall": 4,
+    "breeder": 5,
+    "back_wall": 6,
+    "shield": 7,
+    "vacuum_vessel": 8,
+    "port_void": 9,
+    "port_liner": 10,
+    "magnet_conductor": 11,
+    "magnet_casing": 12,
+    "graveyard": 13,
+    "blanket_layer": 14,
 }
 
 COMPONENT_COLORS = {
     "plasma": (0.20, 0.55, 1.00),
+    "sol": (0.30, 0.70, 1.00),
     "chamber": (0.20, 0.55, 1.00),
     "first_wall": (0.82, 0.82, 0.82),
     "breeder": (0.36, 0.65, 0.38),
+    "back_wall": (0.60, 0.42, 0.72),
     "shield": (0.90, 0.78, 0.24),
     "vacuum_vessel": (0.25, 0.28, 0.32),
     "port_void": (0.00, 0.90, 1.00),
@@ -66,6 +70,12 @@ REQUIRED_IMAGE_NAMES = (
     "full_reactor_streaming_path.png",
     "full_reactor_volume_mesh_regions.png",
     "full_reactor_volume_mesh_quality.png",
+)
+
+TRANSLATED_FIXTURE_IMAGE_NAMES = (
+    "translated_fixture_isometric.png",
+    "translated_fixture_port_location.png",
+    "translated_fixture_port_and_magnets.png",
 )
 
 PROHIBITED_PUBLIC_NAME_RE = re.compile(r"agent|codex|chatgpt", re.IGNORECASE)
@@ -157,17 +167,19 @@ def audit_public_names(values: Iterable[str]) -> tuple[str, ...]:
 
 def _component_class(name: str, kind: str | None = None) -> str:
     lowered = name.lower()
-    if kind in COMPONENT_CLASS_IDS:
-        return str(kind)
     if lowered == "plasma":
         return "plasma"
-    if lowered in {"chamber", "sol"}:
+    if lowered == "sol":
+        return "sol"
+    if lowered == "chamber":
         return "chamber"
     if "first_wall" in lowered:
         return "first_wall"
     if "breeder" in lowered:
         return "breeder"
-    if "shield" in lowered or "back_wall" in lowered:
+    if "back_wall" in lowered:
+        return "back_wall"
+    if "shield" in lowered:
         return "shield"
     if "vacuum_vessel" in lowered or "vac_vessel" in lowered:
         return "vacuum_vessel"
@@ -181,6 +193,8 @@ def _component_class(name: str, kind: str | None = None) -> str:
         return "magnet_casing"
     if lowered == "graveyard":
         return "graveyard"
+    if kind in COMPONENT_CLASS_IDS:
+        return str(kind)
     return "blanket_layer"
 
 
@@ -188,6 +202,7 @@ def _component_kind(name: str) -> str:
     cls = _component_class(name)
     return {
         "plasma": "plasma_or_chamber",
+        "sol": "plasma_or_chamber",
         "chamber": "plasma_or_chamber",
         "port_void": "port_void",
         "port_liner": "port_liner",
@@ -552,15 +567,48 @@ def _file_record(path, root):
     }
 
 
-def _render_script_text():
+def full_reactor_render_eligibility(reactor_metadata, scope):
+    """Return explicit reasons a full-reactor render must not run."""
+
+    metadata = dict(reactor_metadata or {})
+    reasons = []
+    if scope not in {"full_reactor_visual", "full_reactor_transport"}:
+        reasons.append("scope is not an actual full-reactor scope")
+    if not metadata.get("actual_native_port_complex"):
+        reasons.append("actual native port complex is unavailable")
+    if list(metadata.get("magnet_translation") or ()) != [0.0, 0.0, 0.0]:
+        reasons.append("magnet translation is not [0, 0, 0]")
+    if metadata.get("field_periods") != 4:
+        reasons.append("field-period count is not 4")
+    if metadata.get("coil_count") != 40:
+        reasons.append("coil count is not 40")
+    expected_layers = (
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "shield",
+        "vacuum_vessel",
+    )
+    if tuple(metadata.get("layer_sequence") or ()) != expected_layers:
+        reasons.append("required five-layer sequence is unavailable")
+    if metadata.get("collision_report_status") != "complete":
+        reasons.append("collision report is incomplete")
+    if metadata.get("actual_full_reactor_state") is None:
+        reasons.append("actual full-reactor state is unavailable")
+    return tuple(reasons)
+
+
+def _render_script_text(
+    manifest_name, image_names, state_name, validation_name
+):
     colors = json.dumps(COMPONENT_COLORS, sort_keys=True)
-    images = json.dumps(REQUIRED_IMAGE_NAMES)
+    images = json.dumps(tuple(image_names))
     return f"""from pathlib import Path
 import json
 from paraview.simple import *
 
 ROOT = Path(__file__).resolve().parent
-manifest = json.loads((ROOT / "full_reactor_manifest.json").read_text())
+manifest = json.loads((ROOT / {json.dumps(manifest_name)}).read_text())
 colors = {colors}
 image_names = {images}
 sources = []
@@ -611,7 +659,7 @@ for image_name in image_names:
     Render(view)
     SaveScreenshot(str(ROOT / image_name), view, ImageResolution=[1920, 1080])
 
-SaveState(str(ROOT / "full_reactor.pvsm"))
+SaveState(str(ROOT / {json.dumps(state_name)}))
 bounds = []
 for source, block in sources:
     current = source.GetDataInformation().GetBounds()
@@ -633,7 +681,7 @@ if validation["empty_physical_bounds"]:
         "ParaView loaded empty physical blocks: "
         + ", ".join(validation["empty_physical_bounds"])
     )
-(ROOT / "full_reactor_paraview_validation.json").write_text(json.dumps(validation, indent=2) + "\\n")
+(ROOT / {json.dumps(validation_name)}).write_text(json.dumps(validation, indent=2) + "\\n")
 """
 
 
@@ -652,13 +700,29 @@ def export_paraview_bundle(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    translated_fixture = scope == "translated_fixture_regression"
+    if translated_fixture:
+        prefix = "translated_fixture"
+        image_names = TRANSLATED_FIXTURE_IMAGE_NAMES
+    elif scope in {"full_reactor_visual", "full_reactor_transport"}:
+        prefix = "full_reactor"
+        image_names = REQUIRED_IMAGE_NAMES
+    else:
+        prefix = "sector_model"
+        image_names = ()
+    full_reactor_blockers = (
+        full_reactor_render_eligibility(reactor_metadata, scope)
+        if prefix == "full_reactor"
+        else ()
+    )
+    render_enabled = bool(image_names) and not full_reactor_blockers
     block_dir = output_dir / "paraview_blocks"
     dagmc_blocks = _dagmc_blocks(dagmc_h5m, block_dir, ledger=ledger)
     dagmc_vtm = write_vtm(
-        output_dir / "full_reactor_dagmc.vtm", dagmc_blocks, "dagmc"
+        output_dir / f"{prefix}_dagmc.vtm", dagmc_blocks, "dagmc"
     )
     volume_blocks = []
-    volume_vtm = output_dir / "full_reactor_volume_mesh.vtm"
+    volume_vtm = output_dir / f"{prefix}_volume_mesh.vtm"
     if volume_mesh_h5m is not None:
         volume_blocks = _volume_mesh_blocks(volume_mesh_h5m, block_dir)
         write_vtm(volume_vtm, volume_blocks, "volume_mesh")
@@ -682,7 +746,9 @@ def export_paraview_bundle(
             block.component_class != "graveyard" or block.hidden_by_default
             for block in dagmc_blocks
         ),
-        "required_images": list(REQUIRED_IMAGE_NAMES),
+        "required_images": list(image_names),
+        "render_status": "ready" if render_enabled else "not_run",
+        "render_blockers": list(full_reactor_blockers),
     }
     for collection in (
         manifest["dagmc_blocks"],
@@ -692,11 +758,34 @@ def export_paraview_bundle(
             block["file"] = os.path.relpath(block["file"], output_dir).replace(
                 os.sep, "/"
             )
-    manifest_path = output_dir / "full_reactor_manifest.json"
+    manifest_path = output_dir / f"{prefix}_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-    render_script = output_dir / "full_reactor_render.py"
-    render_script.write_text(_render_script_text())
-    files = [dagmc_vtm, volume_vtm, manifest_path, render_script]
+    files = [dagmc_vtm, volume_vtm, manifest_path]
+    if render_enabled:
+        render_script = output_dir / f"{prefix}_render.py"
+        render_script.write_text(
+            _render_script_text(
+                manifest_path.name,
+                image_names,
+                f"{prefix}.pvsm",
+                f"{prefix}_paraview_validation.json",
+            )
+        )
+        files.append(render_script)
+    elif prefix == "full_reactor":
+        status_path = output_dir / "full_reactor_render_status.json"
+        status_path.write_text(
+            json.dumps(
+                {
+                    "status": "not_run",
+                    "scope": scope,
+                    "reasons": list(full_reactor_blockers),
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        files.append(status_path)
     manifest["generated_files"] = [
         _file_record(path, output_dir) for path in files
     ]
@@ -712,10 +801,15 @@ def run_paraview_batch(output_dir, executable=None):
     pvbatch = str(executable or resolved.pvbatch or "")
     if not pvbatch:
         raise FileNotFoundError("pvbatch was not found")
+    scripts = sorted(output_dir.glob("*_render.py"))
+    if len(scripts) != 1:
+        raise FileNotFoundError(
+            f"Expected one ready ParaView render script, found {len(scripts)}"
+        )
     command = [
         pvbatch,
         "--force-offscreen-rendering",
-        str(output_dir / "full_reactor_render.py"),
+        str(scripts[0]),
     ]
     completed = subprocess.run(
         command,

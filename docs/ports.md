@@ -8,6 +8,14 @@ radial boundary to form ordered closed loops. Positive local `w` is outward,
 local `u` is poloidal, and local `v = w × u`. Cartesian placement remains an
 advanced legacy mode.
 
+Surface placement supports three explicit axis definitions. `outward_normal`
+uses the differential surface normal, `radial_build_normal` uses the poloidal
+rib direction used for layer offsets, and `through_build` joins corresponding
+points on the selected start and outer radial-build surfaces. The last mode is
+recommended when validating traversal through a thick, nonuniform radial
+build; ParaStell records all three vectors and their pairwise angles and never
+substitutes one mode silently.
+
 Cross-section dimensions always describe the **clear aperture**. A liner grows
 outward from that opening: circular outer radius is `radius + thickness`, and
 rectangular outer dimensions are `width + 2 * thickness` and
@@ -34,7 +42,7 @@ invessel_build:
           toroidal_angle: 15.0
           poloidal_angle: 0.0
         axis:
-          mode: outward_normal
+          mode: through_build
           poloidal_tilt: 0.0
           toroidal_tilt: 0.0
         roll: 0.0
@@ -228,14 +236,22 @@ magnets.
 
 Actual reactor-scale validation uses `examples/wout_vmec.nc`, the complete
 radial build in `examples/config.yaml`, and the 40-filament four-field-period
-`examples/coils.example` file without coordinate translation. The original
-15-degree toroidal, zero-degree poloidal plasma-surface anchor does not reach
-the configured vacuum-vessel endpoint in this reactor-scale point cloud. A
-bounded angular/reference/tilt study and the 13 x 49, 17 x 65, and 21 x 81
-resolutions did not produce a native aperture complex that passed the existing
-loop and duplicate-facet gates. Consequently no actual-coordinate reactor H5M
-or OpenMC result is currently claimed. This negative gate is kept separate
-from the passing translated-fixture regression.
+`examples/coils.example` file without coordinate translation. Split-chamber
+builds use one authoritative radial stack—`plasma`, `sol`, then the configured
+user layers—so neither plasma facets nor region names are duplicated. At a
+45-degree toroidal, 180-degree poloidal plasma-surface anchor, a
+`through_build` axis traverses `first_wall`, `breeder`, `back_wall`, `shield`,
+and `vacuum_vessel` monotonically. The native sector plus all 40 physical coils
+reloads through PyMOAB and PyDAGMC and passes structural and watertightness
+audits.
+
+This evidence is not yet a completed transport or volumetric-mesh gate. The
+actual radial point-cloud PLC contains an inter-surface edge/facet crossing
+outside the port patch at 13 x 49, 17 x 65, and 21 x 81 resolution, so Gmsh
+correctly rejects tetrahedralization. The external overlap check and subsequent
+OpenMC gate must also pass before this model is described as full reactor
+transport validation. No full-reactor PNG is emitted while any of those gates
+is unresolved.
 
 ## ParaView multiblock export
 
@@ -247,13 +263,15 @@ material tag, geometry/region ID, field-period and instance IDs, port name,
 and visual/transport/volumetric flags. The graveyard remains present but is
 hidden by default.
 
-The generated `full_reactor_render.py` is run with ParaView's off-screen
+An eligible generated render script is run with ParaView's off-screen
 `pvbatch` executable and writes a reusable `.pvsm` state, high-resolution PNGs,
-and a numerical validation JSON. Every manifest contains an explicit scope:
-`sector_transport_model`, `full_reactor_transport_model`, or
-`full_reactor_visual_only`. A bundle rendered from a translated or synthetic
-fixture must use its own non-production scope and must not be reported as a
-full-reactor result.
+and a numerical validation JSON. Every manifest contains an explicit scope.
+Translated fixtures use `translated_fixture_regression` and
+`translated_fixture_*` filenames. Full-reactor rendering is enabled only when
+the manifest proves a native port, zero magnet translation, four field periods,
+40 coils, the complete five-layer sequence, a completed collision report, and
+an actual full-reactor geometry state; otherwise the exporter writes a
+`status: not_run` JSON and no misleading PNGs.
 
 Volume closure uses `max(1e-7, 1e-7 * max(1, reference_volume))` in model
 volume units. Disconnected centerline intervals, ambiguous far-side hits,

@@ -158,7 +158,7 @@ class PortSurfaceAnchor:
 
 @dataclass(frozen=True)
 class PortSurfaceAxis:
-    """Outward-normal axis with optional signed surface-tangent tilts."""
+    """Surface-derived axis with optional signed surface-tangent tilts."""
 
     mode: str = "outward_normal"
     poloidal_tilt: float = 0.0
@@ -166,8 +166,12 @@ class PortSurfaceAxis:
 
     def __post_init__(self) -> None:
         mode = _validate_string(self.mode, "placement.axis.mode").lower()
-        if mode != "outward_normal":
-            raise ValueError("placement.axis.mode must be 'outward_normal'")
+        allowed = {"outward_normal", "radial_build_normal", "through_build"}
+        if mode not in allowed:
+            raise ValueError(
+                "placement.axis.mode must be 'outward_normal', "
+                "'radial_build_normal', or 'through_build'"
+            )
         poloidal_tilt = _validate_finite_scalar(
             self.poloidal_tilt, "placement.axis.poloidal_tilt"
         )
@@ -578,9 +582,18 @@ class PortCollisionRecord:
     required_clearance: float
     estimated_minimum_distance: float | None
     status: str
+    distance_evidence: str = "exact"
+    closest_point_coordinates: (
+        tuple[tuple[float, float, float], ...] | None
+    ) = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        if self.closest_point_coordinates is not None:
+            result["closest_point_coordinates"] = [
+                list(point) for point in self.closest_point_coordinates
+            ]
+        return result
 
 
 @dataclass(frozen=True)

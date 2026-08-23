@@ -209,6 +209,7 @@ def _surface_port(
     roll=0.0,
     anchor_reference="plasma_surface",
     anchor_layer=None,
+    axis_mode="outward_normal",
 ):
     anchor = {
         "reference": anchor_reference,
@@ -228,7 +229,7 @@ def _surface_port(
             "mode": "surface",
             "anchor": anchor,
             "axis": {
-                "mode": "outward_normal",
+                "mode": axis_mode,
                 "poloidal_tilt": poloidal_tilt,
                 "toroidal_tilt": toroidal_tilt,
             },
@@ -320,6 +321,45 @@ def test_surface_local_frame_tilts_roll_and_handedness():
     )
     assert angle > 1.0
     assert not np.allclose(u, untilted.local_reference)
+
+
+@pytest.mark.parametrize(
+    "axis_mode", ["outward_normal", "radial_build_normal", "through_build"]
+)
+def test_surface_axis_modes_report_distinct_construction_evidence(axis_mode):
+    model = _surface_ivb(port=_surface_port(axis_mode=axis_mode))
+    diagnostic = model.port_axis_diagnostics["surface_port"]
+    coordinates = np.asarray(diagnostic["radial_boundary_coordinates"])
+
+    assert diagnostic["axis_mode"] == axis_mode
+    assert np.all(np.diff(coordinates) > 0.0)
+    assert coordinates[-1] > 0.0
+    assert set(diagnostic) >= {
+        "full_differential_normal",
+        "radial_build_normal",
+        "through_build_axis",
+        "full_to_radial_angle_degrees",
+        "full_to_through_angle_degrees",
+        "radial_to_through_angle_degrees",
+    }
+
+
+def test_point_cloud_intersection_uses_adaptive_diagnostic_interval():
+    model = _surface_ivb(port=_surface_port(axis_mode="through_build"))
+    port = model.port_specs["surface_port"]
+    model._port_layer_interval(port, "breeder", None)
+    records = model.port_point_cloud_intersection_diagnostics
+
+    assert records
+    for record in records:
+        low, high = record["allowed_search_interval"]
+        assert low < record["expected_axial_coordinate"] < high
+        assert record["selected_coordinate"] is not None
+        assert record["candidate_line_intersections"]
+        assert record["local_point_cloud_edge_length"] > 0.0
+        assert record["aperture_outer_radius"] > 0.0
+        assert len(record["local_surface_normal"]) == 3
+        assert 0.0 <= record["port_axis_angle_to_normal_degrees"] <= 90.0
 
 
 def test_surface_anchor_is_invariant_to_global_point_cloud_refinement():
