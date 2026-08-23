@@ -456,3 +456,83 @@ def extract_closed_envelopes(
             )
         )
     return tuple(results)
+
+
+@dataclass(frozen=True)
+class DagmcWatertightnessReport:
+    dagmc_geometry_sha256: str
+    volume_count: int
+    surface_count: int
+    leaky_volume_ids: tuple[int, ...]
+    unmatched_edge_count: int
+    edge_round_decimals: int
+
+    @property
+    def passes(self) -> bool:
+        return not self.leaky_volume_ids and self.unmatched_edge_count == 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dagmc_geometry_sha256": self.dagmc_geometry_sha256,
+            "volume_count": self.volume_count,
+            "surface_count": self.surface_count,
+            "leaky_volume_ids": list(self.leaky_volume_ids),
+            "unmatched_edge_count": self.unmatched_edge_count,
+            "edge_round_decimals": self.edge_round_decimals,
+            "passes": self.passes,
+        }
+
+
+def validate_dagmc_watertightness(
+    dagmc_path: str | Path,
+    *,
+    edge_round_decimals: int = 8,
+) -> DagmcWatertightnessReport:
+    """Prove that every physical DAGMC volume has a closed faceted shell."""
+    import pydagmc
+
+    path = Path(dagmc_path).resolve()
+    model = pydagmc.Model(str(path))
+    leaky = []
+    unmatched_total = 0
+    surface_ids = set()
+    for volume_id, volume in sorted(model.volumes_by_id.items()):
+        edge_counts: dict[tuple[Any, ...], int] = {}
+        for surface in volume.surfaces:
+            surface_ids.add(int(surface.id))
+            triangles = _triangles(surface.triangle_coords)
+            for triangle in np.round(triangles, edge_round_decimals):
+                for first, second in ((0, 1), (1, 2), (2, 0)):
+                    edge = tuple(
+                        sorted((tuple(triangle[first]), tuple(triangle[second])))
+                    )
+                    edge_counts[edge] = edge_counts.get(edge, 0) + 1
+        unmatched = sum(count != 2 for count in edge_counts.values())
+        if unmatched:
+            leaky.append(int(volume_id))
+            unmatched_total += int(unmatched)
+    return DagmcWatertightnessReport(
+        dagmc_geometry_sha256=_hash(path),
+        volume_count=len(model.volumes_by_id),
+        surface_count=len(surface_ids),
+        leaky_volume_ids=tuple(leaky),
+        unmatched_edge_count=unmatched_total,
+        edge_round_decimals=int(edge_round_decimals),
+    )
+
+
+def require_watertight_dagmc(
+    dagmc_path: str | Path,
+    *,
+    edge_round_decimals: int = 8,
+) -> DagmcWatertightnessReport:
+    report = validate_dagmc_watertightness(
+        dagmc_path, edge_round_decimals=edge_round_decimals
+    )
+    if not report.passes:
+        raise RuntimeError(
+            "combined DAGMC geometry is not watertight: "
+            f"leaky volumes={list(report.leaky_volume_ids)}, "
+            f"unmatched edges={report.unmatched_edge_count}"
+        )
+    return report

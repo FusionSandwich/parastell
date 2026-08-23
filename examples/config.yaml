@@ -67,6 +67,7 @@ invessel_build:
   plasma_mat_tag: Vacuum
   sol_mat_tag: Vacuum
   split_chamber: True
+  use_pydagmc: True
   export_cad_to_dagmc: False
 
 magnet_coils:

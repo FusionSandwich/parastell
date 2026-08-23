@@ -12,6 +12,7 @@ import numpy as np
 from .dagmc_envelope import DagmcEnvelope
 from .dagmc_envelope import extract_closed_envelope
 from .dagmc_envelope import extract_closed_envelopes
+from .dagmc_envelope import require_watertight_dagmc
 from .dt_source import DTSourceAudit
 from .dt_source import build_temperature_dependent_mesh_source
 from .openmc16 import TallyInventory
@@ -38,6 +39,7 @@ class CombinedGeometryResult:
     source_mesh_sha256: str
     material_tags: tuple[str, ...]
     source_mesh_shape: tuple[int, int, int]
+    watertightness: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -91,13 +93,39 @@ def build_combined_geometry(
         sample_mod=int(magnet.get("sample_mod", 6)),
         mat_tag=("magnet_casing", "winding_pack"),
     )
-    stellarator.build_cad_to_dagmc_model()
     dagmc_name = Path(dagmc_filename).stem
-    stellarator.export_cad_to_dagmc(
-        filename=dagmc_name,
-        export_dir=output,
-        min_mesh_size=min_mesh_size_cm,
-        max_mesh_size=max_mesh_size_cm,
+    if stellarator.use_pydagmc:
+        stellarator.build_pydagmc_model(
+            magnet_exporter="cad_to_dagmc",
+            filename=f"{dagmc_name}_magnet_components",
+            export_dir=output,
+            min_mesh_size=min_mesh_size_cm,
+            max_mesh_size=max_mesh_size_cm,
+        )
+        stellarator.export_pydagmc_model(
+            filename=dagmc_name, export_dir=output
+        )
+    else:
+        stellarator.build_cad_to_dagmc_model()
+        stellarator.export_cad_to_dagmc(
+            filename=dagmc_name,
+            export_dir=output,
+            min_mesh_size=min_mesh_size_cm,
+            max_mesh_size=max_mesh_size_cm,
+        )
+    dagmc_path = output / Path(dagmc_filename).with_suffix(".h5m")
+    watertightness = require_watertight_dagmc(dagmc_path)
+    import pydagmc
+
+    dagmc_model = pydagmc.Model(str(dagmc_path))
+    material_tags = tuple(
+        sorted(
+            {
+                str(volume.material)
+                for volume in dagmc_model.volumes
+                if volume.material is not None
+            }
+        )
     )
     radial, poloidal, toroidal = source_mesh_shape
     extent = float(data["source_mesh"].get("toroidal_extent", 90.0))
@@ -108,15 +136,15 @@ def build_combined_geometry(
     )
     source_name = Path(source_filename).stem
     stellarator.export_source_mesh(source_name, export_dir=output)
-    dagmc_path = output / Path(dagmc_filename).with_suffix(".h5m")
     source_path = output / Path(source_filename).with_suffix(".h5m")
     result = CombinedGeometryResult(
         dagmc_path=dagmc_path,
         source_mesh_path=source_path,
         dagmc_sha256=_hash(dagmc_path),
         source_mesh_sha256=_hash(source_path),
-        material_tags=tuple(stellarator._material_tags),
+        material_tags=material_tags,
         source_mesh_shape=source_mesh_shape,
+        watertightness=watertightness.to_dict(),
     )
     return stellarator, result
 

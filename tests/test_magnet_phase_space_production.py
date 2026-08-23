@@ -6,6 +6,7 @@ import pytest
 
 from parastell.dagmc_envelope import discover_magnet_volumes
 from parastell.dagmc_envelope import select_winding_pack_volumes
+from parastell.dagmc_envelope import validate_dagmc_watertightness
 from parastell.magnet_boundary_envelope import CorrelatedBoundaryBank
 from parastell.magnet_boundary_envelope import EnvelopeSurface
 from parastell.magnet_boundary_envelope import MagnetBoundaryEnvelope
@@ -108,6 +109,25 @@ def test_inventory_uses_material_tags_and_never_guesses(tmp_path, monkeypatch):
         41,
         42,
     )
+
+
+def test_global_watertightness_rejects_open_volume(tmp_path, monkeypatch):
+    dagmc = tmp_path / "open.h5m"
+    dagmc.write_bytes(b"dagmc")
+    triangle = np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    volume = SimpleNamespace(
+        surfaces=[SimpleNamespace(id=1, triangle_coords=triangle)]
+    )
+    module = SimpleNamespace(
+        Model=lambda path: SimpleNamespace(volumes_by_id={1: volume})
+    )
+    monkeypatch.setitem(sys.modules, "pydagmc", module)
+
+    report = validate_dagmc_watertightness(dagmc)
+
+    assert report.passes is False
+    assert report.leaky_volume_ids == (1,)
+    assert report.unmatched_edge_count == 3
 
 
 def test_population_statistics_report_weighted_count_and_ess():
