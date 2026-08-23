@@ -7,6 +7,9 @@ import pytest
 from parastell.dagmc_envelope import discover_magnet_volumes
 from parastell.dagmc_envelope import select_winding_pack_volumes
 from parastell.magnet_boundary_envelope import CorrelatedBoundaryBank
+from parastell.magnet_boundary_envelope import EnvelopeSurface
+from parastell.magnet_boundary_envelope import MagnetBoundaryEnvelope
+from parastell.magnet_boundary_envelope import assign_adaptive_surface_patches
 from parastell.magnet_handoff_cli import build_parser
 from parastell.production_handoff import validate_no_port_configuration
 
@@ -116,6 +119,76 @@ def test_population_statistics_report_weighted_count_and_ess():
     assert statistics["overall"]["effective_sample_size"] == pytest.approx(
         1.6
     )
+
+
+def test_adaptive_patches_conserve_area_records_and_current():
+    surface = EnvelopeSurface(
+        surface_id=31,
+        role="plasma_facing",
+        area_cm2=4.0,
+        centroid_global_cm=(0.0, 0.0, 0.0),
+        outward_normal_global=(0.0, 0.0, 1.0),
+        toroidal_direction_global=(1.0, 0.0, 0.0),
+        poloidal_direction_global=(0.0, 1.0, 0.0),
+        u_edges_cm=(-1.0, 1.0),
+        v_edges_cm=(-1.0, 1.0),
+        vector_area_global_cm2=(0.0, 0.0, 0.0),
+    )
+    envelope = MagnetBoundaryEnvelope(
+        "magnet-17",
+        "winding-pack-17",
+        17,
+        (surface,),
+        "0" * 64,
+        metadata={"edge_multiplicity_proof": {}},
+    )
+    count = 8
+    columns = {
+        "record_id": np.arange(count),
+        "history_id": np.arange(count),
+        "position_global_cm": np.zeros((count, 3)),
+        "position_local_cm": np.column_stack(
+            (
+                np.asarray([-0.8, -0.7, -0.6, -0.5, 0.5, 0.6, 0.7, 0.8]),
+                np.zeros(count),
+                np.zeros(count),
+            )
+        ),
+        "direction_global": np.tile([0.0, 0.0, -1.0], (count, 1)),
+        "direction_local": np.tile([0.0, 0.0, -1.0], (count, 1)),
+        "outward_normal_global": np.tile([0.0, 0.0, 1.0], (count, 1)),
+        "energy_eV": np.full(count, 14.1e6),
+        "weight": np.ones(count),
+        "weight_std_dev": np.zeros(count),
+        "particle": np.full(count, "neutron"),
+        "particle_pdg": np.full(count, 2112),
+        "surface_id": np.full(count, 31),
+        "envelope_id": np.full(count, "magnet-17"),
+        "crossing_sense": np.full(count, "incoming"),
+        "surface_role": np.full(count, "plasma_facing"),
+        "time_s": np.zeros(count),
+        "mu": np.full(count, -1.0),
+        "azimuth_rad": np.zeros(count),
+        "grazing": np.zeros(count, dtype=bool),
+        "patch_id": np.zeros(count, dtype=int),
+        "energy_group": np.zeros(count, dtype=int),
+        "angle_bin_id": np.zeros(count, dtype=int),
+    }
+    original = CorrelatedBoundaryBank(columns)
+
+    adapted = assign_adaptive_surface_patches(
+        envelope,
+        original,
+        target_effective_sample_size=2.0,
+        minimum_records=2,
+        maximum_depth=2,
+    )
+
+    patches = adapted.metadata["adaptive_surface_patches"]["patches"]
+    assert len(patches) == 2
+    assert sum(item["area_cm2"] for item in patches) == pytest.approx(4.0)
+    assert sum(item["record_count"] for item in patches) == count
+    assert adapted.integrated_current == original.integrated_current
 
 
 def test_production_modules_do_not_import_port_geometry():

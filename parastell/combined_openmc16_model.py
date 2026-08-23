@@ -11,6 +11,7 @@ import numpy as np
 
 from .dagmc_envelope import DagmcEnvelope
 from .dagmc_envelope import extract_closed_envelope
+from .dagmc_envelope import extract_closed_envelopes
 from .dt_source import DTSourceAudit
 from .dt_source import build_temperature_dependent_mesh_source
 from .openmc16 import TallyInventory
@@ -43,6 +44,15 @@ class CombinedGeometryResult:
 class CombinedModelResult:
     model: Any
     envelope: DagmcEnvelope
+    source_audit: DTSourceAudit
+    tally_inventory: TallyInventory
+    metadata: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class CombinedMultiMagnetModelResult:
+    model: Any
+    envelopes: tuple[DagmcEnvelope, ...]
     source_audit: DTSourceAudit
     tally_inventory: TallyInventory
     metadata: Mapping[str, Any]
@@ -259,4 +269,90 @@ def prepare_combined_model(
     }
     return CombinedModelResult(
         model, envelope, source_audit, inventory, metadata
+    )
+
+
+def prepare_combined_multimagnet_model(
+    stellarator: Stellarator,
+    geometry: CombinedGeometryResult,
+    *,
+    cross_sections: str | Path,
+    winding_pack_volume_ids: Sequence[int],
+    frames_by_volume: Mapping[int, Mapping[str, Sequence[float]]],
+    neutron_edges_eV: Sequence[float],
+    photon_edges_eV: Sequence[float],
+    particles_per_batch: int,
+    batches: int,
+    threads: int = 1,
+) -> CombinedMultiMagnetModelResult:
+    """Prepare one coupled OpenMC run for all explicitly selected magnets."""
+    import openmc
+
+    volume_ids = tuple(int(item) for item in winding_pack_volume_ids)
+    if not volume_ids or len(volume_ids) != len(set(volume_ids)):
+        raise ValueError("winding-pack volume IDs must be nonempty and unique")
+    envelopes = extract_closed_envelopes(
+        geometry.dagmc_path,
+        volume_ids,
+        frames_by_volume=frames_by_volume,
+    )
+    first_frame = frames_by_volume[volume_ids[0]]
+    prepared = prepare_combined_model(
+        stellarator,
+        geometry,
+        cross_sections=cross_sections,
+        winding_pack_volume_id=volume_ids[0],
+        neutron_edges_eV=neutron_edges_eV,
+        photon_edges_eV=photon_edges_eV,
+        particles_per_batch=particles_per_batch,
+        batches=batches,
+        plasma_direction_global=first_frame["plasma_direction_global"],
+        toroidal_direction_global=first_frame["toroidal_direction_global"],
+        poloidal_direction_global=first_frame["poloidal_direction_global"],
+        threads=threads,
+    )
+    surface_ids = tuple(
+        sorted(
+            {
+                surface_id
+                for envelope in envelopes
+                for surface_id in envelope.envelope.surface_ids
+            }
+        )
+    )
+    prepared.model.settings.surf_source_write = {
+        "surface_ids": list(surface_ids),
+        "max_particles": int(particles_per_batch) * int(batches),
+    }
+    configure_transport(
+        prepared.model.settings,
+        grazing_cutoff=1.0e-8,
+        grazing_ratio=16.0,
+        collision_track={
+            "cell_ids": list(volume_ids),
+            "max_collisions": 10000,
+            "max_collision_track_files": 8,
+        },
+    )
+    prepared.model.tallies = openmc.Tallies()
+    inventory = add_envelope_tallies(
+        prepared.model,
+        surface_ids=surface_ids,
+        cell_ids=volume_ids,
+        neutron_edges_eV=neutron_edges_eV,
+        photon_edges_eV=photon_edges_eV,
+    )
+    metadata = {
+        **dict(prepared.metadata),
+        "winding_pack_volume_ids": list(volume_ids),
+        "envelopes": [item.envelope.to_dict() for item in envelopes],
+        "surface_ids": list(surface_ids),
+        "tallies": inventory.to_dict(),
+    }
+    return CombinedMultiMagnetModelResult(
+        prepared.model,
+        envelopes,
+        prepared.source_audit,
+        inventory,
+        metadata,
     )

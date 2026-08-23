@@ -1029,3 +1029,129 @@ def source_mesh_provenance(
             "integral_reactions_per_s": float(values.sum()),
         },
     }
+
+
+def assign_adaptive_surface_patches(
+    envelope: MagnetBoundaryEnvelope,
+    bank: CorrelatedBoundaryBank,
+    *,
+    target_effective_sample_size: float = 25.0,
+    minimum_records: int = 4,
+    maximum_depth: int = 5,
+) -> CorrelatedBoundaryBank:
+    """Derive conservative surface patches without changing canonical records."""
+    if target_effective_sample_size <= 0.0:
+        raise ValueError("target_effective_sample_size must be positive")
+    if minimum_records <= 0 or maximum_depth < 0:
+        raise ValueError("adaptive patch limits are invalid")
+    columns = {
+        name: np.array(value, copy=True) for name, value in bank.columns.items()
+    }
+    positions = np.asarray(columns["position_local_cm"], dtype=float)
+    weights = np.asarray(columns["weight"], dtype=float)
+    surface_ids = np.asarray(columns["surface_id"], dtype=int)
+    patch_ids = np.full(len(bank), -1, dtype=int)
+    patch_metadata = []
+
+    def effective_sample_size(indices: np.ndarray) -> float:
+        selected = weights[indices]
+        total = float(selected.sum())
+        squares = float(np.dot(selected, selected))
+        return float(total * total / squares) if squares > 0.0 else 0.0
+
+    for surface in envelope.surfaces:
+        indices = np.flatnonzero(surface_ids == surface.surface_id)
+        root = (
+            float(surface.u_edges_cm[0]),
+            float(surface.u_edges_cm[-1]),
+            float(surface.v_edges_cm[0]),
+            float(surface.v_edges_cm[-1]),
+        )
+        leaves: list[tuple[np.ndarray, tuple[float, ...], int]] = []
+
+        def split(
+            selected: np.ndarray,
+            bounds: tuple[float, ...],
+            depth: int,
+        ) -> None:
+            if (
+                depth >= maximum_depth
+                or len(selected) < 2 * minimum_records
+                or effective_sample_size(selected)
+                < 2.0 * target_effective_sample_size
+            ):
+                leaves.append((selected, bounds, depth))
+                return
+            u0, u1, v0, v1 = bounds
+            local = positions[selected, :2]
+            spans = np.asarray([u1 - u0, v1 - v0])
+            variances = np.var(local, axis=0) / np.maximum(spans * spans, 1e-30)
+            axis = int(np.argmax(variances))
+            midpoint = (bounds[2 * axis] + bounds[2 * axis + 1]) / 2.0
+            lower_mask = local[:, axis] < midpoint
+            lower = selected[lower_mask]
+            upper = selected[~lower_mask]
+            if (
+                len(lower) < minimum_records
+                or len(upper) < minimum_records
+                or effective_sample_size(lower) < target_effective_sample_size
+                or effective_sample_size(upper) < target_effective_sample_size
+            ):
+                leaves.append((selected, bounds, depth))
+                return
+            lower_bounds = list(bounds)
+            upper_bounds = list(bounds)
+            lower_bounds[2 * axis + 1] = midpoint
+            upper_bounds[2 * axis] = midpoint
+            split(lower, tuple(lower_bounds), depth + 1)
+            split(upper, tuple(upper_bounds), depth + 1)
+
+        split(indices, root, 0)
+        root_area = (root[1] - root[0]) * (root[3] - root[2])
+        area_sum = 0.0
+        for patch_id, (selected, bounds, depth) in enumerate(leaves):
+            patch_ids[selected] = patch_id
+            rectangle_area = (bounds[1] - bounds[0]) * (
+                bounds[3] - bounds[2]
+            )
+            area = float(surface.area_cm2 * rectangle_area / root_area)
+            area_sum += area
+            patch_metadata.append(
+                {
+                    "surface_id": surface.surface_id,
+                    "surface_role": surface.role,
+                    "patch_id": patch_id,
+                    "u_bounds_cm": [bounds[0], bounds[1]],
+                    "v_bounds_cm": [bounds[2], bounds[3]],
+                    "area_cm2": area,
+                    "depth": depth,
+                    "record_count": int(len(selected)),
+                    "weighted_count": float(weights[selected].sum()),
+                    "effective_sample_size": effective_sample_size(selected),
+                }
+            )
+        if not np.isclose(area_sum, surface.area_cm2, rtol=1e-12, atol=1e-12):
+            raise RuntimeError(
+                f"adaptive patch areas do not close on surface {surface.surface_id}"
+            )
+    if np.any(patch_ids < 0):
+        raise RuntimeError("adaptive patch assignment omitted boundary records")
+    columns["patch_id"] = patch_ids
+    metadata = dict(bank.metadata)
+    metadata["adaptive_surface_patches"] = {
+        "target_effective_sample_size": float(target_effective_sample_size),
+        "minimum_records": int(minimum_records),
+        "maximum_depth": int(maximum_depth),
+        "patches": patch_metadata,
+        "area_conservative": True,
+        "canonical_records_modified": False,
+    }
+    output = CorrelatedBoundaryBank(columns, metadata)
+    if not np.isclose(
+        output.integrated_current,
+        bank.integrated_current,
+        rtol=1e-14,
+        atol=1e-14,
+    ):
+        raise RuntimeError("adaptive patching changed integrated current")
+    return output

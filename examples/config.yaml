@@ -1,5 +1,8 @@
 vmec_file: wout_vmec.nc
 
+geometry_features:
+  ports: false
+
 invessel_build:
   toroidal_angles: [0.0, 11.25, 22.5, 33.75, 45.0, 56.25, 67.5, 78.75, 90.0]
   poloidal_angles: [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0, 360.0]

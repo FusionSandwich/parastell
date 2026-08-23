@@ -11,6 +11,7 @@ import numpy as np
 
 from .dagmc_envelope import DagmcEnvelope
 from .magnet_boundary_envelope import build_correlated_bank
+from .magnet_boundary_envelope import assign_adaptive_surface_patches
 from .magnet_boundary_envelope import write_handoff
 from .openmc16 import PDG_PARTICLES
 
@@ -38,6 +39,9 @@ def export_openmc16_handoff(
     physical_source_rate_per_s: float | None = None,
     parastell_commit: str,
     source_definition_sha256: str,
+    adaptive_patch_target_ess: float | None = None,
+    adaptive_patch_minimum_records: int = 4,
+    adaptive_patch_maximum_depth: int = 5,
 ) -> dict:
     """Write a correlated v2 handoff and independent crossing closure."""
     import openmc
@@ -84,6 +88,14 @@ def export_openmc16_handoff(
         energy_edges_by_particle=energy_edges_by_particle,
         outward_normal_global=normals,
     )
+    if adaptive_patch_target_ess is not None:
+        bank = assign_adaptive_surface_patches(
+            envelope.envelope,
+            bank,
+            target_effective_sample_size=adaptive_patch_target_ess,
+            minimum_records=adaptive_patch_minimum_records,
+            maximum_depth=adaptive_patch_maximum_depth,
+        )
     # Independent event-count uncertainty: summing these record contributions
     # in quadrature yields sqrt(sum(w_i**2))/histories in each projected bin.
     bank.columns["weight_std_dev"] = transport_weights.copy()
@@ -151,3 +163,66 @@ def export_openmc16_handoff(
         provenance=provenance,
         normalization=normalization,
     )
+
+
+def export_openmc16_handoffs(
+    output_directory: str | Path,
+    *,
+    statepoint_path: str | Path,
+    surface_source_paths: Sequence[str | Path],
+    envelopes: Sequence[DagmcEnvelope],
+    histories: int,
+    energy_edges_by_particle: Mapping[str, Sequence[float]],
+    physical_source_rate_per_s: float | None = None,
+    parastell_commit: str,
+    source_definition_sha256: str,
+    adaptive_patch_target_ess: float | None = None,
+    adaptive_patch_minimum_records: int = 4,
+    adaptive_patch_maximum_depth: int = 5,
+) -> dict:
+    """Write one independent correlated handoff for every selected magnet."""
+    selected = tuple(envelopes)
+    if not selected:
+        raise ValueError("at least one closed magnet envelope is required")
+    identifiers = [item.envelope.envelope_id for item in selected]
+    if len(identifiers) != len(set(identifiers)):
+        raise ValueError("magnet envelope IDs must be unique")
+    directory = Path(output_directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    outputs = []
+    for envelope in selected:
+        safe_id = "".join(
+            character if character.isalnum() or character in "-_" else "_"
+            for character in envelope.envelope.envelope_id
+        )
+        path = directory / f"magnet_boundary_{safe_id}.h5"
+        manifest = export_openmc16_handoff(
+            path,
+            statepoint_path=statepoint_path,
+            surface_source_paths=surface_source_paths,
+            envelope=envelope,
+            histories=histories,
+            energy_edges_by_particle=energy_edges_by_particle,
+            physical_source_rate_per_s=physical_source_rate_per_s,
+            parastell_commit=parastell_commit,
+            source_definition_sha256=source_definition_sha256,
+            adaptive_patch_target_ess=adaptive_patch_target_ess,
+            adaptive_patch_minimum_records=adaptive_patch_minimum_records,
+            adaptive_patch_maximum_depth=adaptive_patch_maximum_depth,
+        )
+        outputs.append(
+            {
+                "envelope_id": envelope.envelope.envelope_id,
+                "magnet_component": envelope.envelope.magnet_component,
+                "dagmc_volume_id": envelope.envelope.dagmc_volume_id,
+                "path": str(path.resolve()),
+                "sha256": _hash(path),
+                "record_count": manifest["record_count"],
+                "integrated_current": manifest["integrated_current"],
+            }
+        )
+    return {
+        "schema": "parastell.magnet_boundary_source_collection/v1.0.0",
+        "dagmc_geometry_sha256": selected[0].envelope.dagmc_geometry_sha256,
+        "handoffs": outputs,
+    }
