@@ -1,0 +1,163 @@
+{
+  "all_output_hashes_and_sizes": {
+    "bytes": 12842,
+    "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\geometry_diagnostic_manifest.json",
+    "sha256": "d36c9914d462584da80c445e5241946616ab5b5df5c94277b2cfa3de2a6cb497"
+  },
+  "external_file_count": 31,
+  "external_root": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3",
+  "external_total_bytes": 486650,
+  "repository": {
+    "branch": "ports/actual-plc-diagnostic-20260823",
+    "diagnostic_commit": "b6568d0ddcbc1669ad2c80e1a972a24fda525003",
+    "path": "D:\\parastell-worktrees\\actual-plc-diagnostic-20260823"
+  },
+  "required_and_case_evidence": [
+    {
+      "bytes": 12842,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\geometry_diagnostic_manifest.json",
+      "sha256": "d36c9914d462584da80c445e5241946616ab5b5df5c94277b2cfa3de2a6cb497"
+    },
+    {
+      "bytes": 2715,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\plc_diagnostic_summary.json",
+      "sha256": "ba58de16c856ddb25723082e7472b87bdafd8fb59bb5db7667fb96881b459f4c"
+    },
+    {
+      "bytes": 2861,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\plc_intersection_report.json",
+      "sha256": "e40bf2e4c90a65db27057c0de354d97d6b053abc4a440c0884095b5a024b1455"
+    },
+    {
+      "bytes": 3051,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\environment_manifest.json",
+      "sha256": "0c79eaae8ace03080673d323128dfc4f8e046869ea8f9085dad83344062eb1e2"
+    },
+    {
+      "bytes": 4940,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\input_manifest.json",
+      "sha256": "13da9aca4b0a4aa0789672f7721284637b7f0cb17452ce70f451b44f204c5f52"
+    },
+    {
+      "bytes": 12355,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A0\\case_receipt.json",
+      "sha256": "2d71156c4e46c0816b0aae51769f802f36c522bb96697fce8f4af03e46545137"
+    },
+    {
+      "bytes": 10810,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A0\\case_result.json",
+      "sha256": "2b03aa3dcdc0df702b351c4547aa8c98afbb97eababf8111a8e2edf183a960e4"
+    },
+    {
+      "bytes": 53208,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A0\\plc_intersection_report.json",
+      "sha256": "7a192e1d50a8602268917a525799d96cf41f905c04da9d31e545cf68a242c8d0"
+    },
+    {
+      "bytes": 660,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A0\\minimal_implicated_facets.vtk",
+      "sha256": "ef46dd5f87454ae8bfbf8e937ac4c26d7aba9369d9d806e03716c2fa44ff841c"
+    },
+    {
+      "bytes": 12508,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A1\\case_receipt.json",
+      "sha256": "836f18b8f350025b4ef561277021f05b2751d2d8193193f58336e199a93820b0"
+    },
+    {
+      "bytes": 15424,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A1\\case_result.json",
+      "sha256": "4aa7ca35bb1cd9a2e5f0f2891b5e32a656027f411f3486d1bdf0b373cbce6379"
+    },
+    {
+      "bytes": 53371,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A1\\plc_intersection_report.json",
+      "sha256": "450d31692d51c43d63373e0cee49192786eb1fd577df011a6377568ddea2b3da"
+    },
+    {
+      "bytes": 660,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\A1\\minimal_implicated_facets.vtk",
+      "sha256": "c8c81500df4d0cfe8c4ef950ec6e9ed84c5bcc916fd20629844bbaa3a66c72aa"
+    },
+    {
+      "bytes": 29285,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\B0\\case_receipt.json",
+      "sha256": "4af7cdc7a7f25249dbd3c8be5c9a88eadadb11461084d4362d36662db22fe83b"
+    },
+    {
+      "bytes": 15110,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\B0\\case_result.json",
+      "sha256": "80b98790a8a60371547ffb7f46ae9a450469cfc45dc40190003a581262fb7dd6"
+    },
+    {
+      "bytes": 12090,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\B1\\case_receipt.json",
+      "sha256": "718db40417bbebffc2ab04e1a924d99d2d391ef4472e5043f373eba3489546be"
+    },
+    {
+      "bytes": 15599,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\B1\\case_result.json",
+      "sha256": "2c3b8fb9b8982bf4b761d261895188ba699595d99e09eb49d33b678efabc4bd1"
+    },
+    {
+      "bytes": 54690,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\B1\\plc_intersection_report.json",
+      "sha256": "9154fbb4462005d0b8d7d3cbf3d207981a366fe6e92c72288bd6563505848f8f"
+    },
+    {
+      "bytes": 756,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\B1\\minimal_implicated_facets.vtk",
+      "sha256": "676c207382308832c83b757a2891391263387f619fd092c287fc6f29107b9e8e"
+    },
+    {
+      "bytes": 11484,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\C0\\case_receipt.json",
+      "sha256": "68e49e481ebf810ad8ba8374daa6e0491e70031b2f8e029f92beb35976c7e5c6"
+    },
+    {
+      "bytes": 9966,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\C0\\case_result.json",
+      "sha256": "0d381f76c71579356e87a91ea78d0f892fef6ad40979ecbf20bb49b3b61cdb05"
+    },
+    {
+      "bytes": 12463,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\C1\\case_receipt.json",
+      "sha256": "1b8995333943ec285606393584c7977069ce76a7e17fc0dbe85ccb7ddf1b4668"
+    },
+    {
+      "bytes": 15400,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\C1\\case_result.json",
+      "sha256": "ab5ef9d275a934d58552a25383365fe369cdde72f9daf5cb5c778f2a1fbbb254"
+    },
+    {
+      "bytes": 54703,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\C1\\plc_intersection_report.json",
+      "sha256": "c971e6148a3c53030a29fa83a1bee159a42d691a6e8676849f5f16b5eee0932d"
+    },
+    {
+      "bytes": 756,
+      "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r3\\C1\\minimal_implicated_facets.vtk",
+      "sha256": "fbf0978a4c08d51ecf3230f248dc3035ac9288b646a579ce9909276ee2bca0e8"
+    }
+  ],
+  "schema_version": "1.0",
+  "scope": "PLC/topology diagnostic; not qualified transport geometry",
+  "superseded_immutable_attempts": [
+    {
+      "manifest": {
+        "bytes": 9997,
+        "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823\\geometry_diagnostic_manifest.json",
+        "sha256": "6b177e5fbb90bbcd9d746d85d94934cb8a9ad8703a4c4141ddcd5117c6d4e573"
+      },
+      "reason": "linked-worktree container identity and native-process result reporting were incomplete"
+    },
+    {
+      "manifest": {
+        "bytes": 12842,
+        "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-diagnostic-20260823-r2\\geometry_diagnostic_manifest.json",
+        "sha256": "6f0914ab3f3ca4a9db9fa1b475388a21cd9a006f6c3c5ce907cacd9754ce824f"
+      },
+      "reason": "baseline patch-boundary distance was null; corrected without overwriting artifacts"
+    }
+  ],
+  "terminal_classification": "BLOCKED_BASELINE_AND_PORTED_PLC_INTERSECTION"
+}
