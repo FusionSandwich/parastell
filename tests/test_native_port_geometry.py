@@ -78,11 +78,37 @@ def test_radial_quads_use_shared_safe_parameter_diagonal():
         grid,
         np.asarray((0.0, 1.0)),
         np.asarray((0.0, 1.0)),
+        diagonal="alternate",
     )
     shared_diagonal = {tuple(grid[1, 0]), tuple(grid[0, 1])}
     first_cell = triangles[:2]
     assert shared_diagonal.issubset(set(map(tuple, first_cell[0])))
     assert shared_diagonal.issubset(set(map(tuple, first_cell[1])))
+
+
+def test_sector_edge_diagonal_policy_is_localized():
+    phi_values = np.arange(11, dtype=float)
+    theta_values = np.asarray((0.0, 1.0))
+    grid = np.asarray(
+        [
+            [(phi, theta, phi + 2.0 * theta) for theta in theta_values]
+            for phi in phi_values
+        ]
+    )
+    triangles = _radial_surface_triangles(
+        grid,
+        phi_values,
+        theta_values,
+        diagonal="sector_edge_alternate",
+    )
+
+    def shared_vertices(cell):
+        left, right = triangles[4 * cell : 4 * cell + 2]
+        return set(map(tuple, left)).intersection(map(tuple, right))
+
+    assert shared_vertices(0) == {tuple(grid[1, 0]), tuple(grid[0, 1])}
+    assert shared_vertices(5) == {tuple(grid[5, 0]), tuple(grid[6, 1])}
+    assert shared_vertices(9) == {tuple(grid[10, 0]), tuple(grid[9, 1])}
 
 
 def test_patch_boundary_alignment_uses_complete_transverse_cycle():
@@ -246,7 +272,7 @@ def test_native_surface_complex_is_closed_and_unique():
     result = complex_.validate()
 
     assert complex_.topology_summary()["sha256"] == (
-        "ab8ae4d98b2c1e8484eea9c60b05725f2165334ba76775ddfa45bd19a2f891a6"
+        "9031c2c003306c9dd9a1177f678128851a6026fb1b8ed77f18a88f0cec933216"
     )
 
     assert result.duplicate_facet_count == 0

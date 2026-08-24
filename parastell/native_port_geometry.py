@@ -337,6 +337,7 @@ class NativePortSurfaceComplex:
             "schema_version": "1.0",
             "aperture_chord_tolerance": self.aperture_chord_tolerance,
             "vertex_merge_tolerance": self.vertex_merge_tolerance,
+            "radial_diagonal": self.radial_data["radial_diagonal"],
             "loop_point_counts": [
                 len(loop.inner_points) - 1 for loop in self.loops
             ],
@@ -1438,7 +1439,10 @@ def _radial_surface_triangles(
     anchor=None,
     reference=None,
     normal=None,
+    diagonal="primary",
 ):
+    if diagonal not in {"primary", "alternate", "sector_edge_alternate"}:
+        raise ValueError(f"Unknown radial quad diagonal policy {diagonal!r}")
     triangles = []
     phi_lower = phi_upper = theta_lower = theta_upper = None
     if bounds is not None:
@@ -1467,12 +1471,22 @@ def _radial_surface_triangles(
             b = grid[phi_index + 1, theta_index]
             c = grid[phi_index + 1, next_theta]
             d = grid[phi_index, next_theta]
-            # Split every surface on the same b--d parameter-space diagonal.
-            # The opposite a--c split can make independently evaluated,
-            # nested VMEC offsets cross after faceting even though the
-            # continuous surfaces are ordered. Keeping one deterministic
-            # diagonal also preserves common topology across the ledger.
-            triangles.extend((np.asarray((a, b, d)), np.asarray((b, c, d))))
+            phi_cell_count = len(phi_values) - 1
+            use_alternate = diagonal == "alternate" or (
+                diagonal == "sector_edge_alternate"
+                and (
+                    phi_index < 5
+                    or phi_index >= phi_cell_count - 4
+                )
+            )
+            if use_alternate:
+                triangles.extend(
+                    (np.asarray((a, b, d)), np.asarray((b, c, d)))
+                )
+            else:
+                triangles.extend(
+                    (np.asarray((a, b, c)), np.asarray((a, c, d)))
+                )
     if aperture_loop is not None:
         indices = _rectangle_boundary_indices(phi_values, theta_values, bounds)
         square = np.asarray([grid[index] for index in indices])
@@ -1557,6 +1571,7 @@ def build_native_port_surface_complex(
     *,
     include_graveyard=True,
     stitch_port=True,
+    radial_diagonal="primary",
     aperture_chord_tolerance=DEFAULT_APERTURE_CHORD_TOLERANCE,
     vertex_merge_tolerance=DEFAULT_VERTEX_MERGE_TOLERANCE,
 ):
@@ -1570,9 +1585,21 @@ def build_native_port_surface_complex(
     but leaves every radial surface uncut and omits port volumes and facets. It
     exists solely to compare the unported base radial PLC with the stitched PLC
     without introducing a second radial geometry builder.
+
+    ``radial_diagonal`` selects one shared parameter-space quad split for every
+    radial surface. ``sector_edge_alternate`` changes only the localized bands
+    adjacent to the toroidal sector edges.
     """
     aperture_chord_tolerance = float(aperture_chord_tolerance)
     vertex_merge_tolerance = float(vertex_merge_tolerance)
+    if radial_diagonal not in {
+        "primary",
+        "alternate",
+        "sector_edge_alternate",
+    }:
+        raise ValueError(
+            f"Unknown radial quad diagonal policy {radial_diagonal!r}"
+        )
     if aperture_chord_tolerance <= 0.0:
         raise ValueError("aperture_chord_tolerance must be positive")
     if vertex_merge_tolerance <= 0.0:
@@ -1750,6 +1777,7 @@ def build_native_port_surface_complex(
                 anchor,
                 reference,
                 normal,
+                radial_diagonal,
             )
         )
 
@@ -1965,6 +1993,7 @@ def build_native_port_surface_complex(
             "theta_values": theta_values,
             "port_result": port_result,
             "radial_loop_indices": radial_loop_indices,
+            "radial_diagonal": radial_diagonal,
         },
         port_stitched=stitch_port,
         aperture_chord_tolerance=aperture_chord_tolerance,

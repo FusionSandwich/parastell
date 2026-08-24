@@ -192,12 +192,11 @@ def _build_complex(root, case):
         use_pydagmc=True,
         ports=[actual_port()],
     )
-    if case.port:
-        return model.invessel_build.native_port_complex
     return build_native_port_surface_complex(
         model.invessel_build,
-        stitch_port=False,
+        stitch_port=case.port,
         include_graveyard=True,
+        radial_diagonal=case.radial_diagonal,
     )
 
 
@@ -229,6 +228,7 @@ def run_single_case(root, output_dir, case_name, repository_sha):
             if not case.port
             else "shared port-centred refined angular grid; port patch stitched"
         ),
+        "radial_diagonal": complex_.radial_data["radial_diagonal"],
         "port_geometry_present": case.port,
         "magnets_constructed": False,
         "full_assembly_constructed": False,

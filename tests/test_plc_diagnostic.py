@@ -72,6 +72,7 @@ def test_case_configuration_is_exact_and_deterministic():
             "port": False,
             "num_ribs": 13,
             "num_rib_pts": 49,
+            "radial_diagonal": "sector_edge_alternate",
             "resolution": "13x49",
         },
         {
@@ -79,6 +80,7 @@ def test_case_configuration_is_exact_and_deterministic():
             "port": True,
             "num_ribs": 13,
             "num_rib_pts": 49,
+            "radial_diagonal": "sector_edge_alternate",
             "resolution": "13x49",
         },
         {
@@ -86,6 +88,7 @@ def test_case_configuration_is_exact_and_deterministic():
             "port": False,
             "num_ribs": 17,
             "num_rib_pts": 65,
+            "radial_diagonal": "primary",
             "resolution": "17x65",
         },
         {
@@ -93,6 +96,7 @@ def test_case_configuration_is_exact_and_deterministic():
             "port": True,
             "num_ribs": 17,
             "num_rib_pts": 65,
+            "radial_diagonal": "alternate",
             "resolution": "17x65",
         },
         {
@@ -100,6 +104,7 @@ def test_case_configuration_is_exact_and_deterministic():
             "port": False,
             "num_ribs": 21,
             "num_rib_pts": 81,
+            "radial_diagonal": "alternate",
             "resolution": "21x81",
         },
         {
@@ -107,6 +112,7 @@ def test_case_configuration_is_exact_and_deterministic():
             "port": True,
             "num_ribs": 21,
             "num_rib_pts": 81,
+            "radial_diagonal": "primary",
             "resolution": "21x81",
         },
     ]

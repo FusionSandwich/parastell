@@ -29,6 +29,7 @@ class DiagnosticCase:
     port: bool
     num_ribs: int
     num_rib_pts: int
+    radial_diagonal: str
 
     def to_dict(self):
         return {
@@ -36,17 +37,18 @@ class DiagnosticCase:
             "port": self.port,
             "num_ribs": self.num_ribs,
             "num_rib_pts": self.num_rib_pts,
+            "radial_diagonal": self.radial_diagonal,
             "resolution": f"{self.num_ribs}x{self.num_rib_pts}",
         }
 
 
 CASE_MATRIX = (
-    DiagnosticCase("A0", False, 13, 49),
-    DiagnosticCase("A1", True, 13, 49),
-    DiagnosticCase("B0", False, 17, 65),
-    DiagnosticCase("B1", True, 17, 65),
-    DiagnosticCase("C0", False, 21, 81),
-    DiagnosticCase("C1", True, 21, 81),
+    DiagnosticCase("A0", False, 13, 49, "sector_edge_alternate"),
+    DiagnosticCase("A1", True, 13, 49, "sector_edge_alternate"),
+    DiagnosticCase("B0", False, 17, 65, "primary"),
+    DiagnosticCase("B1", True, 17, 65, "alternate"),
+    DiagnosticCase("C0", False, 21, 81, "alternate"),
+    DiagnosticCase("C1", True, 21, 81, "primary"),
 )
 
 
