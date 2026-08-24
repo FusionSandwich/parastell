@@ -11,7 +11,12 @@ from typing import Any, Mapping, Sequence
 
 
 SCHEMA = "parastell.magnet_radiation_field_bundle/v1.0.0"
-PRODUCT_KINDS = {"boundary_phase_space", "volume_scalar_flux", "heating"}
+PRODUCT_KINDS = {
+    "boundary_phase_space",
+    "volume_scalar_flux",
+    "heating",
+    "reaction_production",
+}
 REQUIRED_GEOMETRY = {"raw_h5m_sha256", "canonical_geometry_fingerprint"}
 REQUIRED_SOURCE = {"physical_source_rate_per_s", "source_definition_sha256"}
 
@@ -54,6 +59,13 @@ def _validate_product(product: Mapping[str, Any]) -> None:
             raise ValueError(
                 "a non-heating quantity cannot be supplied as heating"
             )
+    if product["kind"] == "reaction_production":
+        if product["units"] not in {"events/source", "events/s"}:
+            raise ValueError("reaction/production product has an unknown unit")
+        if product.get("quantity") != "reaction_and_particle_production":
+            raise ValueError(
+                "reaction/production product has an unknown quantity"
+            )
 
 
 def write_radiation_field_bundle(
@@ -89,7 +101,14 @@ def write_radiation_field_bundle(
             "boundary_phase_space": "boundary",
             "volume_scalar_flux": "volume_flux",
             "heating": "heating",
+            "reaction_production": "reaction_production",
         }[product["kind"]]
+        if product["kind"] == "reaction_production":
+            from .magnet_reaction_production import (
+                validate_magnet_reaction_production,
+            )
+
+            validate_magnet_reaction_production(source_path)
         relative = (
             Path(role_directory) / str(product["magnet_id"]) / source_path.name
         )
@@ -144,4 +163,10 @@ def read_radiation_field_bundle(path: str | Path) -> dict[str, Any]:
             raise ValueError(
                 f"radiation product hash mismatch: {product['path']}"
             )
+        if product["kind"] == "reaction_production":
+            from .magnet_reaction_production import (
+                validate_magnet_reaction_production,
+            )
+
+            validate_magnet_reaction_production(product_path)
     return manifest

@@ -550,6 +550,8 @@ def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
     from .energy_groups import get_structure
     from .openmc16_export import export_openmc16_handoffs
     from .dagmc_envelope import canonical_dagmc_fingerprint
+    from .magnet_heating import export_magnet_heating
+    from .magnet_reaction_production import export_magnet_reaction_production
     from .magnet_volume_flux import export_volume_scalar_flux
 
     stellarator, geometry = build_combined_geometry(
@@ -634,6 +636,40 @@ def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
         physical_source_rate_per_s=args.physical_source_rate,
         magnet_ids_by_cell={value: f"magnet-{value}" for value in volume_ids},
     )
+    magnet_ids_by_cell = {value: f"magnet-{value}" for value in volume_ids}
+    reaction_production_path = (
+        output_dir / "reaction_production" / ("magnet_reaction_production.h5")
+    )
+    export_magnet_reaction_production(
+        statepoint_path,
+        reaction_production_path,
+        magnet_ids=[magnet_ids_by_cell[value] for value in volume_ids],
+        physical_source_rate_per_s=args.physical_source_rate,
+        transported_particles={
+            "neutron": True,
+            "photon": True,
+            "electron": False,
+            "positron": False,
+        },
+        provenance={
+            "parastell_commit": args.parastell_commit,
+            "source_definition_sha256": geometry.source_mesh_sha256,
+        },
+    )
+    heating = None
+    if args.physical_source_rate is not None:
+        heating = export_magnet_heating(
+            output_dir / "heating" / "magnet_heating.h5",
+            statepoint_path=statepoint_path,
+            tally_names=prepared.tally_inventory.heating,
+            cell_volumes_cm3=cell_volumes,
+            cell_magnet_ids=magnet_ids_by_cell,
+            physical_source_rate_per_s=args.physical_source_rate,
+            provenance={
+                "parastell_commit": args.parastell_commit,
+                "source_definition_sha256": geometry.source_mesh_sha256,
+            },
+        )
     result = {
         "histories": int(args.particles) * int(args.batches),
         "batches": int(args.batches),
@@ -649,6 +685,8 @@ def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
             if key != "canonical_geometry"
         },
         "volume_scalar_flux": volume_flux,
+        "reaction_production": str(reaction_production_path),
+        "heating": heating,
     }
     report = output_dir / "combined_transport_report.json"
     report.write_text(

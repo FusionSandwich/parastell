@@ -54,22 +54,34 @@ The volume field contains separate CCFE-709 and UKAEA-1102 neutron axes and a
 42-group photon axis for all 18 magnets. Magnet 20 has an integrated neutron
 scalar flux of `3.226459768861037e11 cm^-2 s^-1`. Independently scored heating
 is 325.40034346032473 W from neutrons and 13313.31170364983 W from photons.
+The reaction/production product uses schema
+`parastell.magnet_reaction_production/v1.0.0`. It records `0.015964`
+reaction events/source and `6.52e-4` produced photons/source across all 18
+magnets while distinguishing produced particles from transported particles.
 
 ## Condensation and PKA interoperability
 
-The measured-spectrum Pareto study selected 64 neutron groups at 0.141914%
-maximum protected flux/heating-proxy error and 20 photon groups at 0.629040%
-maximum protected error. Source-normalization errors are below `9e-16`.
-These structures are qualified only for the measured scalar-flux,
-energy-weighted-flux, and coarse heating-proxy responses used in the study.
-Reaction-channel and PKA response preservation is not qualified.
+The initial measured-spectrum Pareto study selected 64 neutron groups for
+flux/heating responses, but a real SPECTRA-PKA fold rejected that grid: total
+YBCO recoil-rate error was 18.24% and normalized recoil-distribution distance
+was 23.24%. The production selector therefore promotes the smallest candidate
+meeting 1% limits for all protected PKA observables. That grid has 256 neutron
+groups; its recoil-rate error is 0.0134%, mean-recoil-energy error is 0.0133%,
+distribution distance is 0.7614%, and maximum species-fraction error is
+0.0091%. The selected photon grid remains 20 groups at 0.629040% maximum
+protected error. Source-normalization errors are below `9e-16`.
 
 SPECTRA-PKA commit `951d6fd82e29117cd97d72f9808c76f3de9d361c`
-successfully folded the production CCFE-709 magnet-20 spectrum through its
-bundled Zr recoil matrices. The reported total flux was `3.2265e11 cm^-2 s^-1`.
-This is an integration proof, not an HTS PKA result: evaluated recoil matrices
-for Cu, Ag, O, Y/RE, Ba, Ni, Cr, Fe, Mo, and the remaining configured tape
-constituents were not available in the validation environment.
+successfully folded the production magnet-20 spectrum through 13 natural
+isotope recoil matrices for YBa2Cu3O7: O-16/17/18, Y-89, Ba-130/132/134-138,
+and Cu-63/65. The retained TENDL/NJOY bundle contains 287 files totaling 9.37
+GB. CCFE-709, independently tallied UKAEA-1102 rebinned to CCFE-709, and
+64/128/192/256/384/512-group reconstructions were executed. UKAEA-1102 agrees
+with the CCFE reference to `2.5e-7` in total recoil rate and `1.83e-4` in
+distribution distance. SPECTRA-PKA is angularly marginalized and the 40 eV
+displacement threshold used for diagnostics is not a validated
+constituent-specific damage model; these results qualify transport-grid PKA
+preservation, not a complete DPA or property-degradation prediction.
 
 ## Explicit multilayer replay
 
@@ -77,13 +89,17 @@ The continuous entering bank was conservatively projected to 16 ordinates and
 replayed through Cu, Ag, REBCO, homogenized buffer, Hastelloy, rear Cu, solder,
 and insulation. The reference solver supports unequal neutron/photon grids,
 within-group and group-to-group scattering, neutron-to-photon production,
-layer heating, and interface currents. The 64-neutron/20-photon production
-replay converged in four source iterations with a particle-balance error of
-`1.74987e-4`.
+layer heating, interface currents, transmitted current, and reflected entrance
+current. The 256-neutron/20-photon evaluated replay converged in ten source
+iterations with a particle-balance error of `8.71e-11`.
 
-The replay uses bounded synthetic cross sections. It verifies coupling and
-balance behavior but is not a design prediction. Evaluated multigroup
-cross-section matrices and charged-particle transport remain future inputs.
+The coefficients are collapsed from the exact NNDC OpenMC HDF5 library used by
+transport for representative layer compositions. Non-absorption is currently
+represented as within-group diagonal scattering; evaluated energy-angle
+redistribution and neutron-to-photon production matrices are not yet supplied.
+Heating is absorption-energy bookkeeping and excludes explicit electron
+transport, so the replay remains a reference integration model rather than a
+material-design prediction.
 
 ## Activation handoff
 
@@ -91,19 +107,35 @@ Magnet 20's CCFE-709 physical neutron spectrum was exported through the
 `parastell.activation/v1.0.0` contract to versioned JSON, ALARA flux, and
 FISPACT-II arbitrary-group flux files. All three preserve the
 `3.226459768861037e11 cm^-2 s^-1` group-integrated normalization. The local
-activation environment audit reports ALARA and FISPACT-II unavailable because
-their executables and data libraries are not installed. OpenMC 0.16.0 also
-lacks the optional newer R2S APIs checked by the adapter. No activation result
-is claimed from generated input files alone.
+activation environment has a 16 GB TENDL-2017 FISPACT data package, but no
+ALARA or FISPACT-II executable was found locally, in the full-run image, or in
+the bounded Bateman audit. OpenMC 0.16.0 also lacks the optional newer R2S APIs
+checked by the adapter.
+
+OpenMC 0.16 independent depletion was executed separately using the exact
+CCFE-709 magnet-20 spectrum, the NNDC transport library, and the local
+ENDF/B-VIII.0 fast chain (SHA-256
+`5eeb727498d824d7c951ad89864bbc1c2d76ec5e8c9097a820505213ba6a2bf3`).
+The diagnostic schedule is one day irradiation followed by one- and seven-day
+cooling intervals in a homogeneous one-cubic-centimeter YBCO reference. The
+inventory contains 35 nonzero nuclides; leading end-of-irradiation products
+include Cu-64, Y-90, Ba-131, Ba-133, metastable Ba-135, Ba-139, and Cu-66.
+Twelve of 13 input isotopes have nonzero collapsed reactions. O-18 has zero
+coverage because the selected NNDC transport library does not provide usable
+O-18 neutron data. This is a real bounded OpenMC activation calculation, but
+the schedule and homogeneous reference are diagnostic rather than a reactor
+operating-history prediction. ALARA and FISPACT-II remain validated input-only
+paths until their executables are supplied.
 
 ## Software gates
 
-- Final ParaStell suite: 178 passed, 8 skipped.
-- Black: 92 files unchanged after formatting the new solver and ignored
+- Final ParaStell suite: 186 passed, 8 skipped.
+- Black: 103 files unchanged after formatting the new solver and ignored
   validation drivers.
 - Source distribution and wheel builds pass; both CLI entry points and import
   pass.
-- DPA transport/PKA/activation host subset: 199 passed, 3 skipped.
+- Final DPA radiation-bundle/SPECTRA-PKA/activation subset: 156 passed, 1
+  skipped.
 - DPA complete image suite: 968 passed, 20 skipped, 71 failed, with 23 modules
   additionally blocked at collection by absent `ase` and `torch`.
 - The DPA failures are outside the radiation-bundle adapter and include
@@ -118,8 +150,11 @@ is claimed from generated input files alone.
   statistically sparse.
 - Whole-winding-pack radial/toroidal/vertical frames do not resolve local tape
   twist continuously along a coil.
-- HTS-constituent recoil matrices were unavailable, so no production PKA or
-  DPA claim is made.
-- The reference multilayer coefficients are synthetic and do not close a
-  material-design heating or damage calculation.
+- HTS YBCO recoil matrices are available and were folded, but reaction-channel
+  fractions are not exposed by the current native-output parser and no
+  production DPA or property-degradation claim is made.
+- The evaluated reference solver omits energy-angle scattering transfer,
+  evaluated neutron-to-photon matrices, and charged-particle transport.
+- The OpenMC activation reference has no O-18 neutron reaction coverage and
+  does not replace an operating-schedule, self-shielded activation analysis.
 - OpenMC transports neutrons and photons here, not all charged secondaries.

@@ -30,6 +30,7 @@ class SNResult:
     scalar_flux: np.ndarray
     incoming_current: np.ndarray
     outgoing_current: np.ndarray
+    reflected_current: np.ndarray
     interface_current: np.ndarray
     absorption_rate: np.ndarray
     neutron_to_photon_rate: np.ndarray
@@ -253,6 +254,11 @@ def solve_multilayer_sn(
     else:
         raise RuntimeError("multigroup source iteration did not converge")
     outgoing_current = np.zeros_like(incoming_current)
+    reflected_current = np.sum(
+        backward_interfaces[0][..., ~positive]
+        * (np.abs(mu[~positive]) * weights[~positive])[None, None, :],
+        axis=-1,
+    )
     interface_current = np.sum(
         forward_interfaces[..., positive]
         * (mu[positive] * weights[positive])[None, None, None, :],
@@ -294,7 +300,7 @@ def solve_multilayer_sn(
                     * layer.thickness_cm
                 )
     total_in = float(incoming_current.sum())
-    total_out = float(outgoing_current.sum())
+    total_out = float(outgoing_current.sum() + reflected_current.sum())
     total_abs = float(absorption.sum())
     total_produced = float(neutron_to_photon.sum())
     balance = abs(total_in + total_produced - total_out - total_abs) / max(
@@ -306,6 +312,7 @@ def solve_multilayer_sn(
         scalar_flux=new_scalar,
         incoming_current=incoming_current,
         outgoing_current=outgoing_current,
+        reflected_current=reflected_current,
         interface_current=interface_current,
         absorption_rate=absorption,
         neutron_to_photon_rate=neutron_to_photon,

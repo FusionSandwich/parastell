@@ -26,6 +26,7 @@ def test_unequal_neutron_and_photon_grids_transmit_in_vacuum():
     )
     assert result.group_counts == {"neutron": 2, "photon": 3}
     assert result.outgoing_current == pytest.approx(result.incoming_current)
+    assert result.reflected_current == pytest.approx(0.0)
     assert result.interface_current.shape == (2, 2, 3)
     assert result.interface_current[0] == pytest.approx(
         result.interface_current[1]
@@ -59,3 +60,24 @@ def test_downscatter_and_neutron_to_photon_sources_are_retained():
     assert result.scalar_flux[0, 1, 1] > 0.0
     assert result.neutron_to_photon_rate[0, 1] > 0.0
     assert np.all(np.isfinite(result.heating_eV_per_source))
+
+
+def test_scattering_reflection_is_included_in_particle_balance():
+    layer = LayerTransport(
+        "scattering",
+        "verification",
+        1.0,
+        {"neutron": np.array([1.0])},
+        {"neutron": np.array([0.2])},
+        {"neutron": np.array([[0.8]])},
+    )
+    result = solve_multilayer_sn(
+        [layer],
+        {"neutron": _incoming(1, value=1.0)},
+        {"neutron": [1.0, 2.0]},
+        ordinates=8,
+        tolerance=1.0e-12,
+    )
+
+    assert result.reflected_current.sum() > 0.0
+    assert result.particle_balance_error < 1.0e-9
