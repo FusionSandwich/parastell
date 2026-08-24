@@ -318,10 +318,26 @@ def _artifact_records(directory, external_root=None):
 def run_matrix(args):
     root = Path(__file__).resolve().parents[1]
     expected_branch = "ports/actual-plc-diagnostic-20260823"
-    branch = _git(root, "branch", "--show-current")
-    head = _git(root, "rev-parse", "HEAD")
-    status = _git(root, "status", "--porcelain=v1", "--untracked-files=all")
-    remotes = _git(root, "remote", "-v").splitlines()
+    try:
+        branch = _git(root, "branch", "--show-current")
+        head = _git(root, "rev-parse", "HEAD")
+        status = _git(
+            root, "status", "--porcelain=v1", "--untracked-files=all"
+        )
+        remotes = _git(root, "remote", "-v").splitlines()
+        identity_verification = "container_git"
+    except RuntimeError:
+        if not (
+            args.repository_clean_verified
+            and args.repository_branch
+            and args.repository_remote
+        ):
+            raise
+        branch = args.repository_branch
+        head = args.repository_sha
+        status = ""
+        remotes = args.repository_remote
+        identity_verification = "explicit_host_preflight"
     if branch != expected_branch or head != args.repository_sha or status:
         raise RuntimeError(
             "Repository identity gate failed: "
@@ -335,6 +351,7 @@ def run_matrix(args):
         "commit": head,
         "remotes": remotes,
         "clean_at_start": True,
+        "identity_verification": identity_verification,
     }
     inputs = input_manifest(root, repository)
     environment = environment_manifest(
@@ -515,6 +532,9 @@ def parse_args():
     )
     parser.add_argument("--external-root")
     parser.add_argument("--repository-host-root")
+    parser.add_argument("--repository-branch")
+    parser.add_argument("--repository-remote", action="append")
+    parser.add_argument("--repository-clean-verified", action="store_true")
     parser.add_argument("--image-reference")
     parser.add_argument("--image-id")
     parser.add_argument("--image-digest")
