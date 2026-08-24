@@ -292,6 +292,7 @@ class NativePortSurfaceComplex:
         volumes,
         radial_data,
         *,
+        port_stitched=True,
         aperture_chord_tolerance=DEFAULT_APERTURE_CHORD_TOLERANCE,
         vertex_merge_tolerance=DEFAULT_VERTEX_MERGE_TOLERANCE,
     ):
@@ -301,6 +302,7 @@ class NativePortSurfaceComplex:
         self.surfaces = tuple(surfaces)
         self.volumes = tuple(volumes)
         self.radial_data = radial_data
+        self.port_stitched = bool(port_stitched)
         self.aperture_chord_tolerance = float(aperture_chord_tolerance)
         self.vertex_merge_tolerance = float(vertex_merge_tolerance)
         self.dag_model = None
@@ -344,6 +346,7 @@ class NativePortSurfaceComplex:
         summary["sha256"] = sha256(
             json.dumps(summary, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+        summary["port_stitched"] = self.port_stitched
         return summary
 
     def _facet_counts(self):
@@ -1531,6 +1534,7 @@ def build_native_port_surface_complex(
     model,
     *,
     include_graveyard=True,
+    stitch_port=True,
     aperture_chord_tolerance=DEFAULT_APERTURE_CHORD_TOLERANCE,
     vertex_merge_tolerance=DEFAULT_VERTEX_MERGE_TOLERANCE,
 ):
@@ -1539,6 +1543,11 @@ def build_native_port_surface_complex(
     ``include_graveyard=False`` leaves the exterior physical surfaces one-sided
     so this model can be combined with other physical submodels before a single
     global graveyard is created.  It does not change any physical facet.
+
+    ``stitch_port=False`` retains the exact same port-centred angular sampling
+    but leaves every radial surface uncut and omits port volumes and facets. It
+    exists solely to compare the unported base radial PLC with the stitched PLC
+    without introducing a second radial geometry builder.
     """
     aperture_chord_tolerance = float(aperture_chord_tolerance)
     vertex_merge_tolerance = float(vertex_merge_tolerance)
@@ -1616,12 +1625,13 @@ def build_native_port_surface_complex(
             else "blanket_layer"
         )
         volume_records.append(NativeVolumeRecord(name, kind, material))
-    volume_records.append(
-        NativeVolumeRecord(
-            port.name + "__void", "port_void", port.fill.mat_tag
+    if stitch_port:
+        volume_records.append(
+            NativeVolumeRecord(
+                port.name + "__void", "port_void", port.fill.mat_tag
+            )
         )
-    )
-    if port.liner.enabled:
+    if stitch_port and port.liner.enabled:
         volume_records.append(
             NativeVolumeRecord(
                 port.name + "__liner", "port_liner", port.liner.mat_tag
@@ -1698,7 +1708,7 @@ def build_native_port_surface_complex(
         radial_w.append(coordinate)
         loop_index = int(np.argmin(np.abs(loop_means - coordinate)))
         aperture_loop = None
-        if (
+        if stitch_port and (
             resolved_start - 0.1 <= coordinate <= resolved_end + 0.1
             and abs(loop_means[loop_index] - coordinate) <= 0.1
         ):
@@ -1775,7 +1785,7 @@ def build_native_port_surface_complex(
         index = int(np.searchsorted(radial_w, coordinate, side="right"))
         return volume_names[index] if index < len(volume_names) else None
 
-    if port.liner.enabled:
+    if stitch_port and port.liner.enabled:
         inner_sidewall = []
         for left, right in zip(loops, loops[1:]):
             inner_sidewall.extend(
@@ -1795,7 +1805,8 @@ def build_native_port_surface_complex(
             liner_name,
         )
 
-    for index, (left, right) in enumerate(zip(loops, loops[1:])):
+    sidewall_pairs = enumerate(zip(loops, loops[1:])) if stitch_port else ()
+    for index, (left, right) in sidewall_pairs:
         midpoint = (
             loop_means[min(index, len(loop_means) - 1)]
             + loop_means[min(index + 1, len(loop_means) - 1)]
@@ -1822,59 +1833,64 @@ def build_native_port_surface_complex(
             surrounding,
         )
 
-    start_loop = loops[0]
-    start_coordinate = float(
-        np.mean((start_loop.inner_points[:-1] - anchor) @ axis)
-    )
-    start_region = region_at(start_coordinate - 0.2)
-    add_surface(
-        f"port:{port.name}:start:void",
-        (
-            "plasma_connection"
-            if port.extent.start.reference == "plasma_surface"
-            else "blind_termination"
-        ),
-        _disk_triangles(start_loop.inner_points, axis),
-        start_region,
-        void_name,
-    )
-    if port.liner.enabled:
-        add_surface(
-            f"port:{port.name}:start:liner",
-            "liner_termination",
-            _annulus_triangles(
-                start_loop.inner_points, start_loop.outer_points, axis
-            ),
-            start_region,
-            liner_name,
+    if stitch_port:
+        start_loop = loops[0]
+        start_coordinate = float(
+            np.mean((start_loop.inner_points[:-1] - anchor) @ axis)
         )
-
-    end_loop = loops[-1]
-    end_coordinate = float(
-        np.mean((end_loop.inner_points[:-1] - anchor) @ axis)
-    )
-    end_region = region_at(end_coordinate + 0.2)
-    add_surface(
-        f"port:{port.name}:end:void",
-        "external_termination" if end_region is None else "blind_termination",
-        _disk_triangles(end_loop.inner_points, axis),
-        void_name,
-        end_region,
-    )
-    if port.liner.enabled:
+        start_region = region_at(start_coordinate - 0.2)
         add_surface(
-            f"port:{port.name}:end:liner",
+            f"port:{port.name}:start:void",
+            (
+                "plasma_connection"
+                if port.extent.start.reference == "plasma_surface"
+                else "blind_termination"
+            ),
+            _disk_triangles(start_loop.inner_points, axis),
+            start_region,
+            void_name,
+        )
+        if port.liner.enabled:
+            add_surface(
+                f"port:{port.name}:start:liner",
+                "liner_termination",
+                _annulus_triangles(
+                    start_loop.inner_points, start_loop.outer_points, axis
+                ),
+                start_region,
+                liner_name,
+            )
+
+        end_loop = loops[-1]
+        end_coordinate = float(
+            np.mean((end_loop.inner_points[:-1] - anchor) @ axis)
+        )
+        end_region = region_at(end_coordinate + 0.2)
+        add_surface(
+            f"port:{port.name}:end:void",
             (
                 "external_termination"
                 if end_region is None
-                else "liner_termination"
+                else "blind_termination"
             ),
-            _annulus_triangles(
-                end_loop.inner_points, end_loop.outer_points, axis
-            ),
-            liner_name,
+            _disk_triangles(end_loop.inner_points, axis),
+            void_name,
             end_region,
         )
+        if port.liner.enabled:
+            add_surface(
+                f"port:{port.name}:end:liner",
+                (
+                    "external_termination"
+                    if end_region is None
+                    else "liner_termination"
+                ),
+                _annulus_triangles(
+                    end_loop.inner_points, end_loop.outer_points, axis
+                ),
+                liner_name,
+                end_region,
+            )
 
     if include_graveyard:
         graveyard_name = "graveyard"
@@ -1928,6 +1944,7 @@ def build_native_port_surface_complex(
             "port_result": port_result,
             "radial_loop_indices": radial_loop_indices,
         },
+        port_stitched=stitch_port,
         aperture_chord_tolerance=aperture_chord_tolerance,
         vertex_merge_tolerance=vertex_merge_tolerance,
     )
