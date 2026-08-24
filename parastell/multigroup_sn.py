@@ -36,6 +36,7 @@ class SNResult:
     neutron_to_photon_rate: np.ndarray
     heating_eV_per_source: np.ndarray
     particle_balance_error: float
+    energy_balance_error: float
     iterations: int
 
 
@@ -271,6 +272,7 @@ def solve_multilayer_sn(
     absorption = np.zeros((layer_count, len(particles), group_count))
     neutron_to_photon = np.zeros((layer_count, group_count))
     heating = np.zeros_like(absorption)
+    energy_centers = np.zeros((len(particles), group_count))
     for particle, pi in pindex.items():
         particle_groups = groups[particle]
         outgoing_current[pi, :particle_groups] = np.sum(
@@ -282,6 +284,7 @@ def solve_multilayer_sn(
             np.asarray(energy_edges[particle][:-1])
             + np.asarray(energy_edges[particle][1:])
         )
+        energy_centers[pi, :particle_groups] = centers
         for li, layer in enumerate(layers):
             absorption[li, pi, :particle_groups] = (
                 np.asarray(layer.absorption_xs_cm_1[particle])
@@ -290,6 +293,15 @@ def solve_multilayer_sn(
             )
             heating[li, pi, :particle_groups] = (
                 absorption[li, pi, :particle_groups] * centers
+            )
+            scattering_rate = (
+                np.asarray(layer.scattering_xs_cm_1[particle])
+                * new_scalar[li, pi, :particle_groups][None, :]
+                * layer.thickness_cm
+            )
+            heating[li, pi, :particle_groups] += np.sum(
+                scattering_rate * (centers[None, :] - centers[:, None]),
+                axis=0,
             )
     if "neutron" in pindex and "photon" in pindex:
         for li, layer in enumerate(layers):
@@ -306,6 +318,22 @@ def solve_multilayer_sn(
     balance = abs(total_in + total_produced - total_out - total_abs) / max(
         total_in + total_produced, 1.0e-300
     )
+    energy_in = float(np.sum(incoming_current * energy_centers))
+    energy_out = float(
+        np.sum((outgoing_current + reflected_current) * energy_centers)
+    )
+    produced_energy = 0.0
+    if "photon" in pindex:
+        produced_energy = float(
+            np.sum(
+                neutron_to_photon[:, : groups["photon"]]
+                * energy_centers[pindex["photon"], : groups["photon"]]
+            )
+        )
+    deposited_energy = float(heating.sum())
+    energy_balance = abs(
+        energy_in + produced_energy - energy_out - deposited_energy
+    ) / max(energy_in + produced_energy, 1.0e-300)
     return SNResult(
         particles=particles,
         group_counts=groups,
@@ -318,5 +346,6 @@ def solve_multilayer_sn(
         neutron_to_photon_rate=neutron_to_photon,
         heating_eV_per_source=heating,
         particle_balance_error=float(balance),
+        energy_balance_error=float(energy_balance),
         iterations=iteration,
     )

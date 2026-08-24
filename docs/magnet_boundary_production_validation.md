@@ -68,8 +68,9 @@ was 23.24%. The production selector therefore promotes the smallest candidate
 meeting 1% limits for all protected PKA observables. That grid has 256 neutron
 groups; its recoil-rate error is 0.0134%, mean-recoil-energy error is 0.0133%,
 distribution distance is 0.7614%, and maximum species-fraction error is
-0.0091%. The selected photon grid remains 20 groups at 0.629040% maximum
-protected error. Source-normalization errors are below `9e-16`.
+0.0091%. Its maximum reaction-channel fraction error is 0.8155%. The selected
+photon grid remains 20 groups at 0.629040% maximum protected error.
+Source-normalization errors are below `9e-16`.
 
 SPECTRA-PKA commit `951d6fd82e29117cd97d72f9808c76f3de9d361c`
 successfully folded the production magnet-20 spectrum through 13 natural
@@ -92,6 +93,9 @@ within-group and group-to-group scattering, neutron-to-photon production,
 layer heating, interface currents, transmitted current, and reflected entrance
 current. The 256-neutron/20-photon evaluated replay converged in ten source
 iterations with a particle-balance error of `8.71e-11`.
+Its energy-balance error is `3.66e-15`; multigroup scattering energy transfer
+is included in layer heating and neutron-to-photon birth energy is an explicit
+source term.
 
 The coefficients are collapsed from the exact NNDC OpenMC HDF5 library used by
 transport for representative layer compositions. Non-absorption is currently
@@ -134,13 +138,25 @@ paths until their executables are supplied.
   validation drivers.
 - Source distribution and wheel builds pass; both CLI entry points and import
   pass.
-- Final DPA radiation-bundle/SPECTRA-PKA/activation subset: 156 passed, 1
+- Final DPA radiation-bundle/SPECTRA-PKA/activation subset: 157 passed, 1
   skipped.
 - DPA complete image suite: 968 passed, 20 skipped, 71 failed, with 23 modules
   additionally blocked at collection by absent `ase` and `torch`.
 - The DPA failures are outside the radiation-bundle adapter and include
   atomistic/ML dependencies, frozen external artifact hashes, Docker-in-Docker
   workflows, and environment-specific paths.
+
+## Visual products
+
+Fifteen figures generated from the retained geometry, source mesh, statepoint,
+surface bank, collision bank, SPECTRA-PKA outputs, deterministic replay, and
+activation result are recorded in `figures/figure_manifest.json` under the
+ignored validation directory. They include the combined reactor/magnet DAGMC
+geometry, closed envelope, source strength and ion temperature, D-T mean and
+width, neutron/photon entries and spectra, surface-role current, grazing
+fraction, secondary-photon locations, group-structure comparisons, PKA Pareto
+selection, layer flux/heating, and activation inventory. Every PNG has a
+SHA-256 digest and byte count in the manifest.
 
 ## Scientific limitations
 

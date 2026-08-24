@@ -32,6 +32,7 @@ def test_unequal_neutron_and_photon_grids_transmit_in_vacuum():
         result.interface_current[1]
     )
     assert result.particle_balance_error == pytest.approx(0.0)
+    assert result.energy_balance_error == pytest.approx(0.0)
 
 
 def test_downscatter_and_neutron_to_photon_sources_are_retained():
@@ -81,3 +82,4 @@ def test_scattering_reflection_is_included_in_particle_balance():
 
     assert result.reflected_current.sum() > 0.0
     assert result.particle_balance_error < 1.0e-9
+    assert result.energy_balance_error < 1.0e-9
