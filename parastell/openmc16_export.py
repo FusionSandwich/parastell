@@ -105,6 +105,14 @@ def _directional_current_from_statepoint(
         surface_axis = filter_types.index("surface")
         mu_axis = filter_types.index("musurface")
         surface_ids = np.asarray(filters[surface_axis]["bins"][:], dtype=int)
+        envelope_surface_ids = {
+            int(value) for value in envelope.envelope.surface_ids
+        }
+        missing_surface_ids = envelope_surface_ids - set(surface_ids)
+        if missing_surface_ids:
+            raise ValueError(
+                f"{tally_name} omits envelope surfaces {sorted(missing_surface_ids)}"
+            )
         mu_edges = np.asarray(filters[mu_axis]["bins"][:], dtype=float)
         if len(mu_edges) != dimensions[mu_axis] + 1:
             raise ValueError(f"{tally_name} has malformed mu-surface edges")
@@ -114,8 +122,11 @@ def _directional_current_from_statepoint(
                 "outgoing": (0.0, 0.0),
             }
             for surface_id in surface_ids
+            if int(surface_id) in envelope_surface_ids
         }
         for surface_index, surface_id in enumerate(surface_ids):
+            if int(surface_id) not in envelope_surface_ids:
+                continue
             normal_sign = envelope.envelope.surface(
                 int(surface_id)
             ).openmc_normal_sign

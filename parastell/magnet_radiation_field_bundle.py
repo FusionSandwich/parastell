@@ -47,6 +47,13 @@ def _validate_product(product: Mapping[str, Any]) -> None:
             raise ValueError(
                 "surface current cannot be supplied as volume scalar flux"
             )
+    if product["kind"] == "heating":
+        if product["units"] not in {"W", "W/cm3"}:
+            raise ValueError("heating has an unknown unit")
+        if product.get("quantity") != "heating":
+            raise ValueError(
+                "a non-heating quantity cannot be supplied as heating"
+            )
 
 
 def write_radiation_field_bundle(

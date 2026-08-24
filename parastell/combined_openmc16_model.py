@@ -13,6 +13,7 @@ from .dagmc_envelope import DagmcEnvelope
 from .dagmc_envelope import extract_closed_envelope
 from .dagmc_envelope import extract_closed_envelopes
 from .dagmc_envelope import require_watertight_dagmc
+from .dagmc_graveyard import close_dagmc_file
 from .dt_source import DTSourceAudit
 from .dt_source import build_temperature_dependent_mesh_source
 from .energy_groups import get_structure
@@ -41,6 +42,7 @@ class CombinedGeometryResult:
     material_tags: tuple[str, ...]
     source_mesh_shape: tuple[int, int, int]
     watertightness: Mapping[str, object]
+    graveyard: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,7 @@ def build_combined_geometry(
     casing_thickness_cm: float = 0.0,
     min_mesh_size_cm: float = 5.0,
     max_mesh_size_cm: float = 20.0,
+    graveyard_margin_cm: float = 50.0,
 ) -> tuple[Stellarator, CombinedGeometryResult]:
     """Generate reactor structures and magnets in one CAD-to-DAGMC model."""
     load_and_validate_no_port_configuration(config_path)
@@ -138,6 +141,15 @@ def build_combined_geometry(
             max_mesh_size=max_mesh_size_cm,
         )
     dagmc_path = output / Path(dagmc_filename).with_suffix(".h5m")
+    closed_path = dagmc_path.with_name(f"{dagmc_path.stem}_closed.h5m")
+    graveyard = close_dagmc_file(
+        dagmc_path, closed_path, margin_cm=graveyard_margin_cm
+    )
+    closed_path.replace(dagmc_path)
+    graveyard = {
+        **graveyard,
+        "output_path": str(dagmc_path.resolve()),
+    }
     watertightness = require_watertight_dagmc(dagmc_path)
     import pydagmc
 
@@ -169,6 +181,7 @@ def build_combined_geometry(
         material_tags=material_tags,
         source_mesh_shape=source_mesh_shape,
         watertightness=watertightness.to_dict(),
+        graveyard=graveyard,
     )
     return stellarator, result
 
@@ -357,7 +370,6 @@ def prepare_combined_multimagnet_model(
         winding_pack_volume_id=volume_ids[0],
         neutron_edges_eV=neutron_edges_eV,
         photon_edges_eV=photon_edges_eV,
-        volume_flux_energy_axes=_production_volume_flux_axes(photon_edges_eV),
         particles_per_batch=particles_per_batch,
         batches=batches,
         plasma_direction_global=first_frame["plasma_direction_global"],
@@ -395,6 +407,7 @@ def prepare_combined_multimagnet_model(
         cell_ids=volume_ids,
         neutron_edges_eV=neutron_edges_eV,
         photon_edges_eV=photon_edges_eV,
+        volume_flux_energy_axes=_production_volume_flux_axes(photon_edges_eV),
     )
     metadata = {
         **dict(prepared.metadata),

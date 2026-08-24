@@ -286,7 +286,7 @@ def test_raw_directional_statepoint_respects_dagmc_surface_sense(tmp_path):
         tallies = statepoint.create_group("tallies")
         filters = tallies.create_group("filters")
         definitions = (
-            (1, "surface", [11, 12]),
+            (1, "surface", [10, 11, 12]),
             (2, "musurface", [-1.0, 0.0, 1.0]),
             (3, "particle", [b"neutron"]),
             (4, "energy", [0.0, 20.0e6]),
@@ -302,17 +302,18 @@ def test_raw_directional_statepoint_respects_dagmc_surface_sense(tmp_path):
         tally["name"] = np.bytes_("pstl_envelope_neutron_directional_current")
         tally["filters"] = [1, 2, 3, 4]
         tally["n_realizations"] = 10
-        means = np.asarray([-0.2, 0.3, -0.4, 0.5])
-        results = np.zeros((4, 1, 2))
+        means = np.asarray([-0.1, 0.1, -0.2, 0.3, -0.4, 0.5])
+        results = np.zeros((6, 1, 2))
         results[:, 0, 0] = 10.0 * means
         results[:, 0, 1] = 10.0 * means**2
         tally["results"] = results
 
     signs = {11: 1, 12: -1}
     schema = SimpleNamespace(
+        surface_ids=(11, 12),
         surface=lambda surface_id: SimpleNamespace(
             openmc_normal_sign=signs[surface_id]
-        )
+        ),
     )
     envelope = SimpleNamespace(envelope=schema)
     current = _directional_current_from_statepoint(path, "neutron", envelope)

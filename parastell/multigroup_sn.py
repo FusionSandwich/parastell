@@ -26,10 +26,13 @@ class LayerTransport:
 @dataclass(frozen=True)
 class SNResult:
     particles: tuple[str, ...]
+    group_counts: Mapping[str, int]
     scalar_flux: np.ndarray
     incoming_current: np.ndarray
     outgoing_current: np.ndarray
+    interface_current: np.ndarray
     absorption_rate: np.ndarray
+    neutron_to_photon_rate: np.ndarray
     heating_eV_per_source: np.ndarray
     particle_balance_error: float
     iterations: int
@@ -105,11 +108,7 @@ def solve_multilayer_sn(
     positive = mu > 0.0
     particles = tuple(energy_edges)
     groups = {p: len(np.asarray(energy_edges[p])) - 1 for p in particles}
-    if len(set(groups.values())) != 1:
-        raise ValueError(
-            "reference solver currently requires equal padded group axes"
-        )
-    group_count = next(iter(groups.values()))
+    group_count = max(groups.values())
     layer_count = len(layers)
     angular = np.zeros((layer_count, len(particles), group_count, ordinates))
     old_scalar = np.zeros((layer_count, len(particles), group_count))
@@ -117,12 +116,20 @@ def solve_multilayer_sn(
     pindex = {name: index for index, name in enumerate(particles)}
     boundary = {}
     right_boundary = np.zeros((len(particles), group_count, ordinates))
+    forward_interfaces = np.zeros(
+        (layer_count + 1, len(particles), group_count, ordinates)
+    )
+    backward_interfaces = np.zeros_like(forward_interfaces)
     for particle in particles:
+        particle_groups = groups[particle]
         values = np.asarray(incoming_angular_flux[particle], dtype=float)
-        if values.shape != (group_count, int(np.count_nonzero(positive))):
+        if values.shape != (
+            particle_groups,
+            int(np.count_nonzero(positive)),
+        ):
             raise ValueError(f"invalid incoming angular flux for {particle}")
         boundary[particle] = values
-        incoming_current[pindex[particle]] = np.sum(
+        incoming_current[pindex[particle], :particle_groups] = np.sum(
             values * (mu[positive] * weights[positive])[None, :], axis=1
         )
     for iteration in range(1, maximum_iterations + 1):
@@ -130,14 +137,17 @@ def solve_multilayer_sn(
         source = np.zeros_like(scalar)
         for li, layer in enumerate(layers):
             for particle, pi in pindex.items():
+                particle_groups = groups[particle]
                 scatter = np.asarray(
                     layer.scattering_xs_cm_1[particle], dtype=float
                 )
-                if scatter.shape != (group_count, group_count):
+                if scatter.shape != (particle_groups, particle_groups):
                     raise ValueError(
                         "scattering matrices use [outgoing, incoming]"
                     )
-                source[li, pi] += 0.5 * scatter @ scalar[li, pi]
+                source[li, pi, :particle_groups] += (
+                    0.5 * scatter @ scalar[li, pi, :particle_groups]
+                )
             if (
                 "neutron" in pindex
                 and "photon" in pindex
@@ -146,11 +156,22 @@ def solve_multilayer_sn(
                 matrix = np.asarray(
                     layer.neutron_to_photon_xs_cm_1, dtype=float
                 )
-                source[li, pindex["photon"]] += (
-                    0.5 * matrix @ scalar[li, pindex["neutron"]]
+                expected = (groups["photon"], groups["neutron"])
+                if matrix.shape != expected:
+                    raise ValueError(
+                        "neutron-to-photon matrices use [photon, neutron]"
+                    )
+                source[li, pindex["photon"], : groups["photon"]] += (
+                    0.5
+                    * matrix
+                    @ scalar[li, pindex["neutron"], : groups["neutron"]]
                 )
         for particle, pi in pindex.items():
+            particle_groups = groups[particle]
             pos_indices = np.flatnonzero(positive)
+            forward_interfaces[0, pi, :particle_groups, pos_indices] = (
+                boundary[particle].T
+            )
             for local_index, ordinate_index in enumerate(pos_indices):
                 psi = boundary[particle][:, local_index].copy()
                 for li, layer in enumerate(layers):
@@ -160,7 +181,7 @@ def solve_multilayer_sn(
                     tau = total * layer.thickness_cm / mu[ordinate_index]
                     attenuation = np.exp(-tau)
                     equilibrium = np.divide(
-                        source[li, pi],
+                        source[li, pi, :particle_groups],
                         total,
                         out=np.zeros_like(total),
                         where=total > 0.0,
@@ -168,16 +189,27 @@ def solve_multilayer_sn(
                     outgoing = psi * attenuation + equilibrium * (
                         1.0 - attenuation
                     )
-                    angular[li, pi, :, ordinate_index] = np.divide(
-                        psi - outgoing,
-                        tau,
-                        out=0.5 * (psi + outgoing),
-                        where=tau > 1.0e-14,
+                    angular[li, pi, :particle_groups, ordinate_index] = (
+                        np.where(
+                            tau > 1.0e-14,
+                            equilibrium
+                            + (psi - equilibrium)
+                            * np.divide(
+                                1.0 - attenuation,
+                                tau,
+                                out=np.ones_like(tau),
+                                where=tau > 1.0e-14,
+                            ),
+                            0.5 * (psi + outgoing),
+                        )
                     )
                     psi = outgoing
-                right_boundary[pi, :, ordinate_index] = psi
+                    forward_interfaces[
+                        li + 1, pi, :particle_groups, ordinate_index
+                    ] = psi
+                right_boundary[pi, :particle_groups, ordinate_index] = psi
             for ordinate_index in np.flatnonzero(~positive):
-                psi = np.zeros(group_count)
+                psi = np.zeros(particle_groups)
                 for li in range(layer_count - 1, -1, -1):
                     layer = layers[li]
                     total = np.asarray(
@@ -186,7 +218,7 @@ def solve_multilayer_sn(
                     tau = total * layer.thickness_cm / abs(mu[ordinate_index])
                     attenuation = np.exp(-tau)
                     equilibrium = np.divide(
-                        source[li, pi],
+                        source[li, pi, :particle_groups],
                         total,
                         out=np.zeros_like(total),
                         where=total > 0.0,
@@ -194,13 +226,24 @@ def solve_multilayer_sn(
                     outgoing = psi * attenuation + equilibrium * (
                         1.0 - attenuation
                     )
-                    angular[li, pi, :, ordinate_index] = np.divide(
-                        psi - outgoing,
-                        tau,
-                        out=0.5 * (psi + outgoing),
-                        where=tau > 1.0e-14,
+                    angular[li, pi, :particle_groups, ordinate_index] = (
+                        np.where(
+                            tau > 1.0e-14,
+                            equilibrium
+                            + (psi - equilibrium)
+                            * np.divide(
+                                1.0 - attenuation,
+                                tau,
+                                out=np.ones_like(tau),
+                                where=tau > 1.0e-14,
+                            ),
+                            0.5 * (psi + outgoing),
+                        )
                     )
                     psi = outgoing
+                    backward_interfaces[
+                        li, pi, :particle_groups, ordinate_index
+                    ] = psi
         new_scalar = np.sum(angular * weights[None, None, None, :], axis=-1)
         error = float(np.max(np.abs(new_scalar - old_scalar)))
         scale = max(float(np.max(np.abs(new_scalar))), 1.0)
@@ -210,11 +253,22 @@ def solve_multilayer_sn(
     else:
         raise RuntimeError("multigroup source iteration did not converge")
     outgoing_current = np.zeros_like(incoming_current)
+    interface_current = np.sum(
+        forward_interfaces[..., positive]
+        * (mu[positive] * weights[positive])[None, None, None, :],
+        axis=-1,
+    ) - np.sum(
+        backward_interfaces[..., ~positive]
+        * (np.abs(mu[~positive]) * weights[~positive])[None, None, None, :],
+        axis=-1,
+    )
     absorption = np.zeros((layer_count, len(particles), group_count))
+    neutron_to_photon = np.zeros((layer_count, group_count))
     heating = np.zeros_like(absorption)
     for particle, pi in pindex.items():
-        outgoing_current[pi] = np.sum(
-            right_boundary[pi][:, positive]
+        particle_groups = groups[particle]
+        outgoing_current[pi, :particle_groups] = np.sum(
+            right_boundary[pi, :particle_groups][:, positive]
             * (mu[positive] * weights[positive])[None, :],
             axis=1,
         )
@@ -223,22 +277,38 @@ def solve_multilayer_sn(
             + np.asarray(energy_edges[particle][1:])
         )
         for li, layer in enumerate(layers):
-            absorption[li, pi] = (
+            absorption[li, pi, :particle_groups] = (
                 np.asarray(layer.absorption_xs_cm_1[particle])
-                * new_scalar[li, pi]
+                * new_scalar[li, pi, :particle_groups]
                 * layer.thickness_cm
             )
-            heating[li, pi] = absorption[li, pi] * centers
+            heating[li, pi, :particle_groups] = (
+                absorption[li, pi, :particle_groups] * centers
+            )
+    if "neutron" in pindex and "photon" in pindex:
+        for li, layer in enumerate(layers):
+            if layer.neutron_to_photon_xs_cm_1 is not None:
+                neutron_to_photon[li, : groups["photon"]] = (
+                    np.asarray(layer.neutron_to_photon_xs_cm_1)
+                    @ new_scalar[li, pindex["neutron"], : groups["neutron"]]
+                    * layer.thickness_cm
+                )
     total_in = float(incoming_current.sum())
     total_out = float(outgoing_current.sum())
     total_abs = float(absorption.sum())
-    balance = abs(total_in - total_out - total_abs) / max(total_in, 1.0e-300)
+    total_produced = float(neutron_to_photon.sum())
+    balance = abs(total_in + total_produced - total_out - total_abs) / max(
+        total_in + total_produced, 1.0e-300
+    )
     return SNResult(
         particles=particles,
+        group_counts=groups,
         scalar_flux=new_scalar,
         incoming_current=incoming_current,
         outgoing_current=outgoing_current,
+        interface_current=interface_current,
         absorption_rate=absorption,
+        neutron_to_photon_rate=neutron_to_photon,
         heating_eV_per_source=heating,
         particle_balance_error=float(balance),
         iterations=iteration,
