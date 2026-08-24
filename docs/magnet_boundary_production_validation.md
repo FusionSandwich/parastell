@@ -85,6 +85,17 @@ The replay uses bounded synthetic cross sections. It verifies coupling and
 balance behavior but is not a design prediction. Evaluated multigroup
 cross-section matrices and charged-particle transport remain future inputs.
 
+## Activation handoff
+
+Magnet 20's CCFE-709 physical neutron spectrum was exported through the
+`parastell.activation/v1.0.0` contract to versioned JSON, ALARA flux, and
+FISPACT-II arbitrary-group flux files. All three preserve the
+`3.226459768861037e11 cm^-2 s^-1` group-integrated normalization. The local
+activation environment audit reports ALARA and FISPACT-II unavailable because
+their executables and data libraries are not installed. OpenMC 0.16.0 also
+lacks the optional newer R2S APIs checked by the adapter. No activation result
+is claimed from generated input files alone.
+
 ## Software gates
 
 - Final ParaStell suite: 178 passed, 8 skipped.
