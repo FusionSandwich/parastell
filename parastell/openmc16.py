@@ -117,6 +117,7 @@ class TallyInventory:
     current: tuple[str, ...]
     directional_current: tuple[str, ...]
     surface_flux: tuple[str, ...]
+    volume_flux: tuple[str, ...]
     reactions: str | None
     production: tuple[str, ...]
     heating: tuple[str, ...]
@@ -139,6 +140,9 @@ def add_envelope_tallies(
         "electron",
         "positron",
     ),
+    volume_flux_energy_axes: (
+        Mapping[str, tuple[str, Sequence[float]]] | None
+    ) = None,
 ) -> TallyInventory:
     """Attach independent current, flux, reaction, production, and heating tallies."""
     require_capabilities()
@@ -154,6 +158,7 @@ def add_envelope_tallies(
         "current": [],
         "directional_current": [],
         "surface_flux": [],
+        "volume_flux": [],
         "reactions": None,
         "production": [],
         "heating": [],
@@ -199,6 +204,26 @@ def add_envelope_tallies(
         tallies.append(heating)
         inventory["heating"].append(heating.name)
 
+    flux_axes = volume_flux_energy_axes or {
+        "neutron_configured": ("neutron", neutron_edges_eV),
+        "photon_configured": ("photon", photon_edges_eV),
+    }
+    for label, (particle, edges) in flux_axes.items():
+        safe_label = "".join(
+            character if character.isalnum() else "_" for character in label
+        ).strip("_")
+        volume_flux = openmc.Tally(
+            name=f"pstl_magnet_{safe_label}_volume_flux"
+        )
+        volume_flux.filters = [
+            openmc.CellFilter(cells),
+            openmc.ParticleFilter([particle]),
+            openmc.EnergyFilter(edges),
+        ]
+        volume_flux.scores = ["flux"]
+        tallies.append(volume_flux)
+        inventory["volume_flux"].append(volume_flux.name)
+
     reactions = openmc.Tally(name="pstl_magnet_neutron_reactions")
     reactions.filters = [
         openmc.CellFilter(cells),
@@ -232,6 +257,7 @@ def add_envelope_tallies(
         current=tuple(inventory["current"]),
         directional_current=tuple(inventory["directional_current"]),
         surface_flux=tuple(inventory["surface_flux"]),
+        volume_flux=tuple(inventory["volume_flux"]),
         reactions=str(inventory["reactions"]),
         production=tuple(inventory["production"]),
         heating=tuple(inventory["heating"]),

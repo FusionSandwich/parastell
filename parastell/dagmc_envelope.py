@@ -29,6 +29,100 @@ def _hash(path):
     return digest.hexdigest()
 
 
+def canonical_dagmc_fingerprint(
+    dagmc_path,
+    *,
+    coordinate_quantum_cm=1.0e-6,
+    faceting_tolerances=None,
+):
+    """Return a stable geometry/topology identity independent of H5M ordering."""
+    import json
+    import pydagmc
+
+    quantum = float(coordinate_quantum_cm)
+    if not np.isfinite(quantum) or quantum <= 0.0:
+        raise ValueError("coordinate_quantum_cm must be positive and finite")
+    model = pydagmc.Model(str(Path(dagmc_path).resolve()))
+    volumes = []
+    surfaces = {}
+    for volume_id, volume in sorted(model.volumes_by_id.items()):
+        signed_six_volume = 0
+        surface_ids = []
+        for surface in sorted(volume.surfaces, key=lambda item: int(item.id)):
+            surface_id = int(surface.id)
+            surface_ids.append(surface_id)
+            coordinates = _triangles(surface.triangle_coords)
+            quantized = np.rint(coordinates / quantum).astype(np.int64)
+            triangles = tuple(
+                sorted(
+                    tuple(
+                        sorted(
+                            tuple(int(value) for value in vertex)
+                            for vertex in triangle
+                        )
+                    )
+                    for triangle in quantized
+                )
+            )
+            forward = getattr(surface, "forward_volume", None)
+            reverse = getattr(surface, "reverse_volume", None)
+            forward_id = int(forward.id) if forward is not None else None
+            reverse_id = int(reverse.id) if reverse is not None else None
+            cross = np.cross(coordinates[:, 1], coordinates[:, 2])
+            native_six_volume = float(np.sum(coordinates[:, 0] * cross))
+            outward_sign = _openmc_to_outward_normal_sign(
+                surface, int(volume_id)
+            )
+            signed_six_volume += outward_sign * native_six_volume
+            if surface_id not in surfaces:
+                area_vectors = 0.5 * np.cross(
+                    coordinates[:, 1] - coordinates[:, 0],
+                    coordinates[:, 2] - coordinates[:, 0],
+                )
+                areas = np.linalg.norm(area_vectors, axis=1)
+                total_area = float(areas.sum())
+                centroid = (
+                    np.sum(coordinates.mean(axis=1) * areas[:, None], axis=0)
+                    / total_area
+                )
+                surfaces[surface_id] = {
+                    "surface_id": surface_id,
+                    "forward_volume_id": forward_id,
+                    "reverse_volume_id": reverse_id,
+                    "area_cm2": total_area,
+                    "centroid_cm": [float(value) for value in centroid],
+                    "quantized_triangles": triangles,
+                }
+        volumes.append(
+            {
+                "volume_id": int(volume_id),
+                "component_name": str(getattr(volume, "name", "")),
+                "material_tag": str(getattr(volume, "material", "")),
+                "volume_cm3": abs(float(signed_six_volume)) / 6.0,
+                "surface_ids": surface_ids,
+            }
+        )
+    canonical = {
+        "coordinate_units": "cm",
+        "coordinate_quantum_cm": quantum,
+        "faceting_tolerances": dict(faceting_tolerances or {}),
+        "volumes": volumes,
+        "surfaces": [surfaces[key] for key in sorted(surfaces)],
+    }
+    encoded = json.dumps(
+        canonical, sort_keys=True, separators=(",", ":")
+    ).encode()
+    return {
+        "algorithm": "sha256",
+        "canonical_fingerprint": hashlib.sha256(encoded).hexdigest(),
+        "raw_h5m_sha256": _hash(dagmc_path),
+        "coordinate_quantum_cm": quantum,
+        "volume_count": len(volumes),
+        "surface_count": len(surfaces),
+        "canonical_geometry": canonical,
+    }
+
+
 @dataclass(frozen=True)
 class FacetedSurface:
     surface_id: int

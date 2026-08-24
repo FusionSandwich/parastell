@@ -185,6 +185,7 @@ def test_population_statistics_report_weighted_count_and_ess():
     assert statistics["overall"]["record_count"] == 2
     assert statistics["overall"]["weighted_count"] == pytest.approx(4.0)
     assert statistics["overall"]["effective_sample_size"] == pytest.approx(1.6)
+    assert statistics["overall"]["status"] == "INSUFFICIENT_STATISTICS"
 
 
 def test_adaptive_patches_conserve_area_records_and_current():

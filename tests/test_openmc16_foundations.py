@@ -40,8 +40,9 @@ def test_openmc_016_capability_gate_and_tallies():
     assert len(inventory.current) == 2
     assert len(inventory.directional_current) == 2
     assert len(inventory.surface_flux) == 2
+    assert len(inventory.volume_flux) == 2
     assert len(inventory.production) == 4
-    assert len(model.tallies) == 13
+    assert len(model.tallies) == 15
 
 
 def test_boundary_bank_projection_and_absorption_balance():

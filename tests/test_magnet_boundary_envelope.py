@@ -6,6 +6,7 @@ from parastell.magnet_boundary_envelope import EnvelopeSurface
 from parastell.magnet_boundary_envelope import MagnetBoundaryEnvelope
 from parastell.magnet_boundary_envelope import build_correlated_bank
 from parastell.magnet_boundary_envelope import condition_on_independent_current
+from parastell.magnet_boundary_envelope import classify_crossing_bank
 from parastell.magnet_boundary_envelope import conservative_projection
 from parastell.magnet_boundary_envelope import production_mu_edges
 from parastell.magnet_boundary_envelope import production_phi_edges
@@ -192,7 +193,9 @@ def test_correlated_condition_projection_and_round_trip(tmp_path):
         },
     )
     manifest, restored_envelope, restored = read_handoff(output)
-    assert manifest["schema_version"] == "2.0.0"
+    assert manifest["schema_version"] == "2.1.0"
+    assert manifest["canonical_bank"] is False
+    assert manifest["field_availability"]["history_id"]["available"] is False
     assert restored_envelope.surface_ids == envelope.surface_ids
     assert restored.integrated_current == pytest.approx(0.7)
 
@@ -227,3 +230,50 @@ def test_positive_tally_without_records_fails():
 def test_missing_bank_field_rejected():
     with pytest.raises(ValueError, match="missing fields"):
         CorrelatedBoundaryBank({"record_id": np.array([0])})
+
+
+def test_optional_unavailable_fields_are_not_fabricated():
+    bank = build_correlated_bank(
+        box_envelope(),
+        position_global_cm=np.array([[1.0, 0.0, 0.0]]),
+        direction_global=np.array([[-1.0, 0.0, 0.0]]),
+        energy_eV=[1.0],
+        raw_weight=[0.25],
+        particle=["neutron"],
+        surface_id=[1],
+        energy_edges_eV=[0.0, 2.0],
+    )
+    assert "history_id" not in bank.columns
+    assert "weight_std_dev" not in bank.columns
+    assert "time_s" not in bank.columns
+    assert bank.metadata["field_availability"]["history_id"] == {
+        "available": False,
+        "origin": "unavailable",
+    }
+
+
+def test_surface_bank_completeness_is_fail_closed():
+    complete = classify_crossing_bank(
+        stored_record_count=10,
+        selected_record_count=4,
+        max_particles_per_file=100,
+        max_source_files=1,
+        source_file_count=1,
+    )
+    sampled = classify_crossing_bank(
+        stored_record_count=10,
+        selected_record_count=4,
+        max_particles_per_file=None,
+        max_source_files=None,
+        source_file_count=1,
+    )
+    truncated = classify_crossing_bank(
+        stored_record_count=100,
+        selected_record_count=4,
+        max_particles_per_file=100,
+        max_source_files=1,
+        source_file_count=1,
+    )
+    assert complete["classification"] == "COMPLETE_CROSSING_BANK"
+    assert sampled["classification"] == "SAMPLED_CROSSING_BANK"
+    assert truncated["classification"] == "TRUNCATED_INVALID_BANK"

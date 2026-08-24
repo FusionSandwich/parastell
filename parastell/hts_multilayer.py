@@ -569,7 +569,9 @@ def replay_magnet_boundary_source(
     surface = np.asarray(columns["surface_id"], dtype=int)
     energy = np.asarray(columns["energy_eV"], dtype=float)
     weight = np.asarray(columns["weight"], dtype=float)
-    weight_std_dev = np.asarray(columns["weight_std_dev"], dtype=float)
+    weight_std_dev = np.asarray(
+        columns.get("weight_std_dev", np.zeros_like(weight)), dtype=float
+    )
     if np.any(weight < 0.0) or not np.all(np.isfinite(weight)):
         raise ValueError(
             "boundary-source weights must be finite and nonnegative"

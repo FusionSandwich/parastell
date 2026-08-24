@@ -20,8 +20,12 @@ import numpy as np
 
 
 SCHEMA_NAME = "parastell.magnet_boundary_source"
-SCHEMA_VERSION = "2.0.0"
+SCHEMA_VERSION = "2.1.0"
 SCHEMA_URI = f"{SCHEMA_NAME}/v{SCHEMA_VERSION}"
+SUPPORTED_SCHEMA_VERSIONS = ("2.0.0", SCHEMA_VERSION)
+SUPPORTED_SCHEMA_URIS = tuple(
+    f"{SCHEMA_NAME}/v{version}" for version in SUPPORTED_SCHEMA_VERSIONS
+)
 PARTICLE_PDG = {"neutron": 2112, "photon": 22}
 ENERGY_AXIS_NAMES = (
     "neutron_energy_edges_eV",
@@ -33,7 +37,6 @@ ENERGY_AXIS_NAMES = (
 )
 REQUIRED_RECORD_FIELDS = (
     "record_id",
-    "history_id",
     "position_global_cm",
     "position_local_cm",
     "direction_global",
@@ -41,14 +44,12 @@ REQUIRED_RECORD_FIELDS = (
     "outward_normal_global",
     "energy_eV",
     "weight",
-    "weight_std_dev",
     "particle",
     "particle_pdg",
     "surface_id",
     "envelope_id",
     "crossing_sense",
     "surface_role",
-    "time_s",
     "mu",
     "azimuth_rad",
     "grazing",
@@ -56,6 +57,59 @@ REQUIRED_RECORD_FIELDS = (
     "energy_group",
     "angle_bin_id",
 )
+OPTIONAL_RECORD_FIELDS = ("history_id", "time_s", "weight_std_dev")
+BANK_CLASSIFICATIONS = (
+    "COMPLETE_CROSSING_BANK",
+    "SAMPLED_CROSSING_BANK",
+    "TRUNCATED_INVALID_BANK",
+)
+
+
+def classify_crossing_bank(
+    *,
+    stored_record_count: int,
+    selected_record_count: int,
+    max_particles_per_file: int | None,
+    max_source_files: int | None,
+    source_file_count: int,
+    mpi_ranks: int | None = None,
+    sampling_applied: bool = False,
+) -> dict[str, Any]:
+    """Classify surface-bank completeness from explicit capture accounting."""
+    counts = (stored_record_count, selected_record_count, source_file_count)
+    if any(int(value) < 0 for value in counts) or source_file_count == 0:
+        raise ValueError("surface-bank counts must be nonnegative with a file")
+    if selected_record_count > stored_record_count:
+        raise ValueError("selected crossings cannot exceed stored records")
+    if max_particles_per_file is not None and max_particles_per_file <= 0:
+        raise ValueError("max_particles_per_file must be positive")
+    if max_source_files is not None and max_source_files <= 0:
+        raise ValueError("max_source_files must be positive")
+    capacity = (
+        int(max_particles_per_file) * int(max_source_files)
+        if max_particles_per_file is not None and max_source_files is not None
+        else None
+    )
+    cap_reached = capacity is not None and stored_record_count >= capacity
+    missing_config = max_particles_per_file is None or max_source_files is None
+    if cap_reached:
+        classification = "TRUNCATED_INVALID_BANK"
+    elif sampling_applied or missing_config:
+        classification = "SAMPLED_CROSSING_BANK"
+    else:
+        classification = "COMPLETE_CROSSING_BANK"
+    return {
+        "classification": classification,
+        "stored_record_count": int(stored_record_count),
+        "selected_record_count": int(selected_record_count),
+        "source_file_count": int(source_file_count),
+        "max_particles_per_file": max_particles_per_file,
+        "max_source_files": max_source_files,
+        "configured_capacity": capacity,
+        "cap_reached": bool(cap_reached),
+        "sampling_applied": bool(sampling_applied),
+        "mpi_ranks": mpi_ranks,
+    }
 
 
 def _unit(vector: Sequence[float], name: str) -> np.ndarray:
@@ -398,18 +452,26 @@ class CorrelatedBoundaryBank:
             selected = weights[mask]
             total = float(selected.sum())
             square_sum = float(np.dot(selected, selected))
+            effective_sample_size = (
+                float(total * total / square_sum) if square_sum > 0.0 else 0.0
+            )
+            if not len(selected):
+                status = "EMPTY"
+            elif effective_sample_size >= 25.0:
+                status = "QUALIFIED"
+            elif effective_sample_size >= 4.0:
+                status = "MARGINAL"
+            else:
+                status = "INSUFFICIENT_STATISTICS"
             return {
                 "record_count": int(mask.sum()),
                 "weighted_count": total,
                 "sum_weight_squared": square_sum,
-                "effective_sample_size": (
-                    float(total * total / square_sum)
-                    if square_sum > 0.0
-                    else 0.0
-                ),
+                "effective_sample_size": effective_sample_size,
                 "relative_counting_uncertainty": (
                     float(np.sqrt(square_sum) / total) if total > 0.0 else 0.0
                 ),
+                "status": status,
             }
 
         rows = []
@@ -701,10 +763,6 @@ def build_correlated_bank(
         )
     columns = {
         "record_id": np.arange(n, dtype=np.int64),
-        "history_id": np.asarray(
-            history_id if history_id is not None else np.full(n, -1),
-            dtype=np.int64,
-        ),
         "position_global_cm": positions,
         "position_local_cm": local_position,
         "direction_global": directions,
@@ -712,7 +770,6 @@ def build_correlated_bank(
         "outward_normal_global": record_normals,
         "energy_eV": energies,
         "weight": weights,
-        "weight_std_dev": np.zeros(n),
         "particle": particles,
         "particle_pdg": np.asarray(
             [PARTICLE_PDG[item] for item in particles], dtype=np.int64
@@ -721,9 +778,6 @@ def build_correlated_bank(
         "envelope_id": np.full(n, envelope.envelope_id, dtype=object),
         "crossing_sense": sense.astype(str),
         "surface_role": roles.astype(str),
-        "time_s": np.asarray(
-            time_s if time_s is not None else np.zeros(n), dtype=float
-        ),
         "mu": mu,
         "azimuth_rad": phi,
         "grazing": grazing,
@@ -731,10 +785,44 @@ def build_correlated_bank(
         "energy_group": eg,
         "angle_bin_id": mb * (len(p_edges) - 1) + pb,
     }
+    if history_id is not None:
+        columns["history_id"] = np.asarray(history_id, dtype=np.int64)
+    if time_s is not None:
+        columns["time_s"] = np.asarray(time_s, dtype=float)
+    source_fields = {
+        "position_global_cm",
+        "direction_global",
+        "energy_eV",
+        "weight",
+        "particle",
+        "surface_id",
+        "time_s",
+        "history_id",
+    }
+    field_availability = {}
+    for name in (*REQUIRED_RECORD_FIELDS, *OPTIONAL_RECORD_FIELDS):
+        available = name in columns
+        field_availability[name] = {
+            "available": available,
+            "origin": (
+                "source_provided"
+                if available and name in source_fields
+                else "derived" if available else "unavailable"
+            ),
+        }
+    field_availability["time_s"]["semantics"] = (
+        "prompt_particle_flight_time" if time_s is not None else "not_provided"
+    )
+    field_availability["weight_std_dev"][
+        "semantics"
+    ] = "per_record_uncertainty_not_exposed"
     return CorrelatedBoundaryBank(
         columns,
         {
-            "history_id_available": history_id is not None,
+            "field_availability": field_availability,
+            "canonical_record_policy": (
+                "raw source-bank transport contributions; no tally conditioning"
+            ),
             "surface_ids": list(envelope.surface_ids),
             "surface_patch_counts": {
                 str(surface.surface_id): (
@@ -762,10 +850,10 @@ def build_correlated_bank(
     )
 
 
-def condition_on_independent_current(
+def derive_tally_conditioned_bank(
     bank: CorrelatedBoundaryBank, current_rows: Iterable[Mapping[str, Any]]
 ) -> CorrelatedBoundaryBank:
-    """Scale joint records within tally strata without destroying correlation."""
+    """Create a noncanonical tally-conditioned consumer distribution."""
     c = bank.columns
     keys = list(
         zip(
@@ -817,7 +905,21 @@ def condition_on_independent_current(
     result = {name: np.array(value, copy=True) for name, value in c.items()}
     result["weight"] = weight
     result["weight_std_dev"] = std
-    output = CorrelatedBoundaryBank(result, dict(bank.metadata))
+    metadata = dict(bank.metadata)
+    availability = dict(metadata.get("field_availability", {}))
+    availability["weight_std_dev"] = {
+        "available": True,
+        "origin": "derived",
+        "semantics": "allocated tally stratum uncertainty; not measured per record",
+    }
+    metadata.update(
+        {
+            "field_availability": availability,
+            "dataset_role": "derived_tally_conditioned_distribution",
+            "canonical_bank": False,
+        }
+    )
+    output = CorrelatedBoundaryBank(result, metadata)
     error = abs(output.integrated_current - tally_total)
     if error > max(1e-12, 1e-10 * max(tally_total, 1.0)):
         raise RuntimeError("bank-to-tally current closure failed")
@@ -829,6 +931,13 @@ def condition_on_independent_current(
         }
     )
     return output
+
+
+def condition_on_independent_current(
+    bank: CorrelatedBoundaryBank, current_rows: Iterable[Mapping[str, Any]]
+) -> CorrelatedBoundaryBank:
+    """Backward-compatible alias for a derived, noncanonical distribution."""
+    return derive_tally_conditioned_bank(bank, current_rows)
 
 
 def conservative_projection(
@@ -884,6 +993,11 @@ def conservative_projection(
     si = {value: index for index, value in enumerate(surface_ids)}
     pi = {value: index for index, value in enumerate(particles)}
     xi = {value: index for index, value in enumerate(senses)}
+    record_sigma = c.get("weight_std_dev")
+    use_counting_model = (
+        bank.metadata.get("projection_uncertainty_model")
+        == "weighted_event_counting_approximation"
+    )
     for index in range(len(bank)):
         target = (
             si[int(c["surface_id"][index])],
@@ -894,7 +1008,10 @@ def conservative_projection(
             xi[str(c["crossing_sense"][index])],
         )
         mean[target] += c["weight"][index]
-        variance[target] += c["weight_std_dev"][index] ** 2
+        if record_sigma is not None:
+            variance[target] += record_sigma[index] ** 2
+        elif use_counting_model:
+            variance[target] += c["weight"][index] ** 2
     if not np.isclose(
         mean.sum(), bank.integrated_current, rtol=1e-12, atol=1e-12
     ):
@@ -969,6 +1086,13 @@ def write_handoff(
         "record_count": len(bank),
         "integrated_current": bank.integrated_current,
         "bank_metadata": bank.metadata,
+        "field_availability": bank.metadata.get("field_availability", {}),
+        "canonical_bank": bank.metadata.get("canonical_bank", True),
+        "canonical_record_policy": bank.metadata.get(
+            "canonical_record_policy",
+            "raw record weights; no hidden tally conditioning",
+        ),
+        "time_semantics": "prompt particle flight time, not irradiation time",
     }
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1017,9 +1141,11 @@ def read_handoff(
     path: str | Path,
 ) -> tuple[dict[str, Any], MagnetBoundaryEnvelope, CorrelatedBoundaryBank]:
     with h5py.File(path, "r") as source:
+        schema = str(source.attrs.get("schema", ""))
+        version = str(source.attrs.get("schema_version", ""))
         if (
-            source.attrs.get("schema") != SCHEMA_URI
-            or source.attrs.get("schema_version") != SCHEMA_VERSION
+            schema not in SUPPORTED_SCHEMA_URIS
+            or version not in SUPPORTED_SCHEMA_VERSIONS
         ):
             raise ValueError("incompatible magnet boundary-source schema")
         if not {"manifest_json", "records", "projection"}.issubset(source):

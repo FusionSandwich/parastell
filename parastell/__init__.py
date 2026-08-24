@@ -55,6 +55,30 @@ _LAZY_EXPORTS = {
         ".magnet_boundary_envelope",
         "condition_on_independent_current",
     ),
+    "derive_tally_conditioned_bank": (
+        ".magnet_boundary_envelope",
+        "derive_tally_conditioned_bank",
+    ),
+    "classify_crossing_bank": (
+        ".magnet_boundary_envelope",
+        "classify_crossing_bank",
+    ),
+    "canonical_dagmc_fingerprint": (
+        ".dagmc_envelope",
+        "canonical_dagmc_fingerprint",
+    ),
+    "write_radiation_field_bundle": (
+        ".magnet_radiation_field_bundle",
+        "write_radiation_field_bundle",
+    ),
+    "read_radiation_field_bundle": (
+        ".magnet_radiation_field_bundle",
+        "read_radiation_field_bundle",
+    ),
+    "export_volume_scalar_flux": (
+        ".magnet_volume_flux",
+        "export_volume_scalar_flux",
+    ),
     "conservative_projection": (
         ".magnet_boundary_envelope",
         "conservative_projection",

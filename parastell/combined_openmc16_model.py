@@ -15,6 +15,7 @@ from .dagmc_envelope import extract_closed_envelopes
 from .dagmc_envelope import require_watertight_dagmc
 from .dt_source import DTSourceAudit
 from .dt_source import build_temperature_dependent_mesh_source
+from .energy_groups import get_structure
 from .openmc16 import TallyInventory
 from .openmc16 import add_envelope_tallies
 from .openmc16 import configure_transport
@@ -67,6 +68,20 @@ def _magnet_material_tag(case_thickness_cm: float) -> str | tuple[str, str]:
         if case_thickness_cm > 0.0
         else "winding_pack"
     )
+
+
+def _production_volume_flux_axes(photon_edges_eV):
+    return {
+        "neutron_ccfe_709": (
+            "neutron",
+            get_structure("CCFE-709", particle="neutron").edges_eV,
+        ),
+        "neutron_ukaea_1102": (
+            "neutron",
+            get_structure("UKAEA-1102", particle="neutron").edges_eV,
+        ),
+        "photon_configured": ("photon", photon_edges_eV),
+    }
 
 
 def build_combined_geometry(
@@ -294,6 +309,7 @@ def prepare_combined_model(
         cell_ids=[winding_pack_volume_id],
         neutron_edges_eV=neutron_edges_eV,
         photon_edges_eV=photon_edges_eV,
+        volume_flux_energy_axes=_production_volume_flux_axes(photon_edges_eV),
     )
     metadata = {
         "geometry": asdict(geometry),
@@ -341,6 +357,7 @@ def prepare_combined_multimagnet_model(
         winding_pack_volume_id=volume_ids[0],
         neutron_edges_eV=neutron_edges_eV,
         photon_edges_eV=photon_edges_eV,
+        volume_flux_energy_axes=_production_volume_flux_axes(photon_edges_eV),
         particles_per_batch=particles_per_batch,
         batches=batches,
         plasma_direction_global=first_frame["plasma_direction_global"],

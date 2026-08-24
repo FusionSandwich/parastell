@@ -1,9 +1,27 @@
 # Closed magnet boundary source (v2)
 
-`parastell.magnet_boundary_source/v2.0.0` represents every crossing of a
+`parastell.magnet_boundary_source/v2.1.0` represents every retained crossing of a
 closed magnet winding-pack envelope as one correlated record. Position,
 direction, particle, energy, crossing sense, face role, and weight remain on
 the same record. The multidimensional projection is derived from those records
+without changing their weights. `v2.1.0` records whether optional fields such
+as OpenMC history identity and per-record uncertainty are actually available;
+unavailable fields are omitted instead of filled with fake values.
+
+Canonical record weights are raw OpenMC source-bank transport weights divided
+only by the exact source-history count. They are never rescaled to force tally
+agreement. A tally-conditioned consumer distribution is allowed only as a
+separate derived, noncanonical dataset with explicit provenance.
+
+The tally and surface bank from one OpenMC run share histories. Their comparison
+is therefore a **same-run integrity closure**, not an independent statistical
+closure. Their uncertainties are reported separately because the covariance is
+not available. Independent seeds are required for run-to-run reproducibility.
+
+Every file reports one completeness status: `COMPLETE_CROSSING_BANK`,
+`SAMPLED_CROSSING_BANK`, or `TRUNCATED_INVALID_BANK`. A cap-reached bank is
+invalid for qualified replay. `time_s` means prompt particle flight time, not
+irradiation, depletion, or cooling time.
 and must conserve their integrated partial current.
 
 The projection axes are fixed by the complete envelope plus the configured

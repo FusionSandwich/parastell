@@ -12,6 +12,7 @@ import numpy as np
 from .dagmc_envelope import DagmcEnvelope
 from .magnet_boundary_envelope import build_correlated_bank
 from .magnet_boundary_envelope import assign_adaptive_surface_patches
+from .magnet_boundary_envelope import classify_crossing_bank
 from .magnet_boundary_envelope import write_handoff
 from .openmc16 import PDG_PARTICLES
 
@@ -150,21 +151,23 @@ def _directional_current_from_statepoint(
 
 
 def _closure_quantity(tally, tally_std, bank, bank_std):
-    combined = float(np.hypot(tally_std, bank_std))
     difference = float(bank - tally)
+    tolerance = max(1.0e-14, 1.0e-10 * max(abs(tally), abs(bank), 1.0e-12))
     return {
         "tally_current_per_source": float(tally),
         "tally_std_dev": float(tally_std),
         "bank_current_per_source": float(bank),
         "bank_poisson_std_dev": float(bank_std),
         "difference": difference,
-        "combined_std_dev": combined,
-        "z_score": difference / combined if combined else 0.0,
-        "passes_three_sigma": abs(difference) <= 3.0 * combined + 1.0e-14,
+        "numerical_tolerance": tolerance,
+        "passes_integrity_tolerance": abs(difference) <= tolerance,
+        "statistical_relationship": (
+            "same OpenMC histories; covariance unavailable; uncertainties are not combined"
+        ),
     }
 
 
-def _independent_directional_closure(
+def _same_run_directional_integrity(
     statepoint_path,
     envelope,
     bank,
@@ -218,8 +221,8 @@ def _independent_directional_closure(
                     float(np.hypot(outgoing[3], incoming[3])),
                 ),
             }
-            surface["passes_three_sigma"] = all(
-                surface[name]["passes_three_sigma"]
+            surface["passes_integrity_tolerance"] = all(
+                surface[name]["passes_integrity_tolerance"]
                 for name in ("incoming", "outgoing", "net", "total_crossing")
             )
             by_surface.append(surface)
@@ -251,15 +254,17 @@ def _independent_directional_closure(
                 float(np.hypot(outgoing[3], incoming[3])),
             ),
         }
-        whole["passes_three_sigma"] = all(
-            whole[name]["passes_three_sigma"]
+        whole["passes_integrity_tolerance"] = all(
+            whole[name]["passes_integrity_tolerance"]
             for name in ("incoming", "outgoing", "net", "total_crossing")
         )
         closure[particle] = {
             "whole_envelope": whole,
             "by_surface": by_surface,
-            "passes_three_sigma": whole["passes_three_sigma"]
-            and all(value["passes_three_sigma"] for value in by_surface),
+            "passes_integrity_tolerance": whole["passes_integrity_tolerance"]
+            and all(
+                value["passes_integrity_tolerance"] for value in by_surface
+            ),
         }
     return closure
 
@@ -278,8 +283,12 @@ def export_openmc16_handoff(
     adaptive_patch_target_ess: float | None = None,
     adaptive_patch_minimum_records: int = 4,
     adaptive_patch_maximum_depth: int = 5,
+    surface_source_max_particles: int | None = None,
+    surface_source_max_files: int | None = None,
+    surface_source_sampling_applied: bool = False,
+    mpi_ranks: int | None = None,
 ) -> dict:
-    """Write a correlated v2 handoff and independent crossing closure."""
+    """Write raw correlated records and a same-run integrity comparison."""
     import openmc
 
     if histories <= 0:
@@ -296,6 +305,7 @@ def export_openmc16_handoff(
     if not arrays:
         raise ValueError("at least one surface-source file is required")
     records = np.concatenate(arrays)
+    stored_record_count = len(records)
     records, surface_ids = _select_envelope_records(
         records, envelope.envelope.surface_ids
     )
@@ -331,11 +341,7 @@ def export_openmc16_handoff(
             minimum_records=adaptive_patch_minimum_records,
             maximum_depth=adaptive_patch_maximum_depth,
         )
-    # Independent event-count uncertainty: summing these record contributions
-    # in quadrature yields sqrt(sum(w_i**2))/histories in each projected bin.
-    bank.columns["weight_std_dev"] = transport_weights.copy()
-
-    closure = _independent_directional_closure(
+    closure = _same_run_directional_integrity(
         statepoint_path,
         envelope,
         bank,
@@ -343,12 +349,29 @@ def export_openmc16_handoff(
         surface_ids,
         transport_weights,
     )
+    completeness = classify_crossing_bank(
+        stored_record_count=stored_record_count,
+        selected_record_count=len(records),
+        max_particles_per_file=surface_source_max_particles,
+        max_source_files=surface_source_max_files,
+        source_file_count=len(surface_source_paths),
+        mpi_ranks=mpi_ranks,
+        sampling_applied=surface_source_sampling_applied,
+    )
     bank.metadata.update(
         {
-            "independent_closure": closure,
+            "same_run_integrity_closure": closure,
+            "closure_semantics": (
+                "tally and bank are separate output mechanisms from the same histories"
+            ),
             "continuous_energy_authoritative": True,
             "continuous_direction_authoritative": True,
             "source_surface_sha256": source_hashes,
+            "projection_uncertainty_model": (
+                "weighted_event_counting_approximation"
+            ),
+            "surface_bank_completeness": completeness,
+            "canonical_bank": True,
         }
     )
     normalization = {
@@ -398,8 +421,12 @@ def export_openmc16_handoffs(
     adaptive_patch_target_ess: float | None = None,
     adaptive_patch_minimum_records: int = 4,
     adaptive_patch_maximum_depth: int = 5,
+    surface_source_max_particles: int | None = None,
+    surface_source_max_files: int | None = None,
+    surface_source_sampling_applied: bool = False,
+    mpi_ranks: int | None = None,
 ) -> dict:
-    """Write one independent correlated handoff for every selected magnet."""
+    """Write one raw correlated handoff for every selected magnet."""
     selected = tuple(envelopes)
     if not selected:
         raise ValueError("at least one closed magnet envelope is required")
@@ -428,6 +455,10 @@ def export_openmc16_handoffs(
             adaptive_patch_target_ess=adaptive_patch_target_ess,
             adaptive_patch_minimum_records=adaptive_patch_minimum_records,
             adaptive_patch_maximum_depth=adaptive_patch_maximum_depth,
+            surface_source_max_particles=surface_source_max_particles,
+            surface_source_max_files=surface_source_max_files,
+            surface_source_sampling_applied=surface_source_sampling_applied,
+            mpi_ranks=mpi_ranks,
         )
         outputs.append(
             {

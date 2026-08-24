@@ -14,6 +14,7 @@ import h5py
 import numpy as np
 import openmc
 
+from .dagmc_envelope import canonical_dagmc_fingerprint
 from .dagmc_envelope import discover_magnet_volumes
 from .dagmc_envelope import select_winding_pack_volumes
 from .magnet_spectral_handoff import (
@@ -29,6 +30,7 @@ from .hts_multilayer import (
     zero_response_library,
 )
 from .production_handoff import load_and_validate_no_port_configuration
+from .magnet_radiation_field_bundle import write_radiation_field_bundle
 
 
 _DEFAULT_MANIFEST = "magnet_spectral_handoff_manifest.json"
@@ -258,6 +260,53 @@ def _mpi_arguments(args: argparse.Namespace) -> list[str] | None:
 
 def _write_result(result: dict[str, Any]) -> None:
     print(json.dumps(result, indent=2, sort_keys=True))
+
+
+def _bundle(args: argparse.Namespace) -> dict[str, Any]:
+    """Assemble hash-bound neutral products from an explicit JSON specification."""
+    specification_path = args.spec.expanduser().resolve()
+    if not specification_path.is_file():
+        raise FileNotFoundError(specification_path)
+    specification = json.loads(specification_path.read_text(encoding="utf-8"))
+    required = {
+        "provenance",
+        "source",
+        "nuclear_data",
+        "materials",
+        "magnet_inventory",
+        "products",
+        "verification",
+    }
+    missing = required - set(specification)
+    if missing:
+        raise ValueError(f"bundle specification is missing {sorted(missing)}")
+    products = []
+    for item in specification["products"]:
+        product = dict(item)
+        product_path = Path(product["path"])
+        if not product_path.is_absolute():
+            product_path = specification_path.parent / product_path
+        product["path"] = product_path.resolve()
+        products.append(product)
+    fingerprint = canonical_dagmc_fingerprint(args.dagmc)
+    result = write_radiation_field_bundle(
+        args.output_dir,
+        provenance=specification["provenance"],
+        geometry={
+            "canonical_geometry_fingerprint": fingerprint[
+                "canonical_fingerprint"
+            ],
+            "raw_h5m_sha256": fingerprint["raw_h5m_sha256"],
+        },
+        source=specification["source"],
+        nuclear_data=specification["nuclear_data"],
+        materials=specification["materials"],
+        magnet_inventory=specification["magnet_inventory"],
+        products=products,
+        verification=specification["verification"],
+    )
+    _write_result(result)
+    return result
 
 
 def _prepare(args: argparse.Namespace) -> dict[str, Any]:
@@ -500,6 +549,8 @@ def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
     from .combined_openmc16_model import prepare_combined_multimagnet_model
     from .energy_groups import get_structure
     from .openmc16_export import export_openmc16_handoffs
+    from .dagmc_envelope import canonical_dagmc_fingerprint
+    from .magnet_volume_flux import export_volume_scalar_flux
 
     stellarator, geometry = build_combined_geometry(
         args.config,
@@ -556,9 +607,32 @@ def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
         physical_source_rate_per_s=args.physical_source_rate,
         parastell_commit=args.parastell_commit,
         source_definition_sha256=geometry.source_mesh_sha256,
+        surface_source_max_particles=int(args.particles) * int(args.batches),
+        surface_source_max_files=1,
+        mpi_ranks=1,
         adaptive_patch_target_ess=args.adaptive_patch_target_ess,
         adaptive_patch_minimum_records=args.adaptive_patch_minimum_records,
         adaptive_patch_maximum_depth=args.adaptive_patch_maximum_depth,
+    )
+    fingerprint = canonical_dagmc_fingerprint(
+        geometry.dagmc_path,
+        faceting_tolerances={
+            "minimum_mesh_size_cm": args.minimum_mesh_size_cm,
+            "maximum_mesh_size_cm": args.maximum_mesh_size_cm,
+        },
+    )
+    cell_volumes = {
+        int(item["volume_id"]): float(item["volume_cm3"])
+        for item in fingerprint["canonical_geometry"]["volumes"]
+        if int(item["volume_id"]) in volume_ids
+    }
+    volume_flux = export_volume_scalar_flux(
+        output_dir / "volume_flux" / "magnet_volume_scalar_flux.h5",
+        statepoint_path=statepoint_path,
+        tally_names=prepared.tally_inventory.volume_flux,
+        cell_volumes_cm3=cell_volumes,
+        physical_source_rate_per_s=args.physical_source_rate,
+        magnet_ids_by_cell={value: f"magnet-{value}" for value in volume_ids},
     )
     result = {
         "histories": int(args.particles) * int(args.batches),
@@ -569,6 +643,12 @@ def _run_combined(args: argparse.Namespace) -> dict[str, Any]:
         "surface_sources": [str(path.resolve()) for path in surface_sources],
         "geometry": json.loads(json.dumps(prepared.metadata, default=str)),
         "collection": collection,
+        "geometry_fingerprint": {
+            key: value
+            for key, value in fingerprint.items()
+            if key != "canonical_geometry"
+        },
+        "volume_scalar_flux": volume_flux,
     }
     report = output_dir / "combined_transport_report.json"
     report.write_text(
@@ -802,6 +882,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--adaptive-patch-maximum-depth", type=int, default=5
     )
     run_combined.set_defaults(handler=_run_combined)
+
+    bundle = subparsers.add_parser(
+        "bundle",
+        help="assemble hash-bound neutral radiation products for downstream solvers",
+    )
+    bundle.add_argument("--spec", required=True, type=Path)
+    bundle.add_argument("--dagmc", required=True, type=Path)
+    bundle.add_argument("--output-dir", required=True, type=Path)
+    bundle.set_defaults(handler=_bundle)
 
     prepare = subparsers.add_parser(
         "prepare",
