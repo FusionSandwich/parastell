@@ -1386,9 +1386,12 @@ def _align_boundary_cycle(points, aperture_points, anchor, reference, normal):
             f"{len(points)} != {len(aperture)}"
         )
 
-    def projected_area(values):
+    def projected_coordinates(values):
         relative = values - anchor
-        uv = np.column_stack((relative @ reference, relative @ normal))
+        return np.column_stack((relative @ reference, relative @ normal))
+
+    def projected_area(values):
+        uv = projected_coordinates(values)
         return float(
             np.sum(
                 uv[:, 0] * np.roll(uv[:, 1], -1)
@@ -1399,7 +1402,21 @@ def _align_boundary_cycle(points, aperture_points, anchor, reference, normal):
 
     if projected_area(points) < 0.0:
         points = points[::-1]
-    start = int(np.argmin(np.linalg.norm(points - aperture[0], axis=1)))
+    point_uv = projected_coordinates(points)
+    aperture_uv = projected_coordinates(aperture)
+    # A single nearest 3-D anchor can choose the wrong cyclic correspondence
+    # when the radial coordinate varies around a shaped VMEC surface. Match
+    # the complete cycles in the port cross-section instead, where the two
+    # boundaries are intended to be nested.
+    costs = [
+        float(
+            np.sum(
+                (np.roll(point_uv, -shift, axis=0) - aperture_uv) ** 2
+            )
+        )
+        for shift in range(len(points))
+    ]
+    start = int(np.argmin(costs))
     return np.roll(points, -start, axis=0)
 
 
@@ -1450,7 +1467,12 @@ def _radial_surface_triangles(
             b = grid[phi_index + 1, theta_index]
             c = grid[phi_index + 1, next_theta]
             d = grid[phi_index, next_theta]
-            triangles.extend((np.asarray((a, b, c)), np.asarray((a, c, d))))
+            # Split every surface on the same b--d parameter-space diagonal.
+            # The opposite a--c split can make independently evaluated,
+            # nested VMEC offsets cross after faceting even though the
+            # continuous surfaces are ordered. Keeping one deterministic
+            # diagonal also preserves common topology across the ledger.
+            triangles.extend((np.asarray((a, b, d)), np.asarray((b, c, d))))
     if aperture_loop is not None:
         indices = _rectangle_boundary_indices(phi_values, theta_values, bounds)
         square = np.asarray([grid[index] for index in indices])

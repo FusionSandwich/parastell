@@ -329,7 +329,7 @@ def _artifact_records(directory, external_root=None):
 
 def run_matrix(args):
     root = Path(__file__).resolve().parents[1]
-    expected_branch = "ports/actual-plc-diagnostic-20260823"
+    expected_branch = "ports/actual-plc-repair-20260824"
     try:
         branch = _git(root, "branch", "--show-current")
         head = _git(root, "rev-parse", "HEAD")

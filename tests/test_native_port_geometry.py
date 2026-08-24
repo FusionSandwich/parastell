@@ -16,7 +16,12 @@ from parastell.dagmc_assembly import (
     close_with_graveyard,
     ensure_geometry_names,
 )
-from parastell.native_port_geometry import _box_triangles, _disk_triangles
+from parastell.native_port_geometry import (
+    _align_boundary_cycle,
+    _box_triangles,
+    _disk_triangles,
+    _radial_surface_triangles,
+)
 from parastell.utils import combine_dagmc_models
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -60,6 +65,52 @@ def test_nonconvex_sector_cap_triangulation_stays_inside_boundary():
     assert len(triangles) == len(points) - 3
     assert triangle_area == pytest.approx(5.0)
     assert min(signed_z) > 0.0
+
+
+def test_radial_quads_use_shared_safe_parameter_diagonal():
+    grid = np.asarray(
+        (
+            ((0.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+            ((1.0, 0.0, 0.0), (1.0, 1.0, 0.0)),
+        )
+    )
+    triangles = _radial_surface_triangles(
+        grid,
+        np.asarray((0.0, 1.0)),
+        np.asarray((0.0, 1.0)),
+    )
+    shared_diagonal = {tuple(grid[1, 0]), tuple(grid[0, 1])}
+    first_cell = triangles[:2]
+    assert shared_diagonal.issubset(set(map(tuple, first_cell[0])))
+    assert shared_diagonal.issubset(set(map(tuple, first_cell[1])))
+
+
+def test_patch_boundary_alignment_uses_complete_transverse_cycle():
+    aperture = np.asarray(
+        (
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (-1.0, 0.0, 0.0),
+            (0.0, -1.0, 0.0),
+            (1.0, 0.0, 0.0),
+        )
+    )
+    boundary = np.asarray(
+        (
+            (1.0, -0.9, 7.0),
+            (2.0, 0.0, 6.0),
+            (0.0, 2.0, 5.0),
+            (-2.0, 0.0, 4.0),
+        )
+    )
+    aligned = _align_boundary_cycle(
+        boundary,
+        aperture,
+        np.zeros(3),
+        np.asarray((1.0, 0.0, 0.0)),
+        np.asarray((0.0, 1.0, 0.0)),
+    )
+    assert np.array_equal(aligned, np.roll(boundary, -1, axis=0))
 
 
 @pytest.mark.parametrize(
@@ -195,7 +246,7 @@ def test_native_surface_complex_is_closed_and_unique():
     result = complex_.validate()
 
     assert complex_.topology_summary()["sha256"] == (
-        "5bbb1d6f985e80951ed3179ff06ae883847453533e1309e6d41b74a379d0fc2b"
+        "ab8ae4d98b2c1e8484eea9c60b05725f2165334ba76775ddfa45bd19a2f891a6"
     )
 
     assert result.duplicate_facet_count == 0
