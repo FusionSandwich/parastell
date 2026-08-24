@@ -19,6 +19,7 @@ from parastell.plc_diagnostic import (
     file_record,
     fresh_directory,
     inspect_edge_facet_intersections,
+    process_failure_record,
     serializable_intersection_report,
     terminal_classification,
     write_json,
@@ -134,6 +135,19 @@ def test_exception_capture_retains_type_message_and_traceback():
     assert record["type"] == "RuntimeError"
     assert record["message"] == "frozen failure"
     assert "raise RuntimeError" in record["traceback"]
+
+
+def test_native_process_signal_is_captured_without_losing_identity():
+    record = process_failure_record(-11, "native stderr")
+    assert record == {
+        "type": "ProcessSignalFailure",
+        "message": (
+            "Diagnostic child terminated by signal 11 during Gmsh discrete "
+            "PLC tetrahedralization"
+        ),
+        "traceback": "native stderr",
+        "return_code": -11,
+    }
 
 
 def test_entity_ownership_and_known_intersection_are_reported():

@@ -38,6 +38,7 @@ from parastell.plc_diagnostic import (
     file_record,
     fresh_directory,
     inspect_edge_facet_intersections,
+    process_failure_record,
     serializable_intersection_report,
     terminal_classification,
     write_json,
@@ -217,25 +218,8 @@ def run_single_case(root, output_dir, case_name, repository_sha):
             output_dir / "minimal_implicated_facets.vtk", report
         )
 
-    downstream_error = None
-    mesh_validation = None
-    try:
-        mesh = complex_.tetrahedralize(
-            MIN_MESH_SIZE_CM,
-            MAX_MESH_SIZE_CM,
-            terminal_output=True,
-            algorithm_3d=MESH_ALGORITHM_3D,
-        )
-        mesh_validation = mesh.validate().to_dict()
-    except Exception as error:
-        downstream_error = exception_record(error)
-
-    classification = classify_case(
-        case.port, report["intersection_count"], downstream_error
-    )
     surface_counts = Counter(surface.kind for surface in complex_.surfaces)
-    artifacts = [path for path in (report_path, vtk_path) if path is not None]
-    result = {
+    pre_gmsh_result = {
         "schema_version": "1.0",
         "scope": SCOPE,
         "case": case.to_dict(),
@@ -265,6 +249,34 @@ def run_single_case(root, output_dir, case_name, repository_sha):
         ),
         "minimal_vtk": file_record(vtk_path) if vtk_path else None,
         "downstream_operation": "Gmsh discrete PLC tetrahedralization",
+    }
+    pre_gmsh_path = write_json(
+        output_dir / "pre_gmsh_result.json", pre_gmsh_result
+    )
+
+    downstream_error = None
+    mesh_validation = None
+    try:
+        mesh = complex_.tetrahedralize(
+            MIN_MESH_SIZE_CM,
+            MAX_MESH_SIZE_CM,
+            terminal_output=True,
+            algorithm_3d=MESH_ALGORITHM_3D,
+        )
+        mesh_validation = mesh.validate().to_dict()
+    except Exception as error:
+        downstream_error = exception_record(error)
+
+    classification = classify_case(
+        case.port, report["intersection_count"], downstream_error
+    )
+    artifacts = [
+        path
+        for path in (report_path, vtk_path, pre_gmsh_path)
+        if path is not None
+    ]
+    result = {
+        **pre_gmsh_result,
         "downstream_error": downstream_error,
         "gmsh_log": [],
         "mesh_validation": mesh_validation,
@@ -387,9 +399,36 @@ def run_matrix(args):
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
         payload_path = case_dir / "case_result.json"
+        pre_gmsh_path = case_dir / "pre_gmsh_result.json"
         payload = None
         if payload_path.exists():
             payload = json.loads(payload_path.read_text())
+        elif pre_gmsh_path.exists():
+            payload = json.loads(pre_gmsh_path.read_text())
+            failure = process_failure_record(
+                completed.returncode, completed.stderr
+            )
+            classification = classify_case(
+                case.port, payload["intersection_count"], failure
+            )
+            payload.update(
+                {
+                    "downstream_error": failure,
+                    "gmsh_log": [],
+                    "mesh_validation": None,
+                    "classification": classification,
+                    "passed": False,
+                    "elapsed_seconds": None,
+                    "process_return_code": completed.returncode,
+                    "artifacts": [
+                        file_record(path)
+                        for path in sorted(case_dir.iterdir())
+                        if path.is_file() and path != payload_path
+                    ],
+                }
+            )
+            write_json(payload_path, payload)
+        if payload is not None:
             case_results.append(payload)
         receipt = {
             "schema_version": "1.0",

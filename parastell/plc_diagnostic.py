@@ -103,6 +103,25 @@ def exception_record(error):
     }
 
 
+def process_failure_record(return_code, stderr):
+    """Represent a child-process exit, including native-code signals."""
+    if return_code < 0:
+        failure_type = "ProcessSignalFailure"
+        message = (
+            f"Diagnostic child terminated by signal {-return_code} during "
+            "Gmsh discrete PLC tetrahedralization"
+        )
+    else:
+        failure_type = "DiagnosticProcessFailure"
+        message = f"Diagnostic child exited with return code {return_code}"
+    return {
+        "type": failure_type,
+        "message": message,
+        "traceback": stderr,
+        "return_code": return_code,
+    }
+
+
 def _unit_normal(triangle):
     normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
     length = np.linalg.norm(normal)
