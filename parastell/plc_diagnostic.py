@@ -345,50 +345,41 @@ def _port_distances(complex_, point):
         if loop.outer_points is not None
     ]
     bounds = None
-    if loops and complex_.radial_data.get("radial_loop_indices"):
-        loop_index = next(
-            (
-                index
-                for index in complex_.radial_data["radial_loop_indices"]
-                if index is not None
-            ),
-            None,
+    if complex_.radial_data.get("grids"):
+        phi_values = complex_.radial_data["phi_values"]
+        theta_values = complex_.radial_data["theta_values"]
+        port = complex_.port
+        anchor_spec = port.placement.surface_anchor
+        phi = np.deg2rad(anchor_spec.toroidal_angle)
+        theta = np.deg2rad(anchor_spec.poloidal_angle)
+        surface = complex_.source_model.native_radial_stack()[0][1]
+        delta = 1.0e-5
+        phi_speed = np.linalg.norm(
+            surface.evaluate(phi + delta, theta)
+            - surface.evaluate(phi - delta, theta)
+        ) / (2.0 * delta)
+        theta_speed = np.linalg.norm(
+            surface.evaluate(phi, theta + delta)
+            - surface.evaluate(phi, theta - delta)
+        ) / (2.0 * delta)
+        half_width = (
+            complex_.source_model._port_aperture_half_width(port) * 1.8
         )
-        if loop_index is not None:
-            phi_values = complex_.radial_data["phi_values"]
-            theta_values = complex_.radial_data["theta_values"]
-            port = complex_.port
-            anchor_spec = port.placement.surface_anchor
-            phi = np.deg2rad(anchor_spec.toroidal_angle)
-            theta = np.deg2rad(anchor_spec.poloidal_angle)
-            surface = complex_.source_model.native_radial_stack()[0][1]
-            delta = 1.0e-5
-            phi_speed = np.linalg.norm(
-                surface.evaluate(phi + delta, theta)
-                - surface.evaluate(phi - delta, theta)
-            ) / (2.0 * delta)
-            theta_speed = np.linalg.norm(
-                surface.evaluate(phi, theta + delta)
-                - surface.evaluate(phi, theta - delta)
-            ) / (2.0 * delta)
-            half_width = (
-                complex_.source_model._port_aperture_half_width(port) * 1.8
-            )
-            angular_bounds = (
-                phi - half_width / phi_speed,
-                phi + half_width / phi_speed,
-                theta - half_width / theta_speed,
-                theta + half_width / theta_speed,
-            )
-            indices = _rectangle_boundary_indices(
-                phi_values, theta_values, angular_bounds
-            )
-            boundary_distances = []
-            for grid in complex_.radial_data["grids"]:
-                boundary = np.asarray([grid[index] for index in indices])
-                boundary = np.vstack((boundary, boundary[0]))
-                boundary_distances.append(_polyline_distance(point, boundary))
-            bounds = min(boundary_distances)
+        angular_bounds = (
+            phi - half_width / phi_speed,
+            phi + half_width / phi_speed,
+            theta - half_width / theta_speed,
+            theta + half_width / theta_speed,
+        )
+        indices = _rectangle_boundary_indices(
+            phi_values, theta_values, angular_bounds
+        )
+        boundary_distances = []
+        for grid in complex_.radial_data["grids"]:
+            boundary = np.asarray([grid[index] for index in indices])
+            boundary = np.vstack((boundary, boundary[0]))
+            boundary_distances.append(_polyline_distance(point, boundary))
+        bounds = min(boundary_distances)
     return {
         "aperture_boundary_cm": aperture,
         "liner_boundary_cm": min(liner_values) if liner_values else None,

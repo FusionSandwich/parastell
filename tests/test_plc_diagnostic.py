@@ -13,6 +13,7 @@ from parastell.native_port_geometry import (
 )
 from parastell.plc_diagnostic import (
     CASE_MATRIX,
+    _port_distances,
     classify_case,
     entity_ledger,
     exception_record,
@@ -148,6 +149,63 @@ def test_native_process_signal_is_captured_without_losing_identity():
         "traceback": "native stderr",
         "return_code": -11,
     }
+
+
+def test_unstitched_comparison_grid_reports_patch_boundary_distance():
+    class Surface:
+        @staticmethod
+        def evaluate(phi, theta):
+            return np.asarray((phi, theta, 0.0))
+
+    values = np.asarray((-1.8, 0.0, 1.8))
+    grid = np.asarray(
+        [[Surface.evaluate(phi, theta) for theta in values] for phi in values]
+    )
+    loop = SimpleNamespace(
+        inner_points=np.asarray(
+            (
+                (-1.0, -1.0, 0.0),
+                (1.0, -1.0, 0.0),
+                (1.0, 1.0, 0.0),
+                (-1.0, 1.0, 0.0),
+                (-1.0, -1.0, 0.0),
+            )
+        ),
+        outer_points=np.asarray(
+            (
+                (-1.2, -1.2, 0.0),
+                (1.2, -1.2, 0.0),
+                (1.2, 1.2, 0.0),
+                (-1.2, 1.2, 0.0),
+                (-1.2, -1.2, 0.0),
+            )
+        ),
+    )
+    source_model = SimpleNamespace(
+        native_radial_stack=lambda: (("inner", Surface()),),
+        _port_aperture_half_width=lambda _port: 1.0,
+    )
+    complex_ = SimpleNamespace(
+        loops=(loop,),
+        radial_data={
+            "grids": [grid],
+            "phi_values": values,
+            "theta_values": values,
+            "radial_loop_indices": [None],
+        },
+        port=SimpleNamespace(
+            placement=SimpleNamespace(
+                surface_anchor=SimpleNamespace(
+                    toroidal_angle=0.0, poloidal_angle=0.0
+                )
+            )
+        ),
+        source_model=source_model,
+    )
+    distances = _port_distances(complex_, np.zeros(3))
+    assert distances["aperture_boundary_cm"] == pytest.approx(1.0)
+    assert distances["liner_boundary_cm"] == pytest.approx(1.2)
+    assert distances["patch_boundary_cm"] == pytest.approx(1.8)
 
 
 def test_entity_ownership_and_known_intersection_are_reported():
