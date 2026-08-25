@@ -163,7 +163,7 @@ def test_activation_metadata_preserves_ids_mass_hashes_and_mesh_caveat(
     ]
     assert (
         mesh["activation_readiness"]["post_transport"]["status"]
-        == "NOT_DEPLETABLE_MATERIAL_FRACTIONS_REQUIRED"
+        == "NOT_DEPLETABLE_COMPONENT_INTERSECTION_VOLUMES_REQUIRED"
     )
 
     output = write_activation_ready_metadata(
@@ -191,6 +191,38 @@ def test_explicit_bin_fractions_and_nonoverlap_qualify_each_interface():
     assert mesh["material_resolution"]["fractions_available"]
     assert mesh["material_resolution"]["materially_mixed_bins_possible"]
     assert artifact["activation_readiness"]["direct_r2s_mesh_metadata_ready"]
+    assert artifact["activation_readiness"][
+        "post_transport_mesh_metadata_ready"
+    ]
+
+
+def test_qualified_component_intersection_volumes_enable_local_activation():
+    arguments = inputs(nonoverlap_qualified=True)
+    arguments["local_mesh_manifest"]["cell_filter_applied"] = True
+    arguments["mesh_material_intersection_artifact_sha256"] = "7" * 64
+    arguments["mesh_material_intersection_volumes_by_magnet"] = {
+        MAGNET_ID: {
+            "component_role": "winding_pack",
+            "dagmc_volume_id": 101,
+            "openmc_cell_id": 501,
+            "material_tag": "winding_pack",
+            "openmc_material_id": 41,
+            "intersection_volume_cm3": [8.0, 2.0],
+            "standard_deviation_cm3": [0.0, 0.1],
+            "bin_status": ["QUALIFIED", "QUALIFIED"],
+            "status": "QUALIFIED",
+        }
+    }
+    artifact = build_activation_ready_metadata(**arguments)
+    mesh = artifact["local_meshes"][0]
+
+    assert mesh["component_intersection_volumes"]["per_bin_volume_cm3"] == [
+        8.0,
+        2.0,
+    ]
+    assert mesh["activation_readiness"]["post_transport"][
+        "post_transport_depletable"
+    ]
     assert artifact["activation_readiness"][
         "post_transport_mesh_metadata_ready"
     ]

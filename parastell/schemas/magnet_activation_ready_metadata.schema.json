@@ -341,6 +341,60 @@
       },
       "additionalProperties": false
     },
+    "component_intersection_volumes": {
+      "type": "object",
+      "required": [
+        "artifact_sha256",
+        "component_role",
+        "dagmc_volume_id",
+        "openmc_cell_id",
+        "material_tag",
+        "openmc_material_id",
+        "per_bin_volume_cm3",
+        "per_bin_standard_deviation_cm3",
+        "bin_status",
+        "positive_intersection_bin_count",
+        "total_intersection_volume_cm3",
+        "volume_basis",
+        "status"
+      ],
+      "properties": {
+        "artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "component_role": {"const": "winding_pack"},
+        "dagmc_volume_id": {"type": "integer", "minimum": 1},
+        "openmc_cell_id": {"type": "integer", "minimum": 1},
+        "material_tag": {"type": "string", "minLength": 1},
+        "openmc_material_id": {"type": "integer", "minimum": 1},
+        "per_bin_volume_cm3": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "number", "minimum": 0}
+        },
+        "per_bin_standard_deviation_cm3": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "number", "minimum": 0}
+        },
+        "bin_status": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"enum": ["QUALIFIED", "EMPTY_INTERSECTION"]}
+        },
+        "positive_intersection_bin_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total_intersection_volume_cm3": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "volume_basis": {
+          "const": "qualified_component_intersection_volume"
+        },
+        "status": {"const": "QUALIFIED"}
+      },
+      "additionalProperties": false
+    },
     "local_mesh": {
       "type": "object",
       "required": [
@@ -365,6 +419,12 @@
         },
         "volume_basis": {"const": "full_geometric_voxel_volume"},
         "material_resolution": {"$ref": "#/$defs/material_resolution"},
+        "component_intersection_volumes": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/component_intersection_volumes"}
+          ]
+        },
         "activation_readiness": {
           "type": "object",
           "required": ["direct_r2s", "post_transport"],

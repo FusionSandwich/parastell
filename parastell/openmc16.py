@@ -274,6 +274,7 @@ def add_envelope_tallies(
                 name=f"pstl_magnet_{int(cell)}_{particle}_local_mesh_flux"
             )
             mesh_flux.filters = [
+                openmc.CellFilter([int(cell)]),
                 mesh_filter,
                 openmc.ParticleFilter([particle]),
                 openmc.EnergyFilter(edges),
@@ -285,6 +286,7 @@ def add_envelope_tallies(
                 name=f"pstl_magnet_{int(cell)}_{particle}_local_mesh_heating"
             )
             mesh_heat.filters = [
+                openmc.CellFilter([int(cell)]),
                 mesh_filter,
                 openmc.ParticleFilter([particle]),
                 openmc.EnergyFilter(edges),

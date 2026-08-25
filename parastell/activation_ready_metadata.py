@@ -355,6 +355,8 @@ def _mesh(
     material_tags: set[str],
     cell_filter_applied: bool,
     nonoverlap_qualified: bool,
+    intersection: Mapping[str, Any] | None,
+    intersection_artifact_sha256: str | None,
 ) -> dict[str, Any]:
     definition = _mesh_definition(value, magnet_id)
     bin_count = int(definition["bin_count"])
@@ -368,7 +370,78 @@ def _mesh(
     # A cell-filtered mesh still needs exact material/intersection fractions;
     # the filter alone cannot prove that a full geometric voxel is homogeneous.
     mixed = any(len(row) > 1 for row in rows) if rows is not None else True
-    post_ready = fractions_available
+    intersection_metadata = None
+    if intersection is not None:
+        if intersection_artifact_sha256 is None:
+            raise ValueError(
+                "mesh intersection volumes require their artifact SHA-256"
+            )
+        intersection_artifact_sha256 = _sha256(
+            intersection_artifact_sha256,
+            "material-intersection volume artifact SHA-256",
+        )
+        role = intersection.get("component_role")
+        material_tag = intersection.get("material_tag")
+        if role != "winding_pack" or material_tag not in material_tags:
+            raise ValueError(
+                f"{magnet_id!r} intersection component identity is invalid"
+            )
+        volumes = [
+            float(value)
+            for value in intersection.get("intersection_volume_cm3", [])
+        ]
+        deviations = [
+            float(value)
+            for value in intersection.get("standard_deviation_cm3", [])
+        ]
+        statuses = list(intersection.get("bin_status", []))
+        if (
+            len(volumes) != bin_count
+            or len(deviations) != bin_count
+            or len(statuses) != bin_count
+            or any(
+                not math.isfinite(value) or value < 0.0 for value in volumes
+            )
+            or any(
+                not math.isfinite(value) or value < 0.0 for value in deviations
+            )
+            or not any(value > 0.0 for value in volumes)
+            or intersection.get("status") != "QUALIFIED"
+        ):
+            raise ValueError(
+                f"{magnet_id!r} material-intersection volumes are not qualified"
+            )
+        intersection_metadata = {
+            "artifact_sha256": intersection_artifact_sha256,
+            "component_role": role,
+            "dagmc_volume_id": _positive_int(
+                intersection.get("dagmc_volume_id"),
+                "intersection DAGMC volume ID",
+            ),
+            "openmc_cell_id": _positive_int(
+                intersection.get("openmc_cell_id"),
+                "intersection OpenMC cell ID",
+            ),
+            "material_tag": material_tag,
+            "openmc_material_id": _positive_int(
+                intersection.get("openmc_material_id"),
+                "intersection OpenMC material ID",
+            ),
+            "per_bin_volume_cm3": volumes,
+            "per_bin_standard_deviation_cm3": deviations,
+            "bin_status": statuses,
+            "positive_intersection_bin_count": sum(
+                value > 0.0 for value in volumes
+            ),
+            "total_intersection_volume_cm3": float(sum(volumes)),
+            "volume_basis": "qualified_component_intersection_volume",
+            "status": "QUALIFIED",
+        }
+    elif intersection_artifact_sha256 is not None:
+        raise ValueError(
+            "material-intersection artifact SHA-256 was supplied without volumes"
+        )
+    post_ready = fractions_available or intersection_metadata is not None
     direct_ready = nonoverlap_qualified
     return {
         "mesh_id": f"{magnet_id}:local_mesh",
@@ -389,6 +462,7 @@ def _mesh(
                 else "MATERIAL_FRACTIONS_UNAVAILABLE"
             ),
         },
+        "component_intersection_volumes": intersection_metadata,
         "activation_readiness": {
             "direct_r2s": {
                 "metadata_ready": direct_ready,
@@ -411,7 +485,7 @@ def _mesh(
                     "METADATA_READY_REQUIRES_BOUND_SCALAR_FLUX_MICROXS_"
                     "CHAIN_AND_SCHEDULE"
                     if post_ready
-                    else "NOT_DEPLETABLE_MATERIAL_FRACTIONS_REQUIRED"
+                    else "NOT_DEPLETABLE_COMPONENT_INTERSECTION_VOLUMES_REQUIRED"
                 ),
             },
         },
@@ -430,6 +504,10 @@ def build_activation_ready_metadata(
     mesh_material_fractions_by_magnet: (
         Mapping[str, Sequence[Mapping[str, float]]] | None
     ) = None,
+    mesh_material_intersection_volumes_by_magnet: (
+        Mapping[str, Mapping[str, Any]] | None
+    ) = None,
+    mesh_material_intersection_artifact_sha256: str | None = None,
     flux_quantity: str = "volume_scalar_flux",
     flux_estimator: str = "track_length",
 ) -> dict[str, Any]:
@@ -533,6 +611,19 @@ def build_activation_ready_metadata(
     fractions_by_magnet = dict(mesh_material_fractions_by_magnet or {})
     if set(fractions_by_magnet) - set(magnet_ids):
         raise ValueError("material fractions reference unknown local meshes")
+    intersections_by_magnet = dict(
+        mesh_material_intersection_volumes_by_magnet or {}
+    )
+    if set(intersections_by_magnet) - set(magnet_ids):
+        raise ValueError(
+            "material-intersection volumes reference unknown local meshes"
+        )
+    if intersections_by_magnet and set(intersections_by_magnet) != set(
+        magnet_ids
+    ):
+        raise ValueError(
+            "material-intersection volumes must cover every local mesh"
+        )
     material_tags = set(
         _mapping(
             material_manifest.get("material_tags"), "material manifest tags"
@@ -546,6 +637,10 @@ def build_activation_ready_metadata(
             material_tags=material_tags,
             cell_filter_applied=cell_filter_applied,
             nonoverlap_qualified=nonoverlap,
+            intersection=intersections_by_magnet.get(magnet_id),
+            intersection_artifact_sha256=(
+                mesh_material_intersection_artifact_sha256
+            ),
         )
         for magnet_id in sorted(magnet_ids)
     ]
@@ -748,20 +843,21 @@ def _validate_definition(value: Mapping[str, Any], magnet_id: str) -> None:
 
 
 def _validate_mesh(value: Mapping[str, Any], material_tags: set[str]) -> None:
-    _require_keys(
-        value,
-        {
-            "mesh_id",
-            "magnet_id",
-            "definition",
-            "bin_count",
-            "geometric_bin_volumes_cm3",
-            "volume_basis",
-            "material_resolution",
-            "activation_readiness",
-        },
-        "local mesh",
-    )
+    base_keys = {
+        "mesh_id",
+        "magnet_id",
+        "definition",
+        "bin_count",
+        "geometric_bin_volumes_cm3",
+        "volume_basis",
+        "material_resolution",
+        "activation_readiness",
+    }
+    if set(value) not in (
+        base_keys,
+        base_keys | {"component_intersection_volumes"},
+    ):
+        raise ValueError("local mesh keys are invalid")
     magnet_id = value["magnet_id"]
     if not isinstance(magnet_id, str) or not magnet_id:
         raise ValueError("local mesh magnet ID is invalid")
@@ -819,12 +915,113 @@ def _validate_mesh(value: Mapping[str, Any], material_tags: set[str]) -> None:
     )
     if resolution["status"] != expected_status:
         raise ValueError("mesh material resolution status is inconsistent")
+    intersection = value.get("component_intersection_volumes")
+    intersection_ready = False
+    if intersection is not None:
+        intersection = _mapping(intersection, "component-intersection volumes")
+        _require_keys(
+            intersection,
+            {
+                "artifact_sha256",
+                "component_role",
+                "dagmc_volume_id",
+                "openmc_cell_id",
+                "material_tag",
+                "openmc_material_id",
+                "per_bin_volume_cm3",
+                "per_bin_standard_deviation_cm3",
+                "bin_status",
+                "positive_intersection_bin_count",
+                "total_intersection_volume_cm3",
+                "volume_basis",
+                "status",
+            },
+            "component-intersection volumes",
+        )
+        _sha256(
+            intersection["artifact_sha256"],
+            "material-intersection volume artifact SHA-256",
+        )
+        if (
+            intersection["component_role"] != "winding_pack"
+            or intersection["material_tag"] not in material_tags
+            or intersection["volume_basis"]
+            != "qualified_component_intersection_volume"
+            or intersection["status"] != "QUALIFIED"
+        ):
+            raise ValueError(
+                "component-intersection volume identity is invalid"
+            )
+        for key in (
+            "dagmc_volume_id",
+            "openmc_cell_id",
+            "openmc_material_id",
+        ):
+            _positive_int(intersection[key], key)
+        intersection_volumes = intersection["per_bin_volume_cm3"]
+        intersection_deviations = intersection[
+            "per_bin_standard_deviation_cm3"
+        ]
+        intersection_statuses = intersection["bin_status"]
+        if not all(
+            isinstance(values, list) and len(values) == count
+            for values in (
+                intersection_volumes,
+                intersection_deviations,
+                intersection_statuses,
+            )
+        ):
+            raise ValueError(
+                "component-intersection bin metadata is incomplete"
+            )
+        normalized_volumes = []
+        normalized_deviations = []
+        for raw_volume, raw_deviation, raw_geometric in zip(
+            intersection_volumes,
+            intersection_deviations,
+            volumes,
+        ):
+            volume = float(raw_volume)
+            deviation = float(raw_deviation)
+            if (
+                not math.isfinite(volume)
+                or not math.isfinite(deviation)
+                or volume < 0.0
+                or deviation < 0.0
+                or volume > float(raw_geometric) * (1.0 + 1.0e-10)
+            ):
+                raise ValueError("component-intersection volume is invalid")
+            normalized_volumes.append(volume)
+            normalized_deviations.append(deviation)
+        if not any(value > 0.0 for value in normalized_volumes):
+            raise ValueError("component-intersection volumes are all empty")
+        if any(
+            value not in {"QUALIFIED", "EMPTY_INTERSECTION"}
+            for value in intersection_statuses
+        ):
+            raise ValueError(
+                "component-intersection bin status is unqualified"
+            )
+        positive_count = sum(value > 0.0 for value in normalized_volumes)
+        if intersection["positive_intersection_bin_count"] != positive_count:
+            raise ValueError(
+                "component-intersection positive bin count disagrees"
+            )
+        if not math.isclose(
+            float(intersection["total_intersection_volume_cm3"]),
+            sum(normalized_volumes),
+            rel_tol=1.0e-12,
+            abs_tol=0.0,
+        ):
+            raise ValueError("component-intersection total volume disagrees")
+        intersection_ready = True
     readiness = _mapping(value["activation_readiness"], "mesh readiness")
     _validate_readiness(readiness, mesh=True)
     post_ready = readiness["post_transport"]["metadata_ready"]
-    if post_ready != resolution["fractions_available"]:
+    if post_ready != (resolution["fractions_available"] or intersection_ready):
         raise ValueError(
-            "mesh without material fractions cannot be post-transport-depletable"
+            "mesh without material fractions or component-intersection volumes "
+            "cannot be post-transport-depletable"
         )
 
 

@@ -96,7 +96,7 @@ def _read_volume_flux_tally(statepoint_path, tally_name):
 
 
 def _read_mesh_flux_tally(statepoint_path, tally_name):
-    """Read one full-voxel mesh flux tally in OpenMC filter-bin order."""
+    """Read one component-filtered mesh flux tally in OpenMC filter-bin order."""
     with h5py.File(statepoint_path) as statepoint:
         tallies = statepoint["tallies"]
         tally = next(
@@ -115,9 +115,9 @@ def _read_mesh_flux_tally(statepoint_path, tally_name):
             for value in tally["filters"][:]
         ]
         types = [_text(value["type"][()]) for value in filters]
-        if set(types) != {"mesh", "particle", "energy"}:
+        if set(types) != {"cell", "mesh", "particle", "energy"}:
             raise ValueError(
-                f"{tally_name} is not a full-voxel mesh scalar-flux tally"
+                f"{tally_name} is not a component-filtered mesh scalar-flux tally"
             )
         dimensions = tuple(int(value["n_bins"][()]) for value in filters)
         realizations = int(tally["n_realizations"][()])
@@ -136,6 +136,7 @@ def _read_mesh_flux_tally(statepoint_path, tally_name):
             )
             std_dev = np.sqrt(variance)
         mesh_axis = types.index("mesh")
+        cell_axis = types.index("cell")
         particle_axis = types.index("particle")
         energy_axis = types.index("energy")
         particles = [
@@ -143,6 +144,11 @@ def _read_mesh_flux_tally(statepoint_path, tally_name):
         ]
         if len(particles) != 1:
             raise ValueError(f"{tally_name} must score exactly one particle")
+        cell_ids = [int(value) for value in filters[cell_axis]["bins"][:]]
+        if len(cell_ids) != 1:
+            raise ValueError(
+                f"{tally_name} must filter exactly one component cell"
+            )
         energy_edges = np.asarray(filters[energy_axis]["bins"][:], dtype=float)
 
         def arrange(values):
@@ -165,6 +171,7 @@ def _read_mesh_flux_tally(statepoint_path, tally_name):
         mesh_id = int(mesh_filter["bins"][()])
     return {
         "particle": particles[0],
+        "cell_id": cell_ids[0],
         "mesh_id": mesh_id,
         "energy_edges_eV": energy_edges,
         "track_length_mean_cm_per_source": output_mean,
@@ -201,14 +208,18 @@ def build_scalar_flux_fields_from_statepoint(
     *,
     associations_path: str | Path,
     local_mesh_manifest_path: str | Path,
+    material_intersection_volumes_path: str | Path,
     whole_tally_structures: Mapping[str, str] | None = None,
     local_energy_structures: Mapping[str, str] | None = None,
     openmc_cell_ids_by_dagmc_volume: Mapping[int, int] | None = None,
     minimum_realizations: int = 10,
 ) -> list[dict[str, Any]]:
-    """Build neutral whole-pack and full-voxel local field payloads."""
+    """Build whole-component and intersection-normalized local field payloads."""
     from .coil_frame import parallel_transport_frame
     from .magnet_local_mesh import LocalMeshDefinition
+    from .material_intersection_volumes import (
+        read_material_intersection_volume_manifest,
+    )
 
     if minimum_realizations <= 1:
         raise ValueError("minimum_realizations must be greater than one")
@@ -217,6 +228,12 @@ def build_scalar_flux_fields_from_statepoint(
     )
     local_collection = json.loads(
         Path(local_mesh_manifest_path).read_text(encoding="utf-8")
+    )
+    intersections = read_material_intersection_volume_manifest(
+        material_intersection_volumes_path,
+        local_mesh_manifest=local_collection,
+        associations=association,
+        require_qualified=True,
     )
     pairs = association["inventory"]["magnet_pairs"]
     explicit_cell_map = {
@@ -440,12 +457,45 @@ def build_scalar_flux_fields_from_statepoint(
             tally = _read_mesh_flux_tally(statepoint_path, tally_name)
             if tally["particle"] != particle:
                 raise ValueError(f"{tally_name} particle identity mismatch")
+            if tally["cell_id"] != cell_id:
+                raise ValueError(
+                    f"{tally_name} component cell identity mismatch"
+                )
             if len(metadata["mesh_bin_ids"]) != len(
                 tally["track_length_mean_cm_per_source"]
             ):
                 raise ValueError(
                     f"{tally_name} does not match the local mesh manifest"
                 )
+            volume_row = intersections["meshes"][magnet_id]
+            if int(volume_row["openmc_cell_id"]) != cell_id:
+                raise ValueError(
+                    f"{magnet_id} intersection volumes use another component cell"
+                )
+            if volume_row["material_tag"] != pair["winding_pack"]["material"]:
+                raise ValueError(
+                    f"{magnet_id} intersection material identity mismatch"
+                )
+            intersection_volumes = np.asarray(
+                volume_row["intersection_volume_cm3"], dtype=float
+            )
+            intersection_std = np.asarray(
+                volume_row["standard_deviation_cm3"], dtype=float
+            )
+            if intersection_volumes.shape != (mesh.bin_count,):
+                raise ValueError(
+                    f"{magnet_id} intersection volumes do not align with mesh bins"
+                )
+            selected_bins = intersection_volumes > 0.0
+            if not np.any(selected_bins):
+                raise ValueError(
+                    f"{magnet_id} has no positive winding-pack mesh intersections"
+                )
+
+            def selected(name):
+                return np.asarray(metadata[name])[selected_bins]
+
+            geometric_volume = np.asarray(metadata["volume_cm3"], dtype=float)
             fields.append(
                 {
                     "name": f"{magnet_id}_{particle}_local_mesh",
@@ -455,54 +505,95 @@ def build_scalar_flux_fields_from_statepoint(
                     "energy_structure": local_structures[particle],
                     "track_length_mean_cm_per_source": tally[
                         "track_length_mean_cm_per_source"
-                    ],
+                    ][selected_bins],
                     "track_length_std_dev_cm_per_source": tally[
                         "track_length_std_dev_cm_per_source"
+                    ][selected_bins],
+                    "volume_cm3": intersection_volumes[selected_bins],
+                    "geometric_bin_volume_cm3": geometric_volume[
+                        selected_bins
                     ],
-                    "volume_cm3": metadata["volume_cm3"],
-                    "region_ids": metadata["mesh_bin_ids"],
-                    "magnet_ids": np.full(
-                        mesh.bin_count, magnet_id, dtype=object
+                    "intersection_volume_std_dev_cm3": intersection_std[
+                        selected_bins
+                    ],
+                    "material_volume_fraction": (
+                        intersection_volumes[selected_bins]
+                        / geometric_volume[selected_bins]
                     ),
-                    "global_centroid_cm": metadata["global_centroid_cm"],
-                    "mesh_local_centroid_cm": metadata[
+                    "local_mesh_source_bin_index": np.flatnonzero(
+                        selected_bins
+                    ),
+                    "region_ids": selected("mesh_bin_ids"),
+                    "magnet_ids": np.full(
+                        int(np.count_nonzero(selected_bins)),
+                        magnet_id,
+                        dtype=object,
+                    ),
+                    "global_centroid_cm": selected("global_centroid_cm"),
+                    "mesh_local_centroid_cm": selected(
                         "mesh_local_centroid_cm"
-                    ],
-                    "nearest_centreline_global_cm": metadata[
+                    ),
+                    "nearest_centreline_global_cm": selected(
                         "nearest_centreline_global_cm"
-                    ],
-                    "centreline_arclength_cm": metadata[
+                    ),
+                    "centreline_arclength_cm": selected(
                         "centreline_arclength_cm"
-                    ],
-                    "normalized_arclength": metadata["normalized_arclength"],
-                    "centreline_tangent": metadata["centreline_tangent"],
-                    "centreline_radial": metadata["centreline_radial"],
-                    "centreline_transverse": metadata["centreline_transverse"],
-                    "local_centreline_coordinates_cm": metadata[
+                    ),
+                    "normalized_arclength": selected("normalized_arclength"),
+                    "centreline_tangent": selected("centreline_tangent"),
+                    "centreline_radial": selected("centreline_radial"),
+                    "centreline_transverse": selected("centreline_transverse"),
+                    "local_centreline_coordinates_cm": selected(
                         "local_centreline_coordinates_cm"
-                    ],
-                    "distance_to_centreline_cm": metadata[
+                    ),
+                    "distance_to_centreline_cm": selected(
                         "distance_to_centreline_cm"
-                    ],
-                    "centreline_linkage_status": metadata[
+                    ),
+                    "centreline_linkage_status": selected(
                         "centreline_linkage_status"
-                    ],
-                    "frame_type": metadata["frame_type"],
-                    "frame_quality_status": metadata["frame_quality_status"],
+                    ),
+                    "frame_type": selected("frame_type"),
+                    "frame_quality_status": selected("frame_quality_status"),
                     "material_ids": np.full(
-                        mesh.bin_count, "spatial_mixed", dtype=object
+                        int(np.count_nonzero(selected_bins)),
+                        volume_row["material_tag"],
+                        dtype=object,
+                    ),
+                    "component_roles": np.full(
+                        int(np.count_nonzero(selected_bins)),
+                        "winding_pack",
+                        dtype=object,
+                    ),
+                    "dagmc_volume_ids": np.full(
+                        int(np.count_nonzero(selected_bins)),
+                        int(volume_row["dagmc_volume_id"]),
+                        dtype=np.int64,
+                    ),
+                    "openmc_cell_ids": np.full(
+                        int(np.count_nonzero(selected_bins)),
+                        cell_id,
+                        dtype=np.int64,
                     ),
                     "material_semantics": (
-                        "full spatial voxel; may intersect winding pack, casing, "
-                        "reactor structures, void, or graveyard"
+                        "track length and normalization are restricted to the "
+                        "selected homogeneous winding-pack component"
                     ),
-                    "estimator_scope": "track_length_on_full_rotated_mesh_voxel",
-                    "volume_basis": "full_geometric_voxel_volume",
+                    "estimator_scope": (
+                        "track_length_inside_selected_DAGMC_cell_and_rotated_mesh_bin"
+                    ),
+                    "volume_basis": "qualified_component_intersection_volume",
+                    "material_intersection_volume_artifact_sha256": intersections[
+                        "artifact_sha256"
+                    ],
                     "event_effective_sample_size_available": False,
                     "realizations": tally["realizations"],
                     "resolution_status": _precision_status(
-                        tally["track_length_mean_cm_per_source"],
-                        tally["track_length_std_dev_cm_per_source"],
+                        tally["track_length_mean_cm_per_source"][
+                            selected_bins
+                        ],
+                        tally["track_length_std_dev_cm_per_source"][
+                            selected_bins
+                        ],
                         particle=particle,
                         realizations=tally["realizations"],
                         minimum_realizations=minimum_realizations,
@@ -840,6 +931,10 @@ def export_scalar_flux_fields(
             group.attrs["volume_basis"] = str(
                 field.get("volume_basis", "explicit_region_volume")
             )
+            if "material_intersection_volume_artifact_sha256" in field:
+                group.attrs["material_intersection_volume_artifact_sha256"] = (
+                    str(field["material_intersection_volume_artifact_sha256"])
+                )
             group.attrs["event_effective_sample_size_available"] = bool(
                 field.get("event_effective_sample_size_available", False)
             )
@@ -913,6 +1008,29 @@ def export_scalar_flux_fields(
                         field["mesh_local_centroid_cm"], dtype=float
                     ),
                 )
+            optional_region_fields = {
+                "geometric_bin_volume_cm3": float,
+                "intersection_volume_std_dev_cm3": float,
+                "material_volume_fraction": float,
+                "local_mesh_source_bin_index": np.int64,
+            }
+            for name, dtype in optional_region_fields.items():
+                if name not in field:
+                    continue
+                values = np.asarray(field[name], dtype=dtype)
+                if values.shape != (len(volumes),) or np.any(
+                    ~np.isfinite(values)
+                ):
+                    raise ValueError(
+                        f"{name} must contain finite values aligned with regions"
+                    )
+                if np.any(values < 0.0):
+                    raise ValueError(f"{name} must be nonnegative")
+                group.create_dataset(name, data=values)
+            if "material_volume_fraction" in group and np.any(
+                group["material_volume_fraction"][...] > 1.0 + 1.0e-10
+            ):
+                raise ValueError("material volume fractions cannot exceed one")
             for name in (
                 "region_ids",
                 "magnet_ids",
@@ -1051,6 +1169,11 @@ def export_scalar_flux_fields(
                         )
                         if name in group
                     ],
+                    "material_intersection_volume_artifact_sha256": (
+                        group.attrs.get(
+                            "material_intersection_volume_artifact_sha256"
+                        )
+                    ),
                 }
             )
         manifest = {

@@ -1084,9 +1084,11 @@ def build_tally_meshes(stage: Mapping[str, Any], output_root: Path):
             f"maximum_total_bins={maximum_total_bins}; increase the resolution, "
             "select fewer magnets, or explicitly raise the budget"
         )
-    # Current local tallies use only a MeshFilter.  They intentionally retain
-    # full-voxel spatial flux and therefore are not component-filtered.
-    cell_filter_applied = False
+    # Local tallies combine the rotated MeshFilter with the selected winding-
+    # pack CellFilter.  Normalization still requires an independently
+    # qualified per-bin component-intersection volume; the full geometric
+    # voxel volume is never a valid substitute for a partially filled bin.
+    cell_filter_applied = True
     nonoverlap = qualify_local_mesh_nonoverlap(
         mesh_definitions,
         cell_filter_applied=cell_filter_applied,
@@ -1104,8 +1106,10 @@ def build_tally_meshes(stage: Mapping[str, Any], output_root: Path):
             "total_bin_count": total_bins,
             "maximum_bins_per_magnet": maximum_bins_per_magnet,
             "maximum_total_bins": maximum_total_bins,
-            "spatial_estimator": "track_length_flux_on_full_rotated_mesh_voxels",
-            "mesh_volume_basis": "full_geometric_voxel_volume",
+            "spatial_estimator": (
+                "track_length_flux_on_component_filtered_rotated_mesh_voxels"
+            ),
+            "mesh_volume_basis": "component_intersection_volume_required",
             "cell_filter_applied": cell_filter_applied,
             "nonoverlap_qualified": nonoverlap["nonoverlap_qualified"],
             "nonoverlap_qualification": nonoverlap,
@@ -1403,6 +1407,9 @@ def prepare_unbiased_model(stage: Mapping[str, Any], output_root: Path):
         evaluation_release=stage["evaluation_release"],
         photon_evaluation_release=stage.get("photon_evaluation_release"),
         approved_mixed_case=bool(stage.get("approved_mixed_case", False)),
+        requested_source_max_energy_eV=float(
+            stage.get("requested_source_max_energy_eV", 20_000_000.0)
+        ),
         temperature_method=stage.get("temperature_method", "nearest"),
         temperature_tolerance_K=float(
             stage.get("temperature_tolerance_K", 1000.0)
@@ -3280,6 +3287,9 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         export_scalar_flux_fields,
         validate_spectra_pka_ready_flux,
     )
+    from .material_intersection_volumes import (
+        read_material_intersection_volume_manifest,
+    )
     from .openmc16_export import export_openmc16_handoffs
 
     statepoint_path = Path(stage["statepoint_path"]).resolve()
@@ -3287,6 +3297,9 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
     associations_path = Path(stage["associations_path"]).resolve()
     local_mesh_manifest_path = Path(
         stage["local_mesh_manifest_path"]
+    ).resolve()
+    material_intersection_volumes_path = Path(
+        stage["material_intersection_volumes_path"]
     ).resolve()
     nuclear_data_manifest_path = Path(
         stage["nuclear_data_manifest_path"]
@@ -3304,6 +3317,7 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         model_manifest_path,
         associations_path,
         local_mesh_manifest_path,
+        material_intersection_volumes_path,
         nuclear_data_manifest_path,
         source_manifest_path,
         transport_report_path,
@@ -3317,6 +3331,12 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
     association = json.loads(associations_path.read_text(encoding="utf-8"))
     local_mesh_manifest = json.loads(
         local_mesh_manifest_path.read_text(encoding="utf-8")
+    )
+    material_intersection_volumes = read_material_intersection_volume_manifest(
+        material_intersection_volumes_path,
+        local_mesh_manifest=local_mesh_manifest,
+        associations=association,
+        require_qualified=True,
     )
     nuclear_data_manifest = json.loads(
         nuclear_data_manifest_path.read_text(encoding="utf-8")
@@ -3399,6 +3419,9 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         "source_definition_sha256": source_definition_sha256,
         "source_mesh_sha256": model["source"]["mesh_sha256"],
         "nuclear_data_manifest_sha256": _sha256(nuclear_data_manifest_path),
+        "material_intersection_volumes_sha256": _sha256(
+            material_intersection_volumes_path
+        ),
         "statepoint_sha256": statepoint_sha256,
         "openmc_version": model["openmc_version"],
         "openmc_commit": transport_report["openmc_commit"],
@@ -3419,6 +3442,9 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         statepoint_path,
         associations_path=associations_path,
         local_mesh_manifest_path=local_mesh_manifest_path,
+        material_intersection_volumes_path=(
+            material_intersection_volumes_path
+        ),
         local_energy_structures={
             "neutron": neutron_structure,
             "photon": photon_structure,
@@ -3491,6 +3517,12 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
             openmc_cell_ids_by_dagmc_volume=(openmc_cell_ids_by_dagmc_volume),
             openmc_material_ids_by_tag=openmc_material_ids_by_tag,
             physical_source_rate_per_s=rate,
+            mesh_material_intersection_volumes_by_magnet=(
+                material_intersection_volumes["meshes"]
+            ),
+            mesh_material_intersection_artifact_sha256=(
+                material_intersection_volumes["artifact_sha256"]
+            ),
         )
         activation_ready_path = Path(
             stage["activation_ready_metadata_path"]
@@ -3610,6 +3642,15 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         item["record_count"] == 0 for item in boundary_collection["handoffs"]
     )
     products = {
+        "material_intersection_volumes": {
+            "path": str(material_intersection_volumes_path),
+            "sha256": _sha256(material_intersection_volumes_path),
+            "volume_basis": "qualified_component_intersection_volume",
+            "artifact_sha256": material_intersection_volumes[
+                "artifact_sha256"
+            ],
+            "status": material_intersection_volumes["status"],
+        },
         "scalar_flux": {
             "path": str(scalar_path),
             "sha256": _sha256(scalar_path),
