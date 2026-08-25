@@ -1,0 +1,191 @@
+{
+  "template": "./magnet_radiation_smoke.json",
+  "path_replacements": {
+    "magnet-radiation-smoke": "magnet-medium-openmc-qualification"
+  },
+  "campaign_kind": "MEDIUM_STATISTICS_QUALIFICATION_NOT_FINAL_PRODUCTION",
+  "geometry_features": {
+    "ports": false
+  },
+  "schema_reuse": {
+    "magnet_geometry_interchange": "parastell.magnet_geometry_interchange/v1.0.0",
+    "activation_ready_metadata": "parastell.activation_ready_metadata/v1.0.0",
+    "boundary_handoff": "parastell.magnet_boundary_source/v2.1.0",
+    "policy": "reuse_without_competing_contracts"
+  },
+  "representative_magnet_identity_lock": {
+    "coil_id": "coil-0005",
+    "magnet_id": "example-stellarator-sector-00-90deg-coil-0005",
+    "coils_sha256": "69f508b216f0b674368ca8731d390c9d514736ff092f0ebecd854e8772ae04ab",
+    "casing_volume_id": 17,
+    "winding_pack_volume_id": 18,
+    "centreline_point_count": 129,
+    "verification_policy": "fail_if_any_identity_field_differs"
+  },
+  "photon_calibration": {
+    "replica_count": 3,
+    "histories_per_replica": 100000,
+    "seeds": [190734863, 514229, 832040],
+    "source_mesh_candidate": {
+      "shape": [7, 41, 31],
+      "path": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/source_mesh_7x41x31.h5m",
+      "status": "PROVISIONAL_CALIBRATION_CANDIDATE",
+      "rationale": "Use the intermediate high-resolution candidate for photon-rate calibration; the response ladder, not mesh size alone, selects the later medium-run source."
+    },
+    "required_bank_schema": "parastell.magnet_boundary_source/v2.1.0",
+    "required_bank_classification": "COMPLETE_CROSSING_BANK",
+    "sampling_allowed": false,
+    "cap_reached_allowed": false,
+    "incoming_definition": "mu < 0 against the exact mapped outward normal",
+    "outgoing_photons_may_substitute_for_incoming": false,
+    "confidence_interval": {
+      "method": "exact_central_Garwood_Poisson_raw_counts",
+      "confidence_level": 0.95
+    },
+    "target_incoming_photon_effective_sample_size": 1000,
+    "external_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/PHOTON_CALIBRATION.json"
+  },
+  "source_mesh_response_convergence": {
+    "required_shapes": [
+      [3, 9, 9],
+      [5, 21, 17],
+      [7, 41, 31],
+      [11, 81, 61]
+    ],
+    "selection_policy": "select_the_smallest_mesh_whose_finest_pair_response_changes_pass_all_declared_bounds",
+    "fixed_inputs": [
+      "VMEC",
+      "coil_geometry",
+      "radial_build",
+      "materials",
+      "nuclear_data",
+      "physical_source_normalization",
+      "magnet_tally_definitions",
+      "history_count",
+      "seed_policy"
+    ],
+    "coarse_spectrum_contract": {
+      "representation": "group_integrated_scalar_flux_vector",
+      "comparison": "normalized_L1_plus_groupwise_relative_change",
+      "particles": ["neutron", "photon"],
+      "boundary_current_substitution_allowed": false
+    },
+    "external_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/SOURCE_MESH_CONVERGENCE.json"
+  },
+  "medium_history_policy": {
+    "minimum_histories": 500000,
+    "maximum_histories": 5000000,
+    "selection_requires_photon_calibration": true,
+    "selection_requires_source_mesh_convergence": true,
+    "independent_seeds": [104729, 130363],
+    "minimum_batches_per_seed": 10,
+    "final_large_campaign_authorized": false
+  },
+  "weight_window_policy": {
+    "enabled": false,
+    "decision": "WEIGHT_WINDOWS_DISABLED_NO_NEED",
+    "disabled_reason": "Analog medium qualification is the reference; variance reduction requires a separately qualified supported structured mesh and measured need."
+  },
+  "external_deliverables": {
+    "artifact_root": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification",
+    "medium_radiation_bundle": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/medium_radiation_bundle",
+    "outer_casing_boundary_bank": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/downstream/coil-0005_outer_casing_boundary.h5",
+    "winding_pack_boundary_bank": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/downstream/coil-0005_winding_pack_boundary.h5",
+    "geometry_interchange": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/magnet_geometry_interchange.json",
+    "activation_ready_metadata": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/activation_ready_metadata.json",
+    "whole_winding_pack_scalar_flux": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/downstream/coil-0005_winding_pack_scalar_flux.h5",
+    "hotspot_scalar_spectrum": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/downstream/coil-0005_hotspot_scalar_spectrum.h5",
+    "ccfe_709_projection": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/downstream/coil-0005_hotspot_ccfe709.json",
+    "ukaea_1102_projection": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/downstream/coil-0005_hotspot_ukaea1102.json",
+    "git_policy": "large_transport_products_are_external_hash_bound_artifacts"
+  },
+  "stages": {
+    "qualify_source_convergence": {
+      "required_response_metric_ids": [
+        "whole_magnet.incoming_neutron_current",
+        "whole_magnet.incoming_photon_current",
+        "whole_magnet.winding_pack_neutron_flux",
+        "whole_magnet.winding_pack_photon_flux",
+        "whole_magnet.casing_neutron_flux",
+        "whole_magnet.casing_photon_flux",
+        "whole_magnet.neutron_heating",
+        "whole_magnet.photon_heating",
+        "whole_magnet.photon_production",
+        "whole_magnet.coarse_neutron_spectrum_mean_energy",
+        "whole_magnet.coarse_photon_spectrum_mean_energy",
+        "whole_magnet.hotspot_location",
+        "computational_cost"
+      ],
+      "response_metric_tolerances": {
+        "whole_magnet.incoming_neutron_current": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.incoming_photon_current": {
+          "maximum_relative_change": 0.1
+        },
+        "whole_magnet.winding_pack_neutron_flux": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.winding_pack_photon_flux": {
+          "maximum_relative_change": 0.1
+        },
+        "whole_magnet.casing_neutron_flux": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.casing_photon_flux": {
+          "maximum_relative_change": 0.1
+        },
+        "whole_magnet.neutron_heating": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.photon_heating": {
+          "maximum_relative_change": 0.1
+        },
+        "whole_magnet.photon_production": {
+          "maximum_relative_change": 0.1
+        },
+        "whole_magnet.coarse_neutron_spectrum_mean_energy": {
+          "maximum_relative_change": 0.02
+        },
+        "whole_magnet.coarse_photon_spectrum_mean_energy": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.hotspot_location": {
+          "maximum_absolute_change": 5.0
+        },
+        "computational_cost": {
+          "qualification_role": "selection_only"
+        }
+      }
+    },
+    "build_weight_window_mesh": {
+      "enabled": false,
+      "disabled_reason": "Medium analog response convergence and photon calibration have not demonstrated a material variance-reduction need."
+    },
+    "prepare_unbiased_model": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/combined_reactor_magnets.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/source_mesh_7x41x31.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/magnet_associations.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/local_meshes.json",
+        "./magnet_radiation_materials.json",
+        "${OPENMC_CROSS_SECTIONS}"
+      ],
+      "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-medium-openmc-qualification/source_mesh_7x41x31.h5m",
+      "particles_per_batch": 10000,
+      "batches": 10,
+      "seed": 190734863,
+      "max_surface_particles": 1000000,
+      "max_surface_files": 8
+    },
+    "run_unbiased_qualification_campaign": {
+      "seeds": [190734863, 514229, 832040],
+      "minimum_seed_count": 3,
+      "particles_per_batch": 10000,
+      "batches": 10,
+      "max_surface_particles": 1000000,
+      "max_surface_files": 8,
+      "unassessed_metrics": {}
+    }
+  }
+}
