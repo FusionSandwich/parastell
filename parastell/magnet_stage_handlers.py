@@ -622,10 +622,17 @@ def qualify_source_convergence(stage: Mapping[str, Any], output_root: Path):
 
 def build_geometry(stage: Mapping[str, Any], output_root: Path):
     from .combined_openmc16_model import _magnet_material_tag
+    from .coil_frame import parallel_transport_frame
     from .dagmc_envelope import discover_magnet_volumes
+    from .dagmc_envelope import magnet_pair_canonical_facet_ids
     from .dagmc_envelope import require_watertight_dagmc
     from .dagmc_graveyard import close_dagmc_file
     from .geometry_overlap import audit_native_cad_overlaps
+    from .magnet_geometry_interchange import (
+        build_magnet_geometry_interchange,
+        build_magnet_geometry_record,
+        write_magnet_geometry_interchange,
+    )
     from .magnet_radiation_field import filament_associations
     from .parastell import Stellarator
     from .production_handoff import load_and_validate_no_port_configuration
@@ -751,7 +758,10 @@ def build_geometry(stage: Mapping[str, Any], output_root: Path):
         sector_id=str(stage.get("sector_id", "sector")),
     )
     inventory = discover_magnet_volumes(
-        output, associations=associations, **geometry_policy
+        output,
+        associations=associations,
+        include_canonical_facet_ids=("geometry_interchange_path" in stage),
+        **geometry_policy,
     )
     association_manifest = {
         "schema": "parastell.magnet_associations/v1.0.0",
@@ -768,6 +778,135 @@ def build_geometry(stage: Mapping[str, Any], output_root: Path):
         "inventory": inventory.to_dict(),
     }
     _write(stage["associations_path"], association_manifest)
+    geometry_interchange = None
+    if "geometry_interchange_path" in stage:
+        winding_width = float(magnet["width"])
+        winding_thickness = float(magnet["thickness"])
+        winding_polygon = [
+            [-0.5 * winding_width, -0.5 * winding_thickness],
+            [0.5 * winding_width, -0.5 * winding_thickness],
+            [0.5 * winding_width, 0.5 * winding_thickness],
+            [-0.5 * winding_width, 0.5 * winding_thickness],
+        ]
+        casing_polygon = [
+            [
+                -0.5 * winding_width - casing,
+                -0.5 * winding_thickness - casing,
+            ],
+            [
+                0.5 * winding_width + casing,
+                -0.5 * winding_thickness - casing,
+            ],
+            [
+                0.5 * winding_width + casing,
+                0.5 * winding_thickness + casing,
+            ],
+            [
+                -0.5 * winding_width - casing,
+                0.5 * winding_thickness + casing,
+            ],
+        ]
+        h5m_artifact = {
+            "status": "available",
+            "sha256": _sha256(output),
+            "size_bytes": output.stat().st_size,
+        }
+        unavailable_step = {
+            "status": "unavailable",
+            "reason": (
+                "role-specific STEP was not retained by this neutral "
+                "DAGMC build"
+            ),
+        }
+        unavailable_stl = {
+            "status": "unavailable",
+            "reason": (
+                "role-specific STL was not retained by this neutral "
+                "DAGMC build"
+            ),
+        }
+        source_hash = _sha256(Path(stage["coils_path"]).resolve())
+        identity = np.eye(4, dtype=float)
+        records = []
+        for pair in inventory.pairs:
+            if pair.casing is None:
+                raise ValueError(
+                    "geometry interchange requires a casing and winding pack "
+                    f"for magnet {pair.magnet_id!r}"
+                )
+            points = association_manifest["centreline_points_by_coil"][
+                pair.coil_id
+            ]
+            records.append(
+                build_magnet_geometry_record(
+                    magnet_id=pair.magnet_id,
+                    coil_filament_source_sha256=source_hash,
+                    source_filament_closed=True,
+                    represented_segment_kind="full_filament",
+                    centreline_frame=parallel_transport_frame(
+                        points, closed=True
+                    ),
+                    native_global_transform=identity,
+                    field_period_index=int(stage.get("field_period_index", 0)),
+                    sector_index=int(stage.get("sector_index", 0)),
+                    field_period_sector_transform=identity,
+                    outer_casing_cross_section_local_cm=casing_polygon,
+                    outer_winding_pack_cross_section_local_cm=(
+                        winding_polygon
+                    ),
+                    casing_thickness_cm=casing,
+                    artifacts={
+                        "outer_step": unavailable_step,
+                        "outer_stl": unavailable_stl,
+                        "outer_h5m": h5m_artifact,
+                        "winding_pack_step": unavailable_step,
+                        "winding_pack_stl": unavailable_stl,
+                    },
+                    surface_ids=sorted(
+                        set(pair.casing.surface_ids)
+                        | set(pair.winding_pack.surface_ids)
+                    ),
+                    facet_ids=magnet_pair_canonical_facet_ids(
+                        pair, require_casing=True
+                    ),
+                    components=[
+                        {
+                            "component_name": "outer_casing",
+                            "material_name": pair.casing.material,
+                        },
+                        {
+                            "component_name": "winding_pack",
+                            "material_name": pair.winding_pack.material,
+                        },
+                    ],
+                )
+            )
+        interchange_document = build_magnet_geometry_interchange(
+            records,
+            geometry_fingerprint=inventory.canonical_geometry_fingerprint,
+            provenance={
+                "coordinate_basis": "native_global_cm",
+                "native_global_transform_basis": (
+                    "filament coordinates are already in the native global "
+                    "frame"
+                ),
+                "field_period_sector_transform_basis": (
+                    "full global filament representation; identity transform"
+                ),
+                "machine_id": str(stage.get("machine_id", "machine")),
+                "sector_id": str(stage.get("sector_id", "sector")),
+                "dagmc_sha256": _sha256(output),
+            },
+        )
+        write_magnet_geometry_interchange(
+            stage["geometry_interchange_path"], interchange_document
+        )
+        geometry_interchange = {
+            "path": str(Path(stage["geometry_interchange_path"]).resolve()),
+            "sha256": _sha256(stage["geometry_interchange_path"]),
+            "content_sha256": interchange_document["content_sha256"],
+            "magnet_count": len(interchange_document["magnets"]),
+        }
     result = {
         "schema": "parastell.magnet_geometry_stage/v1.0.0",
         "dagmc": {
@@ -784,6 +923,7 @@ def build_geometry(stage: Mapping[str, Any], output_root: Path):
         "winding_pack_count": len(inventory.winding_packs),
         "casing_count": len(inventory.casings),
         "associations_path": str(Path(stage["associations_path"]).resolve()),
+        "geometry_interchange": geometry_interchange,
         "ports": False,
         "geometry_backend": backend,
         "legacy_export_cad_to_dagmc_config": legacy_export_flag,
@@ -885,6 +1025,7 @@ def build_tally_meshes(stage: Mapping[str, Any], output_root: Path):
     from .coil_frame import parallel_transport_frame
     from .dagmc_envelope import discover_magnet_volumes, select_magnet_pairs
     from .magnet_local_mesh import build_local_mesh_definition
+    from .magnet_local_mesh import qualify_local_mesh_nonoverlap
 
     association = json.loads(
         Path(stage["associations_path"]).read_text(encoding="utf-8")
@@ -911,6 +1052,7 @@ def build_tally_meshes(stage: Mapping[str, Any], output_root: Path):
         )
     selected = select_magnet_pairs(inventory, stage.get("selection", "all"))
     meshes = {}
+    mesh_definitions = []
     total_bins = 0
     maximum_bins_per_magnet = int(
         stage.get("maximum_bins_per_magnet", 1_000_000)
@@ -934,6 +1076,7 @@ def build_tally_meshes(stage: Mapping[str, Any], output_root: Path):
                 "increase the resolution or explicitly raise the budget"
             )
         total_bins += mesh.bin_count
+        mesh_definitions.append(mesh)
         meshes[pair.magnet_id] = mesh.to_dict()
     if total_bins > maximum_total_bins:
         raise ValueError(
@@ -941,6 +1084,16 @@ def build_tally_meshes(stage: Mapping[str, Any], output_root: Path):
             f"maximum_total_bins={maximum_total_bins}; increase the resolution, "
             "select fewer magnets, or explicitly raise the budget"
         )
+    # Current local tallies use only a MeshFilter.  They intentionally retain
+    # full-voxel spatial flux and therefore are not component-filtered.
+    cell_filter_applied = False
+    nonoverlap = qualify_local_mesh_nonoverlap(
+        mesh_definitions,
+        cell_filter_applied=cell_filter_applied,
+        separation_tolerance_cm=float(
+            stage.get("nonoverlap_separation_tolerance_cm", 1.0e-9)
+        ),
+    )
     return _write(
         stage["local_mesh_manifest_path"],
         {
@@ -953,7 +1106,9 @@ def build_tally_meshes(stage: Mapping[str, Any], output_root: Path):
             "maximum_total_bins": maximum_total_bins,
             "spatial_estimator": "track_length_flux_on_full_rotated_mesh_voxels",
             "mesh_volume_basis": "full_geometric_voxel_volume",
-            "cell_filter_applied": False,
+            "cell_filter_applied": cell_filter_applied,
+            "nonoverlap_qualified": nonoverlap["nonoverlap_qualified"],
+            "nonoverlap_qualification": nonoverlap,
             "meshes": meshes,
         },
     )
@@ -3103,6 +3258,10 @@ def qualify_production_statistics(stage: Mapping[str, Any], output_root: Path):
 
 def postprocess(stage: Mapping[str, Any], output_root: Path):
     """Export neutral scalar flux, heating, reactions, and boundary records."""
+    from .activation_ready_metadata import (
+        build_activation_ready_metadata,
+        write_activation_ready_metadata,
+    )
     from .energy_groups import get_structure
     from .magnet_heating import export_magnet_heating
     from .magnet_damage_gas import (
@@ -3132,6 +3291,12 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
     nuclear_data_manifest_path = Path(
         stage["nuclear_data_manifest_path"]
     ).resolve()
+    activation_requested = "activation_ready_metadata_path" in stage
+    material_manifest_path = (
+        Path(stage["material_manifest_path"]).resolve()
+        if activation_requested
+        else None
+    )
     source_manifest_path = Path(stage["source_manifest_path"]).resolve()
     transport_report_path = Path(stage["transport_report_path"]).resolve()
     required_inputs = (
@@ -3143,11 +3308,24 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         source_manifest_path,
         transport_report_path,
     )
+    if material_manifest_path is not None:
+        required_inputs = (*required_inputs, material_manifest_path)
     missing = [str(path) for path in required_inputs if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"postprocess inputs are absent: {missing}")
     model = json.loads(model_manifest_path.read_text(encoding="utf-8"))
     association = json.loads(associations_path.read_text(encoding="utf-8"))
+    local_mesh_manifest = json.loads(
+        local_mesh_manifest_path.read_text(encoding="utf-8")
+    )
+    nuclear_data_manifest = json.loads(
+        nuclear_data_manifest_path.read_text(encoding="utf-8")
+    )
+    material_manifest = (
+        json.loads(material_manifest_path.read_text(encoding="utf-8"))
+        if material_manifest_path is not None
+        else None
+    )
     source_manifest = json.loads(
         source_manifest_path.read_text(encoding="utf-8")
     )
@@ -3155,9 +3333,37 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         transport_report_path.read_text(encoding="utf-8")
     )
     pairs = association["inventory"]["magnet_pairs"]
-    pair_by_cell = {
-        int(pair["winding_pack_volume_id"]): pair for pair in pairs
+    component_by_volume = {}
+    for pair in pairs:
+        for key in ("winding_pack", "casing"):
+            component = pair.get(key)
+            if component is None:
+                continue
+            component_by_volume[int(component["volume_id"])] = {
+                "pair": pair,
+                "component": component,
+                "component_role": str(component["component_role"]),
+            }
+    cell_map_rows = model.get("dagmc_openmc_cell_map")
+    if not isinstance(cell_map_rows, list) or not cell_map_rows:
+        raise ValueError(
+            "OpenMC model lacks the explicit DAGMC-volume to OpenMC-cell map"
+        )
+    openmc_cell_ids_by_dagmc_volume = {
+        int(item["dagmc_volume_id"]): int(item["openmc_cell_id"])
+        for item in cell_map_rows
     }
+    if set(openmc_cell_ids_by_dagmc_volume) != set(component_by_volume):
+        raise ValueError(
+            "OpenMC cell map does not cover every selected magnet component "
+            "exactly once"
+        )
+    component_by_cell = {
+        openmc_cell_ids_by_dagmc_volume[volume_id]: value
+        for volume_id, value in component_by_volume.items()
+    }
+    if len(component_by_cell) != len(component_by_volume):
+        raise ValueError("OpenMC component cell IDs are not unique")
     rate = float(model["physical_source_rate_per_s"])
     source_definition_sha256 = model["xml_files"]["settings.xml"]["sha256"]
     statepoint_sha256 = _sha256(statepoint_path)
@@ -3217,6 +3423,7 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
             "neutron": neutron_structure,
             "photon": photon_structure,
         },
+        openmc_cell_ids_by_dagmc_volume=(openmc_cell_ids_by_dagmc_volume),
         minimum_realizations=int(stage.get("minimum_realizations", 10)),
     )
     scalar_path = Path(stage["scalar_flux_path"]).resolve()
@@ -3232,11 +3439,16 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
     )
 
     cell_volumes = {
-        cell: float(pair["winding_pack"]["volume_cm3"])
-        for cell, pair in pair_by_cell.items()
+        cell: float(value["component"]["volume_cm3"])
+        for cell, value in component_by_cell.items()
     }
     cell_magnets = {
-        cell: pair["magnet_id"] for cell, pair in pair_by_cell.items()
+        cell: value["pair"]["magnet_id"]
+        for cell, value in component_by_cell.items()
+    }
+    cell_component_roles = {
+        cell: value["component_role"]
+        for cell, value in component_by_cell.items()
     }
     heating_path = Path(stage["heating_path"]).resolve()
     heating_manifest = export_magnet_heating(
@@ -3248,6 +3460,7 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         ),
         cell_volumes_cm3=cell_volumes,
         cell_magnet_ids=cell_magnets,
+        cell_component_roles=cell_component_roles,
         physical_source_rate_per_s=rate,
         provenance=provenance,
     )
@@ -3255,12 +3468,46 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
     reference_flux = _read_volume_flux_tally(
         statepoint_path, "pstl_magnet_neutron_ccfe_709_volume_flux"
     )
+    observed_component_cells = {
+        int(value) for value in reference_flux["cell_ids"]
+    }
+    if observed_component_cells != set(component_by_cell):
+        raise ValueError(
+            "statepoint whole-volume scalar flux does not verify every mapped "
+            "magnet-component OpenMC cell"
+        )
+    activation_ready = None
+    activation_ready_path = None
+    if activation_requested:
+        openmc_material_ids_by_tag = {
+            str(item["material_tag"]): int(item["openmc_material_id"])
+            for item in cell_map_rows
+        }
+        activation_ready = build_activation_ready_metadata(
+            associations=association,
+            material_manifest=material_manifest,
+            nuclear_data_manifest=nuclear_data_manifest,
+            local_mesh_manifest=local_mesh_manifest,
+            openmc_cell_ids_by_dagmc_volume=(openmc_cell_ids_by_dagmc_volume),
+            openmc_material_ids_by_tag=openmc_material_ids_by_tag,
+            physical_source_rate_per_s=rate,
+        )
+        activation_ready_path = Path(
+            stage["activation_ready_metadata_path"]
+        ).resolve()
+        write_activation_ready_metadata(
+            activation_ready_path, activation_ready
+        )
     reaction_path = Path(stage["reaction_production_path"]).resolve()
     export_magnet_reaction_production(
         statepoint_path,
         reaction_path,
         magnet_ids=[
             cell_magnets[int(cell)] for cell in reference_flux["cell_ids"]
+        ],
+        component_roles=[
+            cell_component_roles[int(cell)]
+            for cell in reference_flux["cell_ids"]
         ],
         physical_source_rate_per_s=rate,
         transported_particles={
@@ -3278,6 +3525,7 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
         stage["damage_gas_path"],
         tally_inventory=model["tallies"],
         cell_magnet_ids=cell_magnets,
+        cell_component_roles=cell_component_roles,
         cell_volumes_cm3=cell_volumes,
         physical_source_rate_per_s=rate,
         provenance=provenance,
@@ -3361,41 +3609,57 @@ def postprocess(stage: Mapping[str, Any], output_root: Path):
     empty_handoffs = sum(
         item["record_count"] == 0 for item in boundary_collection["handoffs"]
     )
+    products = {
+        "scalar_flux": {
+            "path": str(scalar_path),
+            "sha256": _sha256(scalar_path),
+            "fields": scalar_manifest["fields"],
+            "spectra_pka_ccfe_709": ccfe_validation,
+        },
+        "heating": {
+            "path": str(heating_path),
+            "sha256": _sha256(heating_path),
+            "manifest": heating_manifest,
+        },
+        "reaction_production": {
+            "path": str(reaction_path),
+            "sha256": _sha256(reaction_path),
+            "validation": reaction_validation,
+        },
+        "damage_and_gas_production": {
+            "path": str(damage_gas_path),
+            "sha256": _sha256(damage_gas_path),
+            "validation": damage_gas_validation,
+            "is_dpa": False,
+            "is_appm": False,
+        },
+        "boundary_phase_space": {
+            **boundary_collection,
+            "empty_handoff_count": empty_handoffs,
+            "empty_is_physical_zero": False,
+        },
+    }
+    if activation_ready is not None and activation_ready_path is not None:
+        products["activation_ready_metadata"] = {
+            "path": str(activation_ready_path),
+            "sha256": _sha256(activation_ready_path),
+            "artifact_sha256": activation_ready["artifact_sha256"],
+            "direct_r2s_cell_metadata_ready": activation_ready[
+                "activation_readiness"
+            ]["direct_r2s_cell_metadata_ready"],
+            "direct_r2s_mesh_metadata_ready": activation_ready[
+                "activation_readiness"
+            ]["direct_r2s_mesh_metadata_ready"],
+            "post_transport_mesh_metadata_ready": activation_ready[
+                "activation_readiness"
+            ]["post_transport_mesh_metadata_ready"],
+        }
     report = {
         "schema": "parastell.magnet_radiation_postprocess/v1.0.0",
         "status": "PASS",
         "statepoint_sha256": provenance["statepoint_sha256"],
         "physical_source_rate_per_s": rate,
-        "products": {
-            "scalar_flux": {
-                "path": str(scalar_path),
-                "sha256": _sha256(scalar_path),
-                "fields": scalar_manifest["fields"],
-                "spectra_pka_ccfe_709": ccfe_validation,
-            },
-            "heating": {
-                "path": str(heating_path),
-                "sha256": _sha256(heating_path),
-                "manifest": heating_manifest,
-            },
-            "reaction_production": {
-                "path": str(reaction_path),
-                "sha256": _sha256(reaction_path),
-                "validation": reaction_validation,
-            },
-            "damage_and_gas_production": {
-                "path": str(damage_gas_path),
-                "sha256": _sha256(damage_gas_path),
-                "validation": damage_gas_validation,
-                "is_dpa": False,
-                "is_appm": False,
-            },
-            "boundary_phase_space": {
-                **boundary_collection,
-                "empty_handoff_count": empty_handoffs,
-                "empty_is_physical_zero": False,
-            },
-        },
+        "products": products,
         "provenance": provenance,
     }
     return _write(stage["postprocess_report_path"], report)
@@ -3528,10 +3792,35 @@ def export_bundle(stage: Mapping[str, Any], output_root: Path):
                 "normalization": "physical_source_rate",
             },
         ]
+        if "activation_ready_metadata" in products_report:
+            products.append(
+                {
+                    "kind": "activation_ready_metadata",
+                    "magnet_id": "all-selected-magnets",
+                    "path": products_report["activation_ready_metadata"][
+                        "path"
+                    ],
+                    "quantity": "activation_ready_metadata",
+                    "units": "metadata",
+                    "normalization": "not_applicable",
+                }
+            )
+        if "geometry_interchange_path" in stage:
+            products.append(
+                {
+                    "kind": "magnet_geometry_interchange",
+                    "magnet_id": "all-selected-magnets",
+                    "path": stage["geometry_interchange_path"],
+                    "quantity": "magnet_geometry_interchange",
+                    "units": "metadata",
+                    "normalization": "not_applicable",
+                }
+            )
         products.extend(
             {
                 "kind": "boundary_phase_space",
                 "magnet_id": item["magnet_component"],
+                "boundary_role": item.get("boundary_role", "winding_pack"),
                 "path": item["path"],
                 "quantity": "partial_crossing_current",
                 "units": "crossings/source",

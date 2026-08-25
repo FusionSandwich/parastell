@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_pilot_fixture_manifest.schema.json",
+  "title": "ParaStell real magnet-radiation pilot fixture receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_utc",
+    "acceptance_scope",
+    "qualification_scope",
+    "qualification_status",
+    "qualification_limitations",
+    "external_artifact",
+    "producer_identity",
+    "pilot_summary",
+    "acceptance",
+    "population_qualification",
+    "committed_payload"
+  ],
+  "properties": {
+    "schema": {
+      "const": "parastell.magnet_pilot_fixture_manifest/v1.0.0"
+    },
+    "created_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acceptance_scope": {
+      "const": "reader_contract_and_normalization_plumbing_only"
+    },
+    "qualification_scope": {
+      "const": "boundary_record_particle_population_only_not_physics_qualification"
+    },
+    "qualification_status": {
+      "enum": [
+        "STRUCTURAL_PILOT_POPULATION_PASS",
+        "STRUCTURAL_PILOT_POPULATION_BLOCKED"
+      ]
+    },
+    "qualification_limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "external_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uri",
+        "local_path_hint",
+        "bundle_manifest_sha256",
+        "canonical_tree_sha256",
+        "file_count",
+        "size_bytes"
+      ],
+      "properties": {
+        "uri": {"type": "string", "minLength": 1},
+        "local_path_hint": {"type": "string", "minLength": 1},
+        "bundle_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "canonical_tree_sha256": {"$ref": "#/$defs/sha256"},
+        "file_count": {"type": "integer", "minimum": 1},
+        "size_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "producer_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parastell_commit",
+        "openmc_version",
+        "openmc_commit",
+        "geometry_fingerprint",
+        "statepoint_sha256"
+      ],
+      "properties": {
+        "parastell_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "openmc_version": {"type": "string", "minLength": 1},
+        "openmc_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "geometry_fingerprint": {"$ref": "#/$defs/sha256"},
+        "statepoint_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "legacy_external_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_crlf_sha256", "semantic_compact_sha256"],
+      "properties": {
+        "raw_crlf_sha256": {"$ref": "#/$defs/sha256"},
+        "semantic_compact_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "pilot_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "histories",
+        "batches",
+        "physical_source_rate_per_s",
+        "magnet_count",
+        "product_kind_counts",
+        "bank_completeness",
+        "bank_count",
+        "record_count",
+        "particle_record_counts",
+        "prompt_time_record_count",
+        "facet_mapped_record_count"
+      ],
+      "properties": {
+        "histories": {"type": "integer", "minimum": 1},
+        "batches": {"type": "integer", "minimum": 1},
+        "physical_source_rate_per_s": {"type": "number", "exclusiveMinimum": 0},
+        "magnet_count": {"type": "integer", "minimum": 1},
+        "product_kind_counts": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 1}
+        },
+        "bank_completeness": {"type": "object"},
+        "bank_count": {"type": "integer", "minimum": 1},
+        "record_count": {"type": "integer", "minimum": 0},
+        "particle_record_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["neutron", "photon"],
+          "properties": {
+            "neutron": {"type": "integer", "minimum": 0},
+            "photon": {"type": "integer", "minimum": 0}
+          }
+        },
+        "prompt_time_record_count": {"type": "integer", "minimum": 0},
+        "facet_mapped_record_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_round_trip",
+        "current_conservation",
+        "scalar_flux_normalization",
+        "coordinate_transform",
+        "particle_identity",
+        "energy_preservation",
+        "direction_preservation",
+        "time_semantics"
+      ],
+      "properties": {
+        "schema_round_trip": {"$ref": "#/$defs/passGate"},
+        "current_conservation": {"$ref": "#/$defs/passGate"},
+        "scalar_flux_normalization": {"$ref": "#/$defs/passGate"},
+        "coordinate_transform": {"$ref": "#/$defs/passGate"},
+        "particle_identity": {"$ref": "#/$defs/passGate"},
+        "energy_preservation": {"$ref": "#/$defs/passGate"},
+        "direction_preservation": {"$ref": "#/$defs/passGate"},
+        "time_semantics": {"$ref": "#/$defs/passGate"}
+      }
+    },
+    "population_qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requirement", "criteria", "blocking_reasons"],
+      "properties": {
+        "status": {"enum": ["PASS", "BLOCKED"]},
+        "requirement": {"type": "string", "minLength": 1},
+        "criteria": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "boundary_bank_present",
+            "boundary_record_present",
+            "neutron_records_present",
+            "photon_records_present"
+          ],
+          "properties": {
+            "boundary_bank_present": {"$ref": "#/$defs/populationGate"},
+            "boundary_record_present": {"$ref": "#/$defs/populationGate"},
+            "neutron_records_present": {"$ref": "#/$defs/populationGate"},
+            "photon_records_present": {"$ref": "#/$defs/populationGate"}
+          }
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "boundary_bank_present",
+              "boundary_record_present",
+              "neutron_records_present",
+              "photon_records_present"
+            ]
+          }
+        }
+      }
+    },
+    "committed_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "included_large_artifacts",
+        "boundary_downsample",
+        "scalar_downsample"
+      ],
+      "properties": {
+        "included_large_artifacts": {"type": "array", "maxItems": 0},
+        "boundary_downsample": {"$ref": "#/$defs/omission"},
+        "scalar_downsample": {"$ref": "#/$defs/omission"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "passGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence"],
+      "properties": {
+        "status": {"const": "PASS"},
+        "evidence": {"type": "string", "minLength": 1}
+      }
+    },
+    "populationGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence"],
+      "properties": {
+        "status": {"enum": ["PASS", "BLOCKED"]},
+        "evidence": {"type": "string", "minLength": 1}
+      }
+    },
+    "omission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": {"const": "OMITTED"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

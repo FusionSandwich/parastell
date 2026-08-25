@@ -7,8 +7,11 @@ from pathlib import Path
 
 
 SCHEMA_FILES = (
+    "magnet_activation_ready_metadata.schema.json",
     "magnet_boundary_source.schema.json",
     "magnet_damage_gas.schema.json",
+    "magnet_geometry_interchange.schema.json",
+    "magnet_pilot_fixture_manifest.schema.json",
     "magnet_radiation_field_bundle.schema.json",
     "magnet_scalar_flux_fields.schema.json",
     "magnet_weight_window_qualification.schema.json",

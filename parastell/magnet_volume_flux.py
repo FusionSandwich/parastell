@@ -203,6 +203,7 @@ def build_scalar_flux_fields_from_statepoint(
     local_mesh_manifest_path: str | Path,
     whole_tally_structures: Mapping[str, str] | None = None,
     local_energy_structures: Mapping[str, str] | None = None,
+    openmc_cell_ids_by_dagmc_volume: Mapping[int, int] | None = None,
     minimum_realizations: int = 10,
 ) -> list[dict[str, Any]]:
     """Build neutral whole-pack and full-voxel local field payloads."""
@@ -218,9 +219,32 @@ def build_scalar_flux_fields_from_statepoint(
         Path(local_mesh_manifest_path).read_text(encoding="utf-8")
     )
     pairs = association["inventory"]["magnet_pairs"]
-    pair_by_cell = {
-        int(pair["winding_pack_volume_id"]): pair for pair in pairs
+    explicit_cell_map = {
+        int(key): int(value)
+        for key, value in dict(openmc_cell_ids_by_dagmc_volume or {}).items()
     }
+    component_by_cell: dict[int, dict[str, Any]] = {}
+    pair_by_winding_cell: dict[int, Mapping[str, Any]] = {}
+    for pair in pairs:
+        for key in ("winding_pack", "casing"):
+            component = pair[key]
+            if component is None:
+                continue
+            dagmc_volume_id = int(component["volume_id"])
+            cell_id = explicit_cell_map.get(dagmc_volume_id, dagmc_volume_id)
+            if cell_id in component_by_cell:
+                raise ValueError(f"duplicate magnet component cell {cell_id}")
+            component_by_cell[cell_id] = {
+                "pair": pair,
+                "component": component,
+                "component_role": str(component["component_role"]),
+                "dagmc_volume_id": dagmc_volume_id,
+                "openmc_cell_id": cell_id,
+            }
+        winding_volume_id = int(pair["winding_pack_volume_id"])
+        pair_by_winding_cell[
+            explicit_cell_map.get(winding_volume_id, winding_volume_id)
+        ] = pair
     frames = {
         pair["magnet_id"]: parallel_transport_frame(
             association["centreline_points_by_coil"][pair["coil_id"]]
@@ -244,13 +268,20 @@ def build_scalar_flux_fields_from_statepoint(
     fields: list[dict[str, Any]] = []
     for tally_name, structure in whole_structures.items():
         tally = _read_volume_flux_tally(statepoint_path, tally_name)
-        selected_pairs = [
-            pair_by_cell[int(cell)] for cell in tally["cell_ids"]
-        ]
+        try:
+            selected = [
+                component_by_cell[int(cell)] for cell in tally["cell_ids"]
+            ]
+        except KeyError as exc:
+            raise ValueError(
+                f"whole-volume scalar tally references unknown magnet cell {exc.args[0]}"
+            ) from exc
+        selected_pairs = [item["pair"] for item in selected]
+        selected_components = [item["component"] for item in selected]
         centroids = np.asarray(
             [
-                pair["winding_pack"]["centroid_global_cm"]
-                for pair in selected_pairs
+                component["centroid_global_cm"]
+                for component in selected_components
             ],
             dtype=float,
         )
@@ -275,14 +306,24 @@ def build_scalar_flux_fields_from_statepoint(
                     "track_length_std_dev_cm_per_source"
                 ],
                 "volume_cm3": [
-                    pair["winding_pack"]["volume_cm3"]
-                    for pair in selected_pairs
+                    component["volume_cm3"]
+                    for component in selected_components
                 ],
                 "region_ids": [
-                    pair["winding_pack"]["component_id"]
-                    for pair in selected_pairs
+                    component["component_id"]
+                    for component in selected_components
                 ],
                 "magnet_ids": [pair["magnet_id"] for pair in selected_pairs],
+                "component_roles": [
+                    item["component_role"] for item in selected
+                ],
+                "dagmc_volume_ids": np.asarray(
+                    [item["dagmc_volume_id"] for item in selected],
+                    dtype=np.int64,
+                ),
+                "openmc_cell_ids": np.asarray(
+                    tally["cell_ids"], dtype=np.int64
+                ),
                 "global_centroid_cm": centroids,
                 "nearest_centreline_global_cm": np.asarray(
                     [
@@ -357,11 +398,14 @@ def build_scalar_flux_fields_from_statepoint(
                     dtype=object,
                 ),
                 "material_ids": [
-                    pair["winding_pack"]["material"] for pair in selected_pairs
+                    component["material"] for component in selected_components
                 ],
-                "material_semantics": "exact_homogenized_winding_pack_cell",
+                "material_semantics": (
+                    "exact homogeneous DAGMC component cell with resolved "
+                    "casing or winding-pack material tag"
+                ),
                 "estimator_scope": "track_length_inside_selected_DAGMC_cell",
-                "volume_basis": "exact_DAGMC_winding_pack_volume",
+                "volume_basis": "exact_DAGMC_component_volume",
                 "event_effective_sample_size_available": False,
                 "realizations": tally["realizations"],
                 "resolution_status": _precision_status(
@@ -373,7 +417,7 @@ def build_scalar_flux_fields_from_statepoint(
                 ),
             }
         )
-    for cell_id, pair in sorted(pair_by_cell.items()):
+    for cell_id, pair in sorted(pair_by_winding_cell.items()):
         magnet_id = pair["magnet_id"]
         value = local_collection["meshes"][magnet_id]
         mesh = LocalMeshDefinition(
@@ -883,6 +927,35 @@ def export_scalar_flux_fields(
                         f"{name} must align with scalar-flux regions"
                     )
                 group.create_dataset(name, data=values, dtype=strings)
+            if "component_roles" in field:
+                roles = np.asarray(field["component_roles"], dtype=object)
+                if roles.shape != (len(volumes),) or any(
+                    not str(value) for value in roles
+                ):
+                    raise ValueError(
+                        "component_roles must align with scalar-flux regions"
+                    )
+                group.create_dataset(
+                    "component_roles", data=roles, dtype=strings
+                )
+            identity_fields = {
+                name: np.asarray(field[name], dtype=np.int64)
+                for name in ("dagmc_volume_ids", "openmc_cell_ids")
+                if name in field
+            }
+            if identity_fields and set(identity_fields) != {
+                "dagmc_volume_ids",
+                "openmc_cell_ids",
+            }:
+                raise ValueError(
+                    "DAGMC volume and OpenMC cell IDs must be supplied together"
+                )
+            for name, values in identity_fields.items():
+                if values.shape != (len(volumes),) or np.any(values <= 0):
+                    raise ValueError(
+                        f"{name} must contain positive IDs aligned with regions"
+                    )
+                group.create_dataset(name, data=values)
             if "resolution_status" in field:
                 status = np.asarray(field["resolution_status"], dtype=np.uint8)
                 if status.shape != expected:
@@ -968,6 +1041,15 @@ def export_scalar_flux_fields(
                         "distance_to_centreline_cm",
                         "frame_type",
                         "frame_quality_status",
+                    ],
+                    "component_identity_fields": [
+                        name
+                        for name in (
+                            "component_roles",
+                            "dagmc_volume_ids",
+                            "openmc_cell_ids",
+                        )
+                        if name in group
                     ],
                 }
             )

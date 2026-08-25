@@ -256,6 +256,14 @@ def test_build_tally_meshes_writes_declared_collection(tmp_path, monkeypatch):
             bin_count=1, to_dict=lambda: {"mesh": "ok"}
         ),
     )
+    monkeypatch.setattr(
+        magnet_local_mesh,
+        "qualify_local_mesh_nonoverlap",
+        lambda *args, **kwargs: {
+            "nonoverlap_qualified": False,
+            "status": "NOT_QUALIFIED",
+        },
+    )
     output = tmp_path / "local_meshes.json"
     result = build_tally_meshes(
         {
@@ -268,6 +276,8 @@ def test_build_tally_meshes_writes_declared_collection(tmp_path, monkeypatch):
     )
     assert output.is_file()
     assert result["meshes"] == {"magnet-0001": {"mesh": "ok"}}
+    assert result["nonoverlap_qualified"] is False
+    assert result["nonoverlap_qualification"]["status"] == "NOT_QUALIFIED"
 
 
 def test_run_unbiased_model_validates_secondary_photons(tmp_path, monkeypatch):

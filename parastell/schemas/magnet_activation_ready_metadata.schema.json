@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_activation_ready_metadata.schema.json",
+  "title": "ParaStell neutral activation-ready metadata",
+  "type": "object",
+  "required": [
+    "schema",
+    "created_utc",
+    "geometry",
+    "source_and_flux_normalization",
+    "material_manifest",
+    "nuclear_data",
+    "components",
+    "local_meshes",
+    "activation_readiness",
+    "artifact_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "parastell.activation_ready_metadata/v1.0.0"
+    },
+    "created_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "geometry": {
+      "type": "object",
+      "required": [
+        "canonical_geometry_fingerprint",
+        "dagmc_geometry_sha256",
+        "length_units",
+        "volume_units",
+        "mass_units"
+      ],
+      "properties": {
+        "canonical_geometry_fingerprint": {"$ref": "#/$defs/sha256"},
+        "dagmc_geometry_sha256": {"$ref": "#/$defs/sha256"},
+        "length_units": {"const": "cm"},
+        "volume_units": {"const": "cm3"},
+        "mass_units": {"const": "g"}
+      },
+      "additionalProperties": false
+    },
+    "source_and_flux_normalization": {
+      "type": "object",
+      "required": [
+        "quantity",
+        "estimator",
+        "physical_source_rate_per_s",
+        "track_length_tally_units",
+        "scalar_flux_per_source_units",
+        "physical_scalar_flux_units",
+        "conversion",
+        "surface_current_is_scalar_flux"
+      ],
+      "properties": {
+        "quantity": {"const": "volume_scalar_flux"},
+        "estimator": {"const": "track_length"},
+        "physical_source_rate_per_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "track_length_tally_units": {"const": "particle-cm/source"},
+        "scalar_flux_per_source_units": {
+          "const": "particle/source/cm2"
+        },
+        "physical_scalar_flux_units": {"const": "particle/cm2/s"},
+        "conversion": {
+          "const": "track_length_mean_cm_per_source / volume_cm3 * physical_source_rate_per_s"
+        },
+        "surface_current_is_scalar_flux": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "material_manifest": {
+      "type": "object",
+      "required": ["schema", "resolved_manifest_sha256"],
+      "properties": {
+        "schema": {"type": "string"},
+        "resolved_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "nuclear_data": {
+      "type": "object",
+      "required": ["canonical_manifest_sha256", "manifest"],
+      "properties": {
+        "canonical_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "manifest": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "components": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/component"}
+    },
+    "local_meshes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/local_mesh"}
+    },
+    "activation_readiness": {
+      "$ref": "#/$defs/summary_readiness"
+    },
+    "artifact_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "matrix3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"$ref": "#/$defs/vector3"}
+    },
+    "material": {
+      "type": "object",
+      "required": [
+        "tag",
+        "name",
+        "openmc_material_id",
+        "density_g_cm3",
+        "temperature_K",
+        "composition_basis",
+        "nuclides",
+        "isotopic_composition_sha256"
+      ],
+      "properties": {
+        "tag": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "openmc_material_id": {"type": "integer", "minimum": 1},
+        "density_g_cm3": {"type": "number", "exclusiveMinimum": 0},
+        "temperature_K": {"type": "number", "exclusiveMinimum": 0},
+        "composition_basis": {"type": "string", "minLength": 1},
+        "nuclides": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "isotopic_composition_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "direct_component_readiness": {
+      "type": "object",
+      "required": [
+        "metadata_ready",
+        "execution_ready",
+        "domain_kind",
+        "status"
+      ],
+      "properties": {
+        "metadata_ready": {"const": true},
+        "execution_ready": {"const": false},
+        "domain_kind": {"const": "openmc_cell"},
+        "status": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "post_component_readiness": {
+      "type": "object",
+      "required": [
+        "metadata_ready",
+        "execution_ready",
+        "domain_kind",
+        "status"
+      ],
+      "properties": {
+        "metadata_ready": {"const": true},
+        "execution_ready": {"const": false},
+        "domain_kind": {"const": "material_homogeneous_component"},
+        "status": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "required": [
+        "component_id",
+        "magnet_id",
+        "component_role",
+        "dagmc_volume_id",
+        "openmc_cell_id",
+        "surface_ids",
+        "material",
+        "volume_cm3",
+        "mass_g",
+        "activation_readiness"
+      ],
+      "properties": {
+        "component_id": {"type": "string", "minLength": 1},
+        "magnet_id": {"type": "string", "minLength": 1},
+        "component_role": {"enum": ["winding_pack", "casing"]},
+        "dagmc_volume_id": {"type": "integer", "minimum": 1},
+        "openmc_cell_id": {"type": "integer", "minimum": 1},
+        "surface_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "material": {"$ref": "#/$defs/material"},
+        "volume_cm3": {"type": "number", "exclusiveMinimum": 0},
+        "mass_g": {"type": "number", "exclusiveMinimum": 0},
+        "activation_readiness": {
+          "type": "object",
+          "required": ["direct_r2s", "post_transport"],
+          "properties": {
+            "direct_r2s": {"$ref": "#/$defs/direct_component_readiness"},
+            "post_transport": {"$ref": "#/$defs/post_component_readiness"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "mesh_definition": {
+      "type": "object",
+      "required": [
+        "magnet_id",
+        "lower_left_local_cm",
+        "upper_right_local_cm",
+        "dimension",
+        "rotation_local_to_global",
+        "translation_global_cm",
+        "requested_resolution_cm",
+        "actual_bin_widths_cm",
+        "bin_count",
+        "bin_volume_cm3",
+        "frame_type"
+      ],
+      "properties": {
+        "magnet_id": {"type": "string", "minLength": 1},
+        "lower_left_local_cm": {"$ref": "#/$defs/vector3"},
+        "upper_right_local_cm": {"$ref": "#/$defs/vector3"},
+        "dimension": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "rotation_local_to_global": {"$ref": "#/$defs/matrix3"},
+        "translation_global_cm": {"$ref": "#/$defs/vector3"},
+        "requested_resolution_cm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "actual_bin_widths_cm": {"$ref": "#/$defs/vector3"},
+        "bin_count": {"type": "integer", "minimum": 1},
+        "bin_volume_cm3": {"type": "number", "exclusiveMinimum": 0},
+        "frame_type": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "material_fraction_row": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 1
+      }
+    },
+    "material_resolution": {
+      "type": "object",
+      "required": [
+        "cell_filter_applied",
+        "materially_mixed_bins_possible",
+        "fractions_available",
+        "per_bin_material_fractions",
+        "status"
+      ],
+      "properties": {
+        "cell_filter_applied": {"type": "boolean"},
+        "materially_mixed_bins_possible": {"type": "boolean"},
+        "fractions_available": {"type": "boolean"},
+        "per_bin_material_fractions": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/material_fraction_row"}
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "MATERIAL_FRACTIONS_EXPLICIT",
+            "MATERIAL_FRACTIONS_UNAVAILABLE"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "direct_mesh_readiness": {
+      "type": "object",
+      "required": [
+        "metadata_ready",
+        "execution_ready",
+        "nonoverlap_qualified",
+        "domain_kind",
+        "status"
+      ],
+      "properties": {
+        "metadata_ready": {"type": "boolean"},
+        "execution_ready": {"const": false},
+        "nonoverlap_qualified": {"type": "boolean"},
+        "domain_kind": {"const": "openmc_mesh"},
+        "status": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "post_mesh_readiness": {
+      "type": "object",
+      "required": [
+        "metadata_ready",
+        "execution_ready",
+        "post_transport_depletable",
+        "domain_kind",
+        "status"
+      ],
+      "properties": {
+        "metadata_ready": {"type": "boolean"},
+        "execution_ready": {"const": false},
+        "post_transport_depletable": {"type": "boolean"},
+        "domain_kind": {"const": "material_resolved_mesh_bin"},
+        "status": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "local_mesh": {
+      "type": "object",
+      "required": [
+        "mesh_id",
+        "magnet_id",
+        "definition",
+        "bin_count",
+        "geometric_bin_volumes_cm3",
+        "volume_basis",
+        "material_resolution",
+        "activation_readiness"
+      ],
+      "properties": {
+        "mesh_id": {"type": "string", "minLength": 1},
+        "magnet_id": {"type": "string", "minLength": 1},
+        "definition": {"$ref": "#/$defs/mesh_definition"},
+        "bin_count": {"type": "integer", "minimum": 1},
+        "geometric_bin_volumes_cm3": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "number", "exclusiveMinimum": 0}
+        },
+        "volume_basis": {"const": "full_geometric_voxel_volume"},
+        "material_resolution": {"$ref": "#/$defs/material_resolution"},
+        "activation_readiness": {
+          "type": "object",
+          "required": ["direct_r2s", "post_transport"],
+          "properties": {
+            "direct_r2s": {"$ref": "#/$defs/direct_mesh_readiness"},
+            "post_transport": {"$ref": "#/$defs/post_mesh_readiness"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary_readiness": {
+      "type": "object",
+      "required": [
+        "direct_r2s_cell_metadata_ready",
+        "direct_r2s_mesh_metadata_ready",
+        "post_transport_component_metadata_ready",
+        "post_transport_mesh_metadata_ready",
+        "activation_schedules_present",
+        "depletion_results_present",
+        "execution_owner"
+      ],
+      "properties": {
+        "direct_r2s_cell_metadata_ready": {"const": true},
+        "direct_r2s_mesh_metadata_ready": {"type": "boolean"},
+        "post_transport_component_metadata_ready": {"const": true},
+        "post_transport_mesh_metadata_ready": {"type": "boolean"},
+        "activation_schedules_present": {"const": false},
+        "depletion_results_present": {"const": false},
+        "execution_owner": {"const": "downstream_consumer"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -197,10 +197,8 @@ def _cell_metadata(
     if missing_volumes:
         raise ValueError(f"missing cell volumes for {missing_volumes}")
     magnet_ids = tuple(str(cell_magnet_ids[int(cell)]) for cell in cells)
-    if any(not value for value in magnet_ids) or len(set(magnet_ids)) != len(
-        magnet_ids
-    ):
-        raise ValueError("magnet IDs must be nonempty and unique")
+    if any(not value for value in magnet_ids):
+        raise ValueError("magnet IDs must be nonempty")
     volumes = np.asarray(
         [cell_volumes_cm3[int(cell)] for cell in cells], dtype=float
     )
@@ -238,6 +236,7 @@ def _write_common_axes(
     *,
     cells: np.ndarray,
     magnet_ids: Sequence[str],
+    component_roles: Sequence[str] | None,
     volumes: np.ndarray,
     edges: np.ndarray,
 ) -> None:
@@ -247,6 +246,15 @@ def _write_common_axes(
         data=np.asarray(magnet_ids, dtype=h5py.string_dtype(encoding="utf-8")),
     )
     magnet_dataset.attrs["axes"] = "magnet"
+    if component_roles is not None:
+        roles = tuple(str(value) for value in component_roles)
+        if len(roles) != len(cells) or any(not value for value in roles):
+            raise ValueError("component roles must align with cells")
+        role_dataset = group.create_dataset(
+            "component_roles",
+            data=np.asarray(roles, dtype=h5py.string_dtype(encoding="utf-8")),
+        )
+        role_dataset.attrs["axes"] = "magnet"
     _dataset(group, "cell_volumes_cm3", volumes, units="cm3", axes="magnet")
     _dataset(
         group,
@@ -304,6 +312,7 @@ def export_magnet_damage_gas(
     *,
     tally_inventory: Mapping[str, Any] | Any,
     cell_magnet_ids: Mapping[int, str],
+    cell_component_roles: Mapping[int, str] | None = None,
     cell_volumes_cm3: Mapping[int, float],
     physical_source_rate_per_s: float,
     provenance: Mapping[str, Any] | None = None,
@@ -379,6 +388,20 @@ def export_magnet_damage_gas(
     magnet_ids, volumes = _cell_metadata(
         reference_cells, cell_magnet_ids, cell_volumes_cm3
     )
+    component_roles = None
+    if cell_component_roles is not None:
+        missing_roles = [
+            int(cell)
+            for cell in reference_cells
+            if int(cell) not in cell_component_roles
+        ]
+        if missing_roles:
+            raise ValueError(
+                f"missing component roles for cells {missing_roles}"
+            )
+        component_roles = tuple(
+            str(cell_component_roles[int(cell)]) for cell in reference_cells
+        )
     manifest = {
         "schema": SCHEMA,
         "created_utc": datetime.now(UTC).isoformat(),
@@ -419,6 +442,7 @@ def export_magnet_damage_gas(
                 group,
                 cells=cells,
                 magnet_ids=magnet_ids,
+                component_roles=component_roles,
                 volumes=volumes,
                 edges=edges,
             )
@@ -507,6 +531,7 @@ def export_magnet_damage_gas(
                 group,
                 cells=cells,
                 magnet_ids=magnet_ids,
+                component_roles=component_roles,
                 volumes=volumes,
                 edges=edges,
             )

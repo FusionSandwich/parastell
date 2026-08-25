@@ -13,15 +13,19 @@ from typing import Any, Mapping, Sequence
 
 SCHEMA = "parastell.magnet_radiation_field_bundle/v1.0.0"
 PRODUCT_KINDS = {
+    "activation_ready_metadata",
     "boundary_phase_space",
     "damage_and_gas_production",
+    "magnet_geometry_interchange",
     "volume_scalar_flux",
     "heating",
     "reaction_production",
 }
 PRODUCT_DIRECTORIES = {
+    "activation_ready_metadata": "activation_metadata",
     "boundary_phase_space": "boundary",
     "damage_and_gas_production": "damage_and_gas_production",
+    "magnet_geometry_interchange": "geometry_interchange",
     "volume_scalar_flux": "volume_flux",
     "heating": "heating",
     "reaction_production": "reaction_production",
@@ -52,6 +56,7 @@ SUPPORTED_BANK_CLASSIFICATIONS = {
     "SAMPLED_CROSSING_BANK",
     "TRUNCATED_INVALID_BANK",
 }
+SUPPORTED_BOUNDARY_ROLES = {"outer_magnet", "winding_pack"}
 REQUIRED_BOUNDARY_RECORD_FIELDS = {
     "record_id",
     "position_global_cm",
@@ -1018,6 +1023,14 @@ def _validate_boundary_hdf5(
             raise ValueError(
                 "boundary envelope magnet does not match bundle product"
             )
+        if "boundary_role" in product:
+            actual_role = envelope.get("metadata", {}).get(
+                "boundary_role", "winding_pack"
+            )
+            if actual_role != product["boundary_role"]:
+                raise ValueError(
+                    "boundary envelope role does not match bundle product"
+                )
         if envelope.get("dagmc_geometry_sha256") != geometry["raw_h5m_sha256"]:
             raise ValueError(
                 "boundary envelope geometry does not match bundle"
@@ -1128,11 +1141,31 @@ def _bank_completeness_summary(
 def _require_boundary_coverage(
     products: Sequence[Mapping[str, Any]], magnet_ids: Sequence[str]
 ) -> None:
-    boundary_routes = [
-        str(item.get("magnet_id", ""))
-        for item in products
-        if item.get("kind") == "boundary_phase_space"
+    boundaries = [
+        item for item in products if item.get("kind") == "boundary_phase_space"
     ]
+    explicit_roles = ["boundary_role" in item for item in boundaries]
+    if any(explicit_roles):
+        if not all(explicit_roles):
+            raise ValueError(
+                "boundary products cannot mix legacy and role-qualified routes"
+            )
+        routes = [
+            (str(item.get("magnet_id", "")), str(item["boundary_role"]))
+            for item in boundaries
+        ]
+        expected = {
+            (str(magnet_id), role)
+            for magnet_id in magnet_ids
+            for role in SUPPORTED_BOUNDARY_ROLES
+        }
+        if len(routes) != len(set(routes)) or set(routes) != expected:
+            raise ValueError(
+                "role-qualified boundary products must cover outer_magnet and "
+                "winding_pack for every inventory magnet exactly once"
+            )
+        return
+    boundary_routes = [str(item.get("magnet_id", "")) for item in boundaries]
     if len(boundary_routes) != len(set(boundary_routes)) or set(
         boundary_routes
     ) != set(magnet_ids):
@@ -1166,6 +1199,12 @@ def _validate_product(product: Mapping[str, Any]) -> None:
                 "volume scalar flux must use physical source normalization"
             )
     if product["kind"] == "boundary_phase_space":
+        if "boundary_role" in product and product["boundary_role"] not in (
+            SUPPORTED_BOUNDARY_ROLES
+        ):
+            raise ValueError(
+                "boundary phase space has an unknown boundary role"
+            )
         if product["units"] != "crossings/source":
             raise ValueError("boundary phase space has an unknown unit")
         if product.get("quantity") != "partial_crossing_current":
@@ -1198,6 +1237,24 @@ def _validate_product(product: Mapping[str, Any]) -> None:
         if product["normalization"] != "physical_source_rate":
             raise ValueError(
                 "damage/gas product must use physical source normalization"
+            )
+    if product["kind"] == "activation_ready_metadata":
+        if (
+            product["units"] != "metadata"
+            or product.get("quantity") != "activation_ready_metadata"
+            or product["normalization"] != "not_applicable"
+        ):
+            raise ValueError(
+                "activation-ready metadata product semantics are invalid"
+            )
+    if product["kind"] == "magnet_geometry_interchange":
+        if (
+            product["units"] != "metadata"
+            or product.get("quantity") != "magnet_geometry_interchange"
+            or product["normalization"] != "not_applicable"
+        ):
+            raise ValueError(
+                "geometry-interchange product semantics are invalid"
             )
 
 
@@ -1338,6 +1395,18 @@ def write_radiation_field_bundle(
                 geometry=geometry,
                 nuclear_data=nuclear_data,
             )
+        if product["kind"] == "activation_ready_metadata":
+            from .activation_ready_metadata import (
+                read_activation_ready_metadata,
+            )
+
+            read_activation_ready_metadata(source_path)
+        if product["kind"] == "magnet_geometry_interchange":
+            from .magnet_geometry_interchange import (
+                read_magnet_geometry_interchange,
+            )
+
+            read_magnet_geometry_interchange(source_path)
         relative = (
             Path(role_directory) / str(product["magnet_id"]) / source_path.name
         )
@@ -1507,6 +1576,18 @@ def read_radiation_field_bundle(path: str | Path) -> dict[str, Any]:
                 geometry=manifest["geometry"],
                 nuclear_data=manifest["nuclear_data"],
             )
+        if product["kind"] == "activation_ready_metadata":
+            from .activation_ready_metadata import (
+                read_activation_ready_metadata,
+            )
+
+            read_activation_ready_metadata(product_path)
+        if product["kind"] == "magnet_geometry_interchange":
+            from .magnet_geometry_interchange import (
+                read_magnet_geometry_interchange,
+            )
+
+            read_magnet_geometry_interchange(product_path)
     expected_completeness = _bank_completeness_summary(boundary_banks)
     if manifest["bank_completeness"] != expected_completeness:
         raise ValueError(

@@ -34,6 +34,7 @@ def export_magnet_heating(
     tally_names: Sequence[str],
     cell_volumes_cm3: Mapping[int, float],
     cell_magnet_ids: Mapping[int, str],
+    cell_component_roles: Mapping[int, str] | None = None,
     physical_source_rate_per_s: float,
     provenance: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
@@ -104,6 +105,16 @@ def export_magnet_heating(
             ]
             if missing:
                 raise ValueError(f"missing magnet IDs for cells {missing}")
+            if cell_component_roles is not None:
+                missing = [
+                    int(cell)
+                    for cell in cell_ids
+                    if int(cell) not in cell_component_roles
+                ]
+                if missing:
+                    raise ValueError(
+                        f"missing component roles for cells {missing}"
+                    )
             volumes = np.asarray(
                 [cell_volumes_cm3[int(cell)] for cell in cell_ids], dtype=float
             )
@@ -127,6 +138,11 @@ def export_magnet_heating(
                     "magnet_ids": [
                         cell_magnet_ids[int(cell)] for cell in cell_ids
                     ],
+                    "component_roles": (
+                        [cell_component_roles[int(cell)] for cell in cell_ids]
+                        if cell_component_roles is not None
+                        else None
+                    ),
                     "volumes_cm3": volumes,
                     "energy_edges_eV": energy_edges,
                     "mean_eV_per_source": mean,
@@ -182,5 +198,12 @@ def export_magnet_heating(
                 "magnet_ids",
                 data=np.asarray(row["magnet_ids"], dtype=string_dtype),
             )
+            if row["component_roles"] is not None:
+                group.create_dataset(
+                    "component_roles",
+                    data=np.asarray(
+                        row["component_roles"], dtype=string_dtype
+                    ),
+                )
     manifest["path"] = str(output_path.resolve())
     return manifest

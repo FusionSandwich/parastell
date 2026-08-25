@@ -118,6 +118,7 @@ def export_magnet_reaction_production(
     output_path: str | Path,
     *,
     magnet_ids: Sequence[str] | None = None,
+    component_roles: Sequence[str] | None = None,
     physical_source_rate_per_s: float | None = None,
     transported_particles: Mapping[str, bool] | None = None,
     provenance: Mapping[str, Any] | None = None,
@@ -158,6 +159,15 @@ def export_magnet_reaction_production(
         ids = tuple(magnet_ids or (f"magnet-{cell}" for cell in cells))
         if len(ids) != len(cells):
             raise ValueError("magnet IDs must align with cell IDs")
+        roles = (
+            tuple(str(value) for value in component_roles)
+            if component_roles is not None
+            else None
+        )
+        if roles is not None and (
+            len(roles) != len(cells) or any(not value for value in roles)
+        ):
+            raise ValueError("component roles must align with cell IDs")
         reaction_labels = tuple(str(value) for value in reaction_filter.bins)
         products = {}
         for particle, tally_name in PRODUCTION_TALLIES.items():
@@ -202,6 +212,8 @@ def export_magnet_reaction_production(
             reactions = stream.create_group("reactions/neutron")
             reactions.create_dataset("cell_ids", data=cells)
             _string_dataset(reactions, "magnet_ids", ids)
+            if roles is not None:
+                _string_dataset(reactions, "component_roles", roles)
             reactions.create_dataset(
                 "incident_energy_edges_eV", data=incident_edges
             )
@@ -227,6 +239,8 @@ def export_magnet_reaction_production(
                 )
                 group.create_dataset("cell_ids", data=cells)
                 _string_dataset(group, "magnet_ids", ids)
+                if roles is not None:
+                    _string_dataset(group, "component_roles", roles)
                 group.create_dataset(
                     "incident_energy_edges_eV", data=incident_edges
                 )

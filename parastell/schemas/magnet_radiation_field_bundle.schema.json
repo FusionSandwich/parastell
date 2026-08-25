@@ -130,8 +130,10 @@
       "properties": {
         "kind": {
           "enum": [
+            "activation_ready_metadata",
             "boundary_phase_space",
             "damage_and_gas_production",
+            "magnet_geometry_interchange",
             "volume_scalar_flux",
             "heating",
             "reaction_production"
@@ -143,7 +145,10 @@
         "size_bytes": {"type": "integer", "minimum": 0},
         "units": {"type": "string", "minLength": 1},
         "normalization": {"type": "string", "minLength": 1},
-        "quantity": {"type": "string", "minLength": 1}
+        "quantity": {"type": "string", "minLength": 1},
+        "boundary_role": {
+          "enum": ["outer_magnet", "winding_pack"]
+        }
       },
       "allOf": [
         {
@@ -196,6 +201,28 @@
               "path": {"pattern": "^reaction_production/[^/]+/[^/]+$"},
               "units": {"enum": ["events/source", "events/s"]},
               "quantity": {"const": "reaction_and_particle_production"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "activation_ready_metadata"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "path": {"pattern": "^activation_metadata/[^/]+/[^/]+$"},
+              "units": {"const": "metadata"},
+              "normalization": {"const": "not_applicable"},
+              "quantity": {"const": "activation_ready_metadata"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "magnet_geometry_interchange"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "path": {"pattern": "^geometry_interchange/[^/]+/[^/]+$"},
+              "units": {"const": "metadata"},
+              "normalization": {"const": "not_applicable"},
+              "quantity": {"const": "magnet_geometry_interchange"}
             }
           }
         }

@@ -186,7 +186,8 @@
       "outputs": [
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/geometry_manifest.json",
-        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json"
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_geometry_interchange.json"
       ],
       "geometry_config": "./config.yaml",
       "vmec_path": "./wout_vmec.nc",
@@ -194,6 +195,7 @@
       "dagmc_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
       "geometry_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/geometry_manifest.json",
       "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "geometry_interchange_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_geometry_interchange.json",
       "machine_id": "example-stellarator",
       "sector_id": "sector-00-90deg",
       "geometry_backend": "pydagmc-invessel-cad-to-dagmc-magnets",
@@ -632,6 +634,7 @@
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json"
       ],
@@ -640,6 +643,7 @@
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_heating.h5",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_reaction_production.h5",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_damage_gas.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/activation_ready_metadata.json",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/boundary_handoffs",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/postprocess_report.json"
       ],
@@ -651,12 +655,14 @@
       "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
       "local_mesh_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json",
       "nuclear_data_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+      "material_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
       "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
       "transport_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json",
       "scalar_flux_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/scalar_flux_fields.h5",
       "heating_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_heating.h5",
       "reaction_production_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_reaction_production.h5",
       "damage_gas_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_damage_gas.h5",
+      "activation_ready_metadata_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/activation_ready_metadata.json",
       "boundary_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/boundary_handoffs",
       "postprocess_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/postprocess_report.json",
       "selection": "all",
@@ -715,7 +721,8 @@
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
-        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json"
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_geometry_interchange.json"
       ],
       "outputs": [
         "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/radiation_field_bundle",
@@ -726,6 +733,7 @@
       "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
       "material_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
       "nuclear_data_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+      "geometry_interchange_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_geometry_interchange.json",
       "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
       "bundle_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/radiation_field_bundle",
       "bundle_receipt_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/bundle_receipt.json",
