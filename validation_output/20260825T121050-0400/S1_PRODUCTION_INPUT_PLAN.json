@@ -1,0 +1,41 @@
+{
+  "schema": "parastell_damage.magnet_production_input_plan/v1.0.0",
+  "record_created_utc": "2026-08-25T17:23:52Z",
+  "timestamp_basis": "filesystem creation time; the superseded created_utc label mixed UTC and -04:00",
+  "plan_status": "PLANNING_CONTRACT_ONLY",
+  "launch_authorized": false,
+  "blocking_gate": "incoming photon crossing rate is unobserved",
+  "unbiased": {
+    "prepared": false,
+    "enabled": false,
+    "preparation_blocker": "no exact input-deck path/hash exists and histories remain unresolved",
+    "model_basis": "combined reactor plus native ParaStell magnets",
+    "source_basis": "actual ParaStell SourceMesh",
+    "transport": "coupled neutron-photon",
+    "boundary_roles": [
+      "outer_magnet",
+      "winding_pack"
+    ],
+    "scalar_products": [
+      "whole_winding_pack_neutron_photon",
+      "whole_casing_neutron_photon",
+      "local_magnet_aligned_neutron_photon"
+    ],
+    "histories": null,
+    "histories_resolution_rule": "resolve only after unbiased photon calibration, then use maximum conservative target from REAL_PILOT_PRODUCTION_PLAN.json",
+    "independent_seed_replicas": 3,
+    "surface_bank_capacity_policy": "dynamic capacity above confidence-upper total crossing prediction",
+    "require_capacity_reached_false": true
+  },
+  "optional_variance_reduced": {
+    "prepared": false,
+    "enabled": false,
+    "preparation_blocker": "variance reduction cannot be instantiated before an unbiased deck and stable structured-mesh qualification exist",
+    "weight_windows": "disabled",
+    "allowed_candidate": "structured-mesh weight windows only",
+    "enablement_gate": "stable structured-mesh qualification and agreement with independent unbiased replicas",
+    "existing_qualification": "REJECTED_INSTABILITY"
+  },
+  "scheduler_submission_prepared": false,
+  "reason_no_submission": "final histories, incoming photon rate, queue, account, allocation, and live headroom are unresolved"
+}

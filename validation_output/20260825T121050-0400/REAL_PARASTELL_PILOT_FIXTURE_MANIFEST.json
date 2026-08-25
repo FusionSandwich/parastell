@@ -1,0 +1,138 @@
+{
+  "acceptance": {
+    "coordinate_transform": {
+      "evidence": "global positions and directions reconstruct every stored surface-local record",
+      "status": "PASS"
+    },
+    "current_conservation": {
+      "evidence": "canonical record weights equal each bank integrated current and projection",
+      "status": "PASS"
+    },
+    "direction_preservation": {
+      "evidence": "global and local directions remain normalized and frame-equivalent",
+      "status": "PASS"
+    },
+    "energy_preservation": {
+      "evidence": "continuous energies reproduce stored particle-specific group identities",
+      "status": "PASS"
+    },
+    "particle_identity": {
+      "evidence": "particle names agree with PDG identities",
+      "status": "PASS"
+    },
+    "scalar_flux_normalization": {
+      "evidence": "track-length scalar flux retains volume and physical source-rate normalization and is rejected if encoded as surface current",
+      "status": "PASS"
+    },
+    "schema_round_trip": {
+      "evidence": "neutral bundle and every referenced product passed strict readback",
+      "status": "PASS"
+    },
+    "time_semantics": {
+      "evidence": "prompt flight-time meaning is explicit; availability is explicit per bank",
+      "status": "PASS"
+    }
+  },
+  "acceptance_scope": "reader_contract_and_normalization_plumbing_only",
+  "committed_payload": {
+    "boundary_downsample": {
+      "reason": "no inclusion-probability and weight-correction contract was qualified for boundary downsampling",
+      "status": "OMITTED"
+    },
+    "included_large_artifacts": [],
+    "scalar_downsample": {
+      "reason": "the external hash-bound scalar product is retained as a reader fixture; it is not statistically or activation qualified",
+      "status": "OMITTED"
+    }
+  },
+  "created_utc": "2026-08-25T17:21:54.223215+00:00",
+  "external_artifact": {
+    "bundle_manifest_sha256": "7d9b1221f88092779703e2afc8a3a6a228046525649831d9066f6acbfa6f499a",
+    "canonical_tree_sha256": "ae4ac24edda9b7c710845d21c7fb222cf2b20233db3ba667756a9a8c3e47e5d3",
+    "file_count": 23,
+    "local_path_hint": "D:\\parastell-artifacts\\mainline-integration-20260825\\magnet-radiation-smoke\\radiation_field_bundle",
+    "size_bytes": 385850275,
+    "uri": "artifact://parastell/mainline-integration-20260825/magnet-radiation-smoke"
+  },
+  "legacy_external_receipt": {
+    "raw_crlf_sha256": "418198a00c110c23220fe6e0894a7a4cd52872c8e7e2fbb33219018bb6fba2d4",
+    "semantic_compact_sha256": "ee5409c175406465cd89b6c82cc101625370aacbf1617733e6cf6164ff34783f"
+  },
+  "pilot_summary": {
+    "bank_completeness": {
+      "all_banks_complete": true,
+      "all_banks_valid": true,
+      "bank_count": 18,
+      "classification_counts": {
+        "COMPLETE_CROSSING_BANK": 18,
+        "SAMPLED_CROSSING_BANK": 0,
+        "TRUNCATED_INVALID_BANK": 0
+      },
+      "empty_bank_count": 13,
+      "empty_banks_are_physical_zero": false,
+      "record_count_total": 36,
+      "status": "COMPLETE"
+    },
+    "bank_count": 18,
+    "batches": 5,
+    "facet_mapped_record_count": 36,
+    "histories": 5000,
+    "magnet_count": 18,
+    "particle_record_counts": {
+      "neutron": 34,
+      "photon": 2
+    },
+    "physical_source_rate_per_s": 2.414553994787296e+20,
+    "product_kind_counts": {
+      "boundary_phase_space": 18,
+      "damage_and_gas_production": 1,
+      "heating": 1,
+      "reaction_production": 1,
+      "volume_scalar_flux": 1
+    },
+    "prompt_time_record_count": 36,
+    "record_count": 36
+  },
+  "population_qualification": {
+    "blocking_reasons": [],
+    "criteria": {
+      "boundary_bank_present": {
+        "evidence": "observed in the validated external boundary banks",
+        "status": "PASS"
+      },
+      "boundary_record_present": {
+        "evidence": "observed in the validated external boundary banks",
+        "status": "PASS"
+      },
+      "neutron_records_present": {
+        "evidence": "observed in the validated external boundary banks",
+        "status": "PASS"
+      },
+      "photon_records_present": {
+        "evidence": "observed in the validated external boundary banks",
+        "status": "PASS"
+      }
+    },
+    "requirement": "at least one validated boundary bank and positive neutron and photon boundary-record populations",
+    "status": "PASS"
+  },
+  "producer_identity": {
+    "geometry_fingerprint": "4f3588b5bdbc80977ed69cdb32188e2bd6ea4e2a414a8338801a0824fbf2c709",
+    "openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
+    "openmc_version": "0.16.0",
+    "parastell_commit": "744e1ab3cb7508aa30f11a3dcd9628cbf9e50430",
+    "statepoint_sha256": "b5aaf639e01a3f7315c47a6301927d80a67446486f45cfb15eabf602fc09e7ef"
+  },
+  "qualification_limitations": [
+    "historical producer branch 744e1ab predates the activation-ready metadata and geometry-interchange products",
+    "boundary records cover winding-pack envelopes only",
+    "whole-casing scalar flux is absent",
+    "local mesh voxels are spatially mixed and have no qualifying cell/material filter",
+    "all nonzero scalar-flux bins are statistically under-resolved",
+    "zero incoming photon records were observed",
+    "not activation, SPECTRA-PKA, or production qualified"
+  ],
+  "qualification_scope": "boundary_record_particle_population_only_not_physics_qualification",
+  "qualification_status": "STRUCTURAL_PILOT_POPULATION_PASS",
+  "schema": "parastell.magnet_pilot_fixture_manifest/v1.0.0"
+}

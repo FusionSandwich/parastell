@@ -1,0 +1,187 @@
+{
+  "artifact_tree": {
+    "canonical_tree_sha256": "9dd2afcc237450733f2414a1b8e01ac9b2ba22b487bf40ac1c9a52332da6d84c",
+    "file_count": 13,
+    "files": [
+      {
+        "path": "independent_operator/depletion_results.h5",
+        "sha256": "2af85e2734d3b7a8d314e02797eb85f1c61a48c27a257442dd89e4093334cdb6",
+        "size_bytes": 3549928
+      },
+      {
+        "path": "r2s/activation/depletion_results.h5",
+        "sha256": "c44790ab4bed73fb1067de8163efd5f41b6c6ba379aea465ab2b4fb002cb852a",
+        "size_bytes": 3549928
+      },
+      {
+        "path": "r2s/activation/materials.xml",
+        "sha256": "83c2641ee9a69d4fab66b36ebf7cdec80eb54deba485b9e6183b85b18acce94a",
+        "size_bytes": 236
+      },
+      {
+        "path": "r2s/neutron_transport/fluxes.npy",
+        "sha256": "11e0d6414b144d7ca1be58ddc61d80efc4bba2eaa4555604b94aff6eec5270f5",
+        "size_bytes": 136
+      },
+      {
+        "path": "r2s/neutron_transport/micros.h5",
+        "sha256": "5f6aecac639136723e6d47b8203c3e3561488a5aec2b09ec3b18e6f391b9f19b",
+        "size_bytes": 22952
+      },
+      {
+        "path": "r2s/neutron_transport/model.xml",
+        "sha256": "93e75bfaa52f3d0eedc00c1d0692b50f5f3cb4c19e600dab44a1ba2b8f78e487",
+        "size_bytes": 5200
+      },
+      {
+        "path": "r2s/neutron_transport/statepoint.h5",
+        "sha256": "f7d5c9aaf9f15995ae66ef9758f3285bb4b5daa09ba7698fdc87b25730603904",
+        "size_bytes": 107390
+      },
+      {
+        "path": "r2s/neutron_transport/tally_ids.json",
+        "sha256": "080a9ed428559ef602668b4c00f114f1a11c3f6b02a435f0bdc154578e4d7f22",
+        "size_bytes": 3
+      },
+      {
+        "path": "r2s/photon_transport/tally_ids.json",
+        "sha256": "080a9ed428559ef602668b4c00f114f1a11c3f6b02a435f0bdc154578e4d7f22",
+        "size_bytes": 3
+      },
+      {
+        "path": "r2s/photon_transport/time_2/model.xml",
+        "sha256": "d950b942613087d01f5eb1a73d9c4d9134646714e1d2092e366dd0c264163a29",
+        "size_bytes": 1581
+      },
+      {
+        "path": "r2s/photon_transport/time_2/statepoint.3.h5",
+        "sha256": "c87cae23c43fdad7a58208984de9c1c836a50017689564fa367dbc209ebede32",
+        "size_bytes": 22880
+      },
+      {
+        "path": "r2s/photon_transport/time_2/summary.h5",
+        "sha256": "63837bf5d0d623d9e1d0c4a9dd2beca1590f7472d1c36f37877ddfc8a024998a",
+        "size_bytes": 21624
+      },
+      {
+        "path": "r2s/photon_transport/time_2/tallies.out",
+        "sha256": "325b791d573690ac7e8c5bbd5a47baa6c6c697dbb5e61feea4dbc9e82d541e4d",
+        "size_bytes": 238
+      }
+    ]
+  },
+  "comparison": {
+    "dominant_products_match": true,
+    "metric_comparisons": [
+      {
+        "absolute_difference": 0.0,
+        "independent_operator": 4.4939191770842455e+25,
+        "metric": "total_atoms",
+        "passed": true,
+        "r2s": 4.4939191770842455e+25,
+        "relative_difference": 0.0,
+        "relative_tolerance": 1e-12
+      },
+      {
+        "absolute_difference": 0.0,
+        "independent_operator": 9.487961621560494e+17,
+        "metric": "activity_Bq",
+        "passed": true,
+        "r2s": 9.487961621560494e+17,
+        "relative_difference": 0.0,
+        "relative_tolerance": 1e-12
+      },
+      {
+        "absolute_difference": 0.0,
+        "independent_operator": 47410.48824607204,
+        "metric": "decay_heat_W",
+        "passed": true,
+        "r2s": 47410.48824607204,
+        "relative_difference": 0.0,
+        "relative_tolerance": 1e-12
+      },
+      {
+        "absolute_difference": 0.0,
+        "independent_operator": 4.917258760148618e+17,
+        "metric": "photon_source_intensity_per_s",
+        "passed": true,
+        "r2s": 4.917258760148618e+17,
+        "relative_difference": 0.0,
+        "relative_tolerance": 1e-12
+      }
+    ],
+    "passed": true
+  },
+  "environment": {
+    "histories": 1500,
+    "openmc": "0.16.0",
+    "openmc_executable_commit": "617d35a5063c57796b43428bc401e627d2011046",
+    "python": "3.12.13",
+    "seed": 24681357,
+    "threads": 2
+  },
+  "independent_operator": {
+    "input_flux_sha256": "13c15ea3ecb49e98c0f7c82b5b803a80b053181a1b08414ed4d61db8fde46fdd",
+    "metrics": {
+      "activity_Bq": 9.487961621560494e+17,
+      "decay_heat_W": 47410.48824607204,
+      "dominant_products": [
+        "Ni64",
+        "Zn64",
+        "Cu64",
+        "Cu65",
+        "H1"
+      ],
+      "photon_source_intensity_per_s": 4.917258760148618e+17,
+      "total_atoms": 4.4939191770842455e+25
+    },
+    "result_sha256": "2af85e2734d3b7a8d314e02797eb85f1c61a48c27a257442dd89e4093334cdb6"
+  },
+  "model": {
+    "cell_id": 41,
+    "material": "Cu63",
+    "physical_source_rate_per_s": 1e+20,
+    "schedule": {
+      "cooling_s": 86400.0,
+      "irradiation_s": 3600.0,
+      "shutdown_photon_time_index": 2
+    },
+    "source_energy_eV": 0.0253,
+    "volume_cm3": 523.5987755982989
+  },
+  "nuclear_data": {
+    "chain_sha256": "5eeb727498d824d7c951ad89864bbc1c2d76ec5e8c9097a820505213ba6a2bf3",
+    "cross_sections_sha256": "218236803b2c4a21b038992af93dacfdfe5c0c0401cbbc57f3ff3a947c63abc7"
+  },
+  "qualification_scope": "analytic_software_and_api_smoke_only",
+  "r2s": {
+    "decay_photon_source_count": 1,
+    "metrics": {
+      "activity_Bq": 9.487961621560494e+17,
+      "decay_heat_W": 47410.48824607204,
+      "dominant_products": [
+        "Ni64",
+        "Zn64",
+        "Cu64",
+        "Cu65",
+        "H1"
+      ],
+      "photon_source_intensity_per_s": 4.917258760148618e+17,
+      "total_atoms": 4.4939191770842455e+25
+    },
+    "result_sha256": "c44790ab4bed73fb1067de8163efd5f41b6c6ba379aea465ab2b4fb002cb852a"
+  },
+  "real_parastell_pilot_qualified": false,
+  "schema": "parastell_damage.analytic_openmc_activation_smoke/v1.0.0",
+  "shutdown_photon_transport": {
+    "passed": true,
+    "statepoint_path": "r2s/photon_transport/time_2/statepoint.3.h5",
+    "statepoint_sha256": "c87cae23c43fdad7a58208984de9c1c836a50017689564fa367dbc209ebede32",
+    "tally": {
+      "mean": 8.622016602030778e+17,
+      "nonzero": true,
+      "std_dev": 3.2579602308422964e+16
+    }
+  },
+  "status": "PASS"
+}

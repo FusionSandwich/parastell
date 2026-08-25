@@ -73,14 +73,35 @@ It writes a hash-bound transport report. `postprocess` exports:
 
 - configured, CCFE-709, and UKAEA-1102 whole-volume neutron scalar flux;
 - configured whole-volume photon scalar flux;
+- role-labelled whole-volume casing and winding-pack scalar flux;
 - magnet-aligned local neutron and photon scalar-flux fields;
 - neutron and photon heating in per-source and physical units;
 - damage/reaction and neutron/photon/electron/positron production products;
-- one closed-boundary phase-space handoff for every selected winding pack.
+- distinct closed outer-magnet and winding-pack phase-space handoffs for every
+  selected magnet;
+- `parastell.activation_ready_metadata/v1.0.0`, with explicit
+  DAGMC-volume-to-OpenMC-cell and material IDs, volumes, masses, densities,
+  temperatures, composition hashes, exact mesh-bin volumes, physical source
+  normalization, geometry fingerprint, and nuclear-data manifest.
+
+`build_geometry` also writes
+`parastell.magnet_geometry_interchange/v1.0.0`. It contains the hash-bound
+filament source identity, native-global and sector transforms, full centreline
+and arc-length samples, casing and winding-pack cross sections, continuous
+right-handed engineering parallel-transport frames, component/surface IDs,
+and available/unavailable STEP, STL, and H5M artifact evidence. The contract
+always records `frame_kind = engineering_parallel_transport` and
+`tape_twist_resolved = false`; it cannot be used to claim resolved conductor
+twist.
 
 The neutral bundle contains only versioned HDF5/JSON products and hashes. It
 can be read and validated without importing ParaStell's geometry or OpenMC
 runtime stacks.
+
+Activation schedules, inventory evolution, cooling, decay-photon sources, and
+shutdown transport remain downstream responsibilities. Mixed local meshes are
+explicitly not post-transport depletable until material-intersection fractions
+are supplied, and mesh R2S remains disabled until non-overlap is qualified.
 
 ## Normalization and statistics
 

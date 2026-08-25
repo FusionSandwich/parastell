@@ -1,0 +1,136 @@
+{
+  "schema": "parastell_damage.magnet_production_history_plan/v1.0.0",
+  "record_created_utc": "2026-08-25T17:23:52Z",
+  "timestamp_basis": "filesystem creation time; the superseded created_utc label mixed UTC and -04:00",
+  "status": "BLOCKED_INCOMING_PHOTON_RATE_UNOBSERVED",
+  "launch_authorized": false,
+  "pilot": {
+    "bundle_manifest_sha256": "7d9b1221f88092779703e2afc8a3a6a228046525649831d9066f6acbfa6f499a",
+    "canonical_tree_sha256": "ae4ac24edda9b7c710845d21c7fb222cf2b20233db3ba667756a9a8c3e47e5d3",
+    "histories": 5000,
+    "batches": 5,
+    "seed": 190734863,
+    "wall_time_s": 56.73,
+    "threads": 4,
+    "surface_bank_capacity_records": 5000,
+    "surface_bank_truncated": false
+  },
+  "boundary_observations": {
+    "neutron_incoming": {
+      "records": 19,
+      "sum_weight_per_source": 0.0038,
+      "weight_only_ess": 19.0,
+      "nominal_counting_relative_error": 0.22941573387056174,
+      "history_identity_available": false
+    },
+    "neutron_outgoing": {
+      "records": 15,
+      "sum_weight_per_source": 0.003,
+      "weight_only_ess": 15.0
+    },
+    "photon_incoming": {
+      "records": 0,
+      "sum_weight_per_source": 0.0,
+      "weight_only_ess": 0.0,
+      "finite_conservative_history_estimate_available": false
+    },
+    "photon_outgoing": {
+      "records": 2,
+      "sum_weight_per_source": 0.0004,
+      "weight_only_ess": 2.0,
+      "may_substitute_for_incoming_target": false
+    },
+    "grazing_records": 0,
+    "record_weight_per_source": 0.0002
+  },
+  "targets": {
+    "effective_incoming_neutron_records": 10000,
+    "effective_incoming_photon_records": 1000,
+    "major_neutron_patch_maximum_relative_error": 0.1,
+    "major_photon_patch_maximum_relative_error": 0.2
+  },
+  "history_estimates": {
+    "aggregate_incoming_neutron": {
+      "observed_rate_per_history": 0.0038,
+      "point_estimate_histories": 2631579,
+      "garwood_95pct_rate_interval_per_history": [
+        0.0022878482,
+        0.0059341707
+      ],
+      "conservative_lower_rate_histories": 4370920
+    },
+    "representative_coil_0005_incoming_neutron": {
+      "pilot_records": 7,
+      "observed_rate_per_history": 0.0014,
+      "point_estimate_histories": 7142858,
+      "conservative_lower_rate_histories": 17766010
+    },
+    "aggregate_incoming_photon": {
+      "point_estimate_histories": null,
+      "conservative_histories": null,
+      "reason": "zero incoming photon observations give a zero lower confidence bound"
+    }
+  },
+  "observed_neutron_patch_counts": [
+    4,
+    4,
+    3,
+    3,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "patch_planning": {
+    "current_nominal_relative_error_range": [
+      0.5,
+      1.0
+    ],
+    "predicted_at_2631579_histories": {
+      "four_record_patch_expected_records": 2105,
+      "four_record_patch_relative_error": 0.0218,
+      "three_record_patch_expected_records": 1579,
+      "three_record_patch_relative_error": 0.0252,
+      "one_record_patch_expected_records": 526,
+      "one_record_patch_relative_error": 0.0436
+    },
+    "limitations": [
+      "unobserved patches have no finite rate estimate",
+      "history-level crossing correlation is unavailable",
+      "between-seed patch stability is unqualified",
+      "major-patch selection must be predeclared before production"
+    ]
+  },
+  "same_machine_linear_timing_projections_h": {
+    "aggregate_neutron_point": 8.29,
+    "aggregate_neutron_conservative": 13.78,
+    "coil_0005_point": 22.51,
+    "coil_0005_conservative": 55.99,
+    "transferable_to_cluster": false
+  },
+  "required_calibration_before_s1": {
+    "first_action": "convert the two preserved sibling surface banks through the same facet and sense mapper",
+    "sibling_bank_sha256": [
+      "8a8e6e6d686d8becab033e6c3d6bc340f9519edf1cb6ef6299cd04f0a0337228",
+      "af3510135b48f8394f5ef338fdc89bc24b8a4d7e0c752a3737671193a6aeddd4"
+    ],
+    "if_incoming_photons_remain_zero": "run three independent 100000-history unbiased calibration replicas on the declared representative magnet",
+    "predeclare_major_patch_rule": "patches carrying at least 5 percent of incoming current or the smallest stable set carrying at least 90 percent",
+    "final_history_rule": "maximum of neutron ESS, photon ESS, and patch-precision requirements using lower confidence rates and between-seed variance"
+  },
+  "surface_bank_capacity_plan": {
+    "present_capacity_is_sufficient_for_production": false,
+    "point_estimate_total_crossings_at_2631579_histories": 18947,
+    "requirement": "capacity must exceed the confidence-upper crossing prediction and capacity_reached must remain false"
+  },
+  "scalar_flux_qualification": {
+    "whole_volume_neutron_nonzero_under_resolved_bins": 635,
+    "whole_volume_neutron_qualified_bins": 0,
+    "whole_volume_photon_nonzero_under_resolved_bins": 94,
+    "whole_volume_photon_qualified_bins": 0,
+    "local_mesh_material_semantics": "spatial_mixed",
+    "local_mesh_activation_depletable": false,
+    "whole_casing_scalar_flux_present": false
+  }
+}

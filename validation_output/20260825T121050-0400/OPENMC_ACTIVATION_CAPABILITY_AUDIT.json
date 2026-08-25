@@ -1,0 +1,78 @@
+{
+  "schema": "parastell_damage.openmc_activation_capability_audit/v1.0.0",
+  "captured_at": "2026-08-25T12:02:00-04:00",
+  "production_environment": {
+    "container_image": "parastell-openmc:0.16.0",
+    "container_image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "network": "disabled",
+    "root_filesystem": "read_only",
+    "python_version": "3.12.13 | packaged by conda-forge | GCC 14.3.0",
+    "python_executable": "/opt/openmc-v0.16.0-venv/bin/python",
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39"
+  },
+  "openmc": {
+    "python_version": "0.16.0",
+    "python_module": "/opt/openmc-v0.16.0-venv/lib/python3.12/site-packages/openmc/__init__.py",
+    "deplete_module": "/opt/openmc-v0.16.0-venv/lib/python3.12/site-packages/openmc/deplete/__init__.py",
+    "executable": "/opt/openmc-v0.16.0/bin/openmc",
+    "git_commit": "617d35a5063c57796b43428bc401e627d2011046",
+    "dagmc_enabled": true,
+    "mpi_enabled": false,
+    "parallel_hdf5_enabled": false
+  },
+  "api": {
+    "R2SManager": {
+      "available": true,
+      "signature": "(neutron_model: openmc.Model, domains: openmc.MeshBase | Sequence[openmc.MeshBase] | Sequence[openmc.Cell], photon_model: openmc.Model | None = None)"
+    },
+    "IndependentOperator": {
+      "available": true,
+      "signature": "(materials, fluxes, micros, chain_file=None, keff=None, normalization_mode='fission-q', fission_q=None, prev_results=None, reduce_chain_level=None, fission_yield_opts=None)"
+    },
+    "get_microxs_and_flux": {
+      "available": true,
+      "signature": "(model, domains, nuclides=None, reactions=None, energies=None, reaction_rate_mode='direct', chain_file=None, path_statepoint=None, path_input=None, run_kwargs=None, reaction_rate_opts=None, include_model_tallies=False)"
+    }
+  },
+  "transport_data": {
+    "cross_sections_xml_host": "C:/Users/joshu/Documents/2026_DPA/openc-hts-dpa/.data/openmc/cross_sections.xml",
+    "cross_sections_xml_container": "/data/openmc/cross_sections.xml",
+    "cross_sections_sha256": "218236803b2c4a21b038992af93dacfdfe5c0c0401cbbc57f3ff3a947c63abc7",
+    "neutron_library_count": 631,
+    "photon_library_count": 97,
+    "missing_library_file_count": 0,
+    "photon_data_available": true
+  },
+  "depletion_data": {
+    "configured_chain_file": null,
+    "OPENMC_CHAIN_FILE": null,
+    "candidate_chain_host": "D:/openc-hts-dpa-data/runs/wistell_d_openmc_to_atomistics_v2/nuclear_data/pilot_chain.xml",
+    "candidate_chain_container": "/chain/pilot_chain.xml",
+    "candidate_chain_sha256": "5eeb727498d824d7c951ad89864bbc1c2d76ec5e8c9097a820505213ba6a2bf3",
+    "candidate_chain_size_bytes": 27527401,
+    "nuclide_count": 3820,
+    "reaction_count": 2724,
+    "decay_mode_count": 5197,
+    "photon_source_nuclide_count": 1871,
+    "emission_source_element_count": 5048,
+    "coverage_audit_status": "DECLARED_54_PAIR_CHAIN_COMPLETE_TRANSPORT_IDENTITIES_COMPLETE_MICROXS_AXIS_NOT_EVALUATED_FAIL_CLOSED"
+  },
+  "api_classification": "OPENMC_R2S_AVAILABLE",
+  "default_execution_readiness_classification": "MISSING_CHAIN_OR_DATA",
+  "audited_read_only_binding_classification": "OPENMC_R2S_AVAILABLE",
+  "audited_read_only_binding": {
+    "chain_file": "/data/chain.xml",
+    "cross_sections_file": "/data/openmc/cross_sections.xml",
+    "analytic_smoke_status": "PASS",
+    "analytic_smoke_report_sha256": "8e8c95ce712733bc664ac57a75d05436bd0c83fc6b447b08173c7919e5f90c66",
+    "qualification_scope": "analytic_software_and_api_smoke_only"
+  },
+  "fusion_spectrum_readiness": {
+    "classification": "DATA_RANGE_BLOCKED",
+    "evidence": "the unpruned full-chain 14.1 MeV attempt encountered at least one transport table whose maximum neutron energy was below the source energy",
+    "required_repair": "select the exact material/reaction subset and verify every referenced transport table across the requested neutron-energy range"
+  },
+  "environment_mismatch_repaired": true,
+  "environment_mismatch_repair_scope": "cross-section mount plus hash-bound thermal Cu63 analytic path only",
+  "environment_mismatch_repair": "The image default nuclear-data paths are mount contracts. Binding the exact production host cross-section directory and the hash-verified chain read-only resolves the audited R2S, IndependentOperator, and shutdown-photon API path without changing the image. The image itself deliberately retains no default chain binding."
+}

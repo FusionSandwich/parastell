@@ -1,0 +1,47 @@
+{
+  "schema": "parastell_damage.real_pilot_activation_status/v1.0.0",
+  "real_pilot": {
+    "bundle_tree_sha256": "ae4ac24edda9b7c710845d21c7fb222cf2b20233db3ba667756a9a8c3e47e5d3",
+    "bundle_manifest_sha256": "7d9b1221f88092779703e2afc8a3a6a228046525649831d9066f6acbfa6f499a",
+    "statepoint_sha256": "b5aaf639e01a3f7315c47a6301927d80a67446486f45cfb15eabf602fc09e7ef",
+    "histories": 5000,
+    "boundary_records": {
+      "neutron": 34,
+      "photon": 2,
+      "incoming_neutron": 19,
+      "incoming_photon": 0
+    }
+  },
+  "qualification": {
+    "status": "BLOCKED_UNQUALIFIED_SCALAR_FLUX",
+    "plumbing_acceptance": "PASS",
+    "activation_physics_acceptance": "BLOCKED",
+    "blockers": [
+      "all nonzero whole-volume scalar-flux bins are statistically under-resolved",
+      "local meshes are spatially mixed and lack a qualifying cell/material filter",
+      "material-intersection mesh-bin volumes are unavailable",
+      "the historical bundle predates the activation-ready metadata and microscopic-cross-section products",
+      "the historical pilot contains no whole-casing scalar-flux product",
+      "zero incoming photon records preclude an evidence-based photon production estimate"
+    ]
+  },
+  "real_pilot_results": {
+    "R2SManager": "NOT_RUN_FAIL_CLOSED",
+    "IndependentOperator": "NOT_RUN_FAIL_CLOSED",
+    "path_equivalence": "NOT_RUN_FAIL_CLOSED",
+    "shutdown_photon_transport": "NOT_RUN_FAIL_CLOSED"
+  },
+  "analytic_software_qualification": {
+    "status": "PASS",
+    "scope": "analytic Cu63 OpenMC 0.16 API/software smoke only",
+    "report_sha256": "8e8c95ce712733bc664ac57a75d05436bd0c83fc6b447b08173c7919e5f90c66",
+    "artifact_tree_sha256": "9dd2afcc237450733f2414a1b8e01ac9b2ba22b487bf40ac1c9a52332da6d84c",
+    "R2SManager": "PASS",
+    "IndependentOperator": "PASS",
+    "protected_metric_relative_difference": 0.0,
+    "declared_relative_tolerance": 1e-12,
+    "shutdown_photon_transport": "PASS_NONZERO_TALLY",
+    "real_parastell_pilot_qualified": false
+  },
+  "large_artifacts_committed": false
+}

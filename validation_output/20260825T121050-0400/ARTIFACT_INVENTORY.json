@@ -1,0 +1,134 @@
+{
+  "schema": "parastell.prompt1_artifact_inventory/v1.0.0",
+  "captured_at": "2026-08-25T12:10:50-04:00",
+  "producer_basis": {
+    "repository": "FusionSandwich/parastell",
+    "branch": "magnet-radiation-field-mainline-20260824",
+    "commit": "744e1ab3cb7508aa30f11a3dcd9628cbf9e50430",
+    "live_remote_verified": true,
+    "clean_main_merge_base": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+    "known_port_tip_is_ancestor": false
+  },
+  "dpa_basis": {
+    "repository": "FusionSandwich/DPA_workflow",
+    "canonical_base": "cbb31c1e015895cc95a9fe80ca5b8b3f9c5058dd",
+    "consumer_commits_replayed": [
+      "89df4752",
+      "0a34a1cd",
+      "fcf8c0dc3ee1035d74189ac364a5edc5274b05c1"
+    ],
+    "integration_checkpoint": "f4330525e696f89b27d66536e05465dcde20307c"
+  },
+  "real_parastell_pilot": {
+    "root": "D:/parastell-artifacts/mainline-integration-20260825/magnet-radiation-smoke",
+    "histories": 5000,
+    "batches": 5,
+    "neutron_boundary_records": 34,
+    "photon_boundary_records": 2,
+    "statepoint_sha256": "b5aaf639e01a3f7315c47a6301927d80a67446486f45cfb15eabf602fc09e7ef",
+    "surface_source_sha256": "752c1bd44bed98378ea68a6dc6c55fb4e6b3539f5d97326641f927d3d766bf7e",
+    "statistical_status": "UNDER_RESOLVED_OR_EMPTY",
+    "activation_physics_status": "BLOCKED_UNQUALIFIED_SCALAR_FLUX",
+    "corrected_committed_receipt_sha256": "5d5f6317c1dac0325fbaca36c856ab74b22f664224996092c4238a047bb86538",
+    "legacy_external_receipt_raw_sha256": "418198a00c110c23220fe6e0894a7a4cd52872c8e7e2fbb33219018bb6fba2d4",
+    "legacy_external_receipt_semantic_compact_sha256": "ee5409c175406465cd89b6c82cc101625370aacbf1617733e6cf6164ff34783f"
+  },
+  "final_neutral_bundle": {
+    "path": "D:/parastell-artifacts/mainline-integration-20260825/magnet-radiation-smoke/radiation_field_bundle",
+    "file_count": 23,
+    "size_bytes": 385850275,
+    "tree_sha256": "ae4ac24edda9b7c710845d21c7fb222cf2b20233db3ba667756a9a8c3e47e5d3",
+    "manifest_sha256": "7d9b1221f88092779703e2afc8a3a6a228046525649831d9066f6acbfa6f499a",
+    "receipt_sha256": "b03115483a5ae7aefb71ee1d399e588e6430ac491ee8c72de9faa78e5e9e2afc",
+    "neutral_validation_sha256": "f71b91a9635c6fcd6a05b81a77082ead6db5d3ad6e43297a2c0b99ec4000b2a9"
+  },
+  "openmc_runtime": {
+    "container_image": "parastell-openmc:0.16.0",
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "python_version": "3.12.13",
+    "openmc_version": "0.16.0",
+    "openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
+    "dagmc_enabled": true,
+    "r2s_manager_available": true,
+    "independent_operator_available": true,
+    "get_microxs_and_flux_available": true,
+    "configured_chain": null,
+    "capability_classification": "OPENMC_R2S_AVAILABLE",
+    "default_execution_readiness": "MISSING_CHAIN_OR_DATA",
+    "audited_read_only_binding": "OPENMC_R2S_AVAILABLE"
+  },
+  "nuclear_data": {
+    "cross_sections_xml": "C:/Users/joshu/Documents/2026_DPA/openc-hts-dpa/.data/openmc/cross_sections.xml",
+    "cross_sections_sha256": "218236803b2c4a21b038992af93dacfdfe5c0c0401cbbc57f3ff3a947c63abc7",
+    "neutron_library_count": 631,
+    "photon_library_count": 97,
+    "missing_library_file_count": 0,
+    "candidate_chain": "D:/openc-hts-dpa-data/runs/wistell_d_openmc_to_atomistics_v2/nuclear_data/pilot_chain.xml",
+    "candidate_chain_size_bytes": 27527401,
+    "candidate_chain_sha256": "5eeb727498d824d7c951ad89864bbc1c2d76ec5e8c9097a820505213ba6a2bf3",
+    "candidate_chain_nuclides": 3820,
+    "candidate_chain_reactions": 2724,
+    "candidate_chain_decay_modes": 5197,
+    "candidate_chain_photon_source_nuclides": 1871,
+    "candidate_chain_emission_source_elements": 5048
+  },
+  "spectra_pka": {
+    "archive": "D:/openc-hts-dpa-data/spectra-pka-paper-catalog/tendl2017-neutron-v1/catalog/TENDL2017data-n-pka.tar.bz2",
+    "archive_size_bytes": 1478662233,
+    "archive_sha256": "f2f56b7612f4f73bf3601924db578a3f4becdefed2b17e150053b072d8f9f287",
+    "matrix_directory": "D:/openc-hts-dpa-data/spectra-pka-paper-catalog/tendl2017-neutron-v1/recoil/njoy_results-n-tendl2017-jc/pka",
+    "matrix_file_count": 287,
+    "matrix_total_bytes": 9369236365,
+    "required_13_targets_present": true,
+    "required_target_energy_grid": "660_GROUP_COMMON_GRID_VERIFIED",
+    "processing_provenance_complete": false,
+    "remaining_matrix_gaps": [
+      "empty helium placeholder",
+      "unresolved MT5 and light-ion contribution semantics"
+    ],
+    "prior_real_zr_control": "PASS",
+    "prior_real_50M_package_production_eligible": false,
+    "prior_real_50M_statepoint_sha256": "496402fd9d496eadc60a8b1b27ef3f9f44224b89226146d60abed05c5fb552d2",
+    "prior_real_50M_input_manifest_sha256": "d5e57ae0134c4f228fbc90549b3a6a97ca140b7a66c775b71bfb7ea21a8a0cae",
+    "prior_real_50M_execution_receipt_sha256": "75d859a963f49ca8acc90c843973d5b6ffb0de5e087be0d5a7318091878d991f",
+    "prior_real_50M_boundary_records": 81644,
+    "prior_real_50M_targets": 13
+  },
+  "analytic_test_spectrum_fixtures": {
+    "schema": "parastell_damage.test_spectrum_fixture_package/v1.0.0",
+    "fixture_count": 9,
+    "package_content_sha256": "68a97670ed23ae73f3fd48caa99e53c24ec797d38c53a855e498233122fbeb3b",
+    "committed_file_sha256": "ef3a355ea4d140bb4e6a37dd9e9c46a13af996c1db40b79f186188962e5c1028",
+    "ccfe_709_group_edge_sha256": "e4bad414a7f71b815376cc4ed28c63c45e43d5f57434186f0b529045aaaa0c2"
+  },
+  "required_activation_material_fixture": {
+    "schema": "parastell_damage.required_activation_material_coverage/v1.0.0",
+    "fixture_content_sha256": "f890bc9c114ee7b9de670e471b0fd7b41d046d64077d2375322692e51b468009",
+    "coverage_report_content_sha256": "367f2779f4c304f97d91451a1f8d3e557f349cf38f3adc2f10710233f8adc241",
+    "committed_file_sha256": "bfd4b3933e888ec3850e2fa919fa5e8c7a0b83fccbd5cafddc1b670ddb2e946d",
+    "required_material_classes": 6,
+    "declared_reaction_pairs": 54,
+    "chain_status": "complete_for_declared_representative_scope",
+    "transport_identity_status": "complete",
+    "microscopic_reaction_axis_status": "not_evaluated_fail_closed",
+    "geometry_status": "homogenized unit-volume plus virtual explicit-layer materials only"
+  },
+  "analytic_openmc_activation_smoke": {
+    "scope": "analytic Cu63 OpenMC 0.16 API/software smoke only",
+    "status": "PASS",
+    "report_sha256": "8e8c95ce712733bc664ac57a75d05436bd0c83fc6b447b08173c7919e5f90c66",
+    "payload_tree_sha256": "9dd2afcc237450733f2414a1b8e01ac9b2ba22b487bf40ac1c9a52332da6d84c",
+    "payload_file_count_excluding_receipt": 13,
+    "R2S_result_sha256": "c44790ab4bed73fb1067de8163efd5f41b6c6ba379aea465ab2b4fb002cb852a",
+    "IndependentOperator_result_sha256": "2af85e2734d3b7a8d314e02797eb85f1c61a48c27a257442dd89e4093334cdb6",
+    "shutdown_photon_statepoint_sha256": "c87cae23c43fdad7a58208984de9c1c836a50017689564fa367dbc209ebede32",
+    "protected_metric_relative_difference": 0.0,
+    "shutdown_photon_tally_relative_error": 0.03778651887880134,
+    "real_parastell_pilot_qualified": false
+  },
+  "preservation": {
+    "root": "D:/prompt1-preservation/20260825T121050-0400",
+    "parastell_bundle_sha256": "c5b755f8299e336a995e4b3fe8c847f591f990f5292e3a6db8eb3743536f5cdc",
+    "dpa_bundle_sha256": "4f1ae7689c7b82af45e59ba7fd2b63db87d459e7773af2594526254ea294daf5"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema": "parastell_damage.analytic_activation_attempt_ledger/v1.0.0",
+  "qualification_scope": "bounded OpenMC 0.16 API/software qualification",
+  "attempts": [
+    {
+      "attempt_id": "analytic-cu63-openmc016-attempt01",
+      "status": "FAIL_API_INVOCATION",
+      "source_energy_eV": 14100000.0,
+      "failure": "Model.run received a threads argument after openmc.lib initialization; OpenMC requires thread selection before initialization",
+      "scientific_result": null,
+      "durable_raw_log_available": false
+    },
+    {
+      "attempt_id": "analytic-cu63-openmc016-attempt02",
+      "status": "FAIL_NUCLEAR_DATA_ENERGY_RANGE",
+      "source_energy_eV": 14100000.0,
+      "failure": "at least one transport table loaded by the unpruned 3820-nuclide chain has a maximum neutron energy below the 14.1 MeV source",
+      "scientific_result": null,
+      "durable_raw_log_available": false,
+      "qualification_consequence": "full-chain fusion-spectrum activation remains unqualified; select only audited material/reaction tables before retry"
+    },
+    {
+      "attempt_id": "analytic-cu63-openmc016-attempt03",
+      "status": "PASS",
+      "source_energy_eV": 0.0253,
+      "report_sha256": "8e8c95ce712733bc664ac57a75d05436bd0c83fc6b447b08173c7919e5f90c66",
+      "artifact_tree_sha256_excluding_receipt": "9dd2afcc237450733f2414a1b8e01ac9b2ba22b487bf40ac1c9a52332da6d84c",
+      "qualification_consequence": "thermal Cu63 R2S, IndependentOperator, and shutdown-photon API/software path qualified; no real-pilot or fusion-spectrum physics qualification"
+    }
+  ]
+}
