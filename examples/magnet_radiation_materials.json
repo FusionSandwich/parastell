@@ -10,6 +10,7 @@
       "selected_materials": [
         "Ag",
         "Cu",
+        "Eins",
         "YBa2Cu3O7",
         "HastelloyC276",
         "SS316L"
@@ -72,18 +73,6 @@
         "citation": "project copper-matrix assumption based on pinned Cu record"
       }
     },
-    "InsulationCarbon": {
-      "density": 1.4,
-      "temperature_K": 20.0,
-      "composition_basis": "mass_fraction",
-      "comp": {
-        "C12": 0.9884,
-        "C13": 0.0116
-      },
-      "metadata": {
-        "citation": "project carbon-equivalent insulation proxy"
-      }
-    },
     "VoidHelium": {
       "density": 0.000166,
       "temperature_K": 20.0,
@@ -102,8 +91,10 @@
       "fraction_basis": "volume",
       "temperature_K": 20.0,
       "uncertainty_variant": "reference",
+      "production_selected": true,
+      "designated_insulation_material": "Eins",
       "source": "explicit_project_assumption",
-      "citation": "engineering homogenization; not manufacturer-authoritative",
+      "citation": "engineering homogenization with pinned fusion-material-db Eins insulation (FESS-FNSF and ARIES GFFpolyimide); not manufacturer-authoritative",
       "constituent_volume_fractions": {
         "Cu": 0.47,
         "Ag": 0.03,
@@ -111,7 +102,7 @@
         "BufferAl2O3": 0.02,
         "HastelloyC276": 0.25,
         "CableMatrixCu": 0.08,
-        "InsulationCarbon": 0.08,
+        "Eins": 0.08,
         "VoidHelium": 0.03
       }
     },
@@ -119,8 +110,9 @@
       "fraction_basis": "volume",
       "temperature_K": 20.0,
       "uncertainty_variant": "low_metal_high_void_insulation",
+      "designated_insulation_material": "Eins",
       "source": "explicit_project_assumption",
-      "citation": "sensitivity bound; not manufacturer-authoritative",
+      "citation": "volume-fraction sensitivity bound using pinned fusion-material-db Eins insulation; not manufacturer-authoritative",
       "constituent_volume_fractions": {
         "Cu": 0.40,
         "Ag": 0.02,
@@ -128,7 +120,7 @@
         "BufferAl2O3": 0.02,
         "HastelloyC276": 0.22,
         "CableMatrixCu": 0.06,
-        "InsulationCarbon": 0.16,
+        "Eins": 0.16,
         "VoidHelium": 0.08
       }
     },
@@ -136,8 +128,9 @@
       "fraction_basis": "volume",
       "temperature_K": 20.0,
       "uncertainty_variant": "high_metal_low_void_insulation",
+      "designated_insulation_material": "Eins",
       "source": "explicit_project_assumption",
-      "citation": "sensitivity bound; not manufacturer-authoritative",
+      "citation": "volume-fraction sensitivity bound using pinned fusion-material-db Eins insulation; not manufacturer-authoritative",
       "constituent_volume_fractions": {
         "Cu": 0.52,
         "Ag": 0.04,
@@ -145,10 +138,20 @@
         "BufferAl2O3": 0.02,
         "HastelloyC276": 0.27,
         "CableMatrixCu": 0.07,
-        "InsulationCarbon": 0.02,
+        "Eins": 0.02,
         "VoidHelium": 0.01
       }
     }
+  },
+  "production_material_selection": {
+    "winding_pack": "WindingPackReference",
+    "insulation": "Eins",
+    "insulation_source_repository": "FusionSandwich/fusion-material-db",
+    "insulation_source_commit": "9d8f84ad7b3ac2c587edfbe8ec1ed74891484498",
+    "insulation_source_artifact": "db-outputs/PureFusionMaterials_libv1.json",
+    "insulation_source_artifact_sha256": "bb15bbad56395269b2e07df183d35fa37894dd5f752ebc793166566d40d61577",
+    "insulation_density_g_cm3": 1.8,
+    "insulation_citation": "FESS-FNSF and ARIES GFFpolyimide"
   },
   "material_tags": {
     "Vacuum": "TransportVacuum",

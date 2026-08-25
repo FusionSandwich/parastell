@@ -27,7 +27,12 @@ def sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def _validate_material(name: str, value: Mapping[str, Any]) -> dict[str, Any]:
+def _validate_material(
+    name: str,
+    value: Mapping[str, Any],
+    *,
+    source_provenance: Mapping[str, Any],
+) -> dict[str, Any]:
     density = float(value["density"])
     if not np.isfinite(density) or density <= 0.0:
         raise ValueError(f"material {name!r} has invalid density")
@@ -62,6 +67,7 @@ def _validate_material(name: str, value: Mapping[str, Any]) -> dict[str, Any]:
         "atoms_per_molecule": float(value.get("atoms_per_molecule", -1.0)),
         "molecular_mass_g_mol": float(value.get("mass", 1.0)),
         "natural_elements_expanded": True,
+        "source_provenance": dict(source_provenance),
     }
 
 
@@ -110,6 +116,14 @@ def _resolve_mixture(
         raise ValueError(
             f"mixture {name!r} has unknown constituents {sorted(missing)}"
         )
+    designated_insulation = definition.get("designated_insulation_material")
+    if designated_insulation is not None:
+        designated_insulation = str(designated_insulation)
+        if designated_insulation not in fractions:
+            raise ValueError(
+                f"mixture {name!r} designates insulation "
+                f"{designated_insulation!r} but does not contain it"
+            )
     densities = {
         key: float(materials[key]["density_g_cm3"]) for key in fractions
     }
@@ -138,6 +152,7 @@ def _resolve_mixture(
             "constituent_density_g_cm3": densities,
             "derived_constituent_mass_fractions": mass_fractions,
             "density_mixing_rule": "ideal additive constituent volumes",
+            "designated_insulation_material": designated_insulation,
         },
         "metadata": {
             "source": str(
@@ -150,6 +165,9 @@ def _resolve_mixture(
                 definition.get("uncertainty_variant", name)
             ),
             "manufacturer_authoritative": False,
+            "production_selected": bool(
+                definition.get("production_selected", False)
+            ),
         },
     }
 
@@ -166,6 +184,7 @@ def resolve_material_manifest(
     repository = dict(config["fusion_material_db"])
     sources = []
     raw_records: dict[str, Mapping[str, Any]] = {}
+    record_provenance: dict[str, dict[str, Any]] = {}
     for source in config["generated_artifacts"]:
         path, data, digest = _load_source(source, config_source.parent)
         selected = tuple(source["selected_materials"])
@@ -180,6 +199,14 @@ def resolve_material_manifest(
                     f"material {name!r} selected from multiple artifacts"
                 )
             raw_records[name] = data[name]
+            record_provenance[name] = {
+                "kind": "generated_artifact",
+                "repository": repository["repository"],
+                "repository_commit": repository["commit"],
+                "artifact_path": str(source["path"]),
+                "artifact_sha256": digest,
+                "record_name": name,
+            }
         sources.append(
             {
                 "path": str(path),
@@ -194,8 +221,17 @@ def resolve_material_manifest(
                 f"explicit material {name!r} shadows generated record"
             )
         raw_records[name] = value
+        record_provenance[name] = {
+            "kind": "inline_configuration",
+            "configuration_sha256": hashlib.sha256(config_bytes).hexdigest(),
+            "record_name": name,
+        }
     materials = {
-        name: _validate_material(name, value)
+        name: _validate_material(
+            name,
+            value,
+            source_provenance=record_provenance[name],
+        )
         for name, value in raw_records.items()
     }
     variants = {
@@ -211,6 +247,53 @@ def resolve_material_manifest(
         raise ValueError(
             f"material tags reference unknown records {sorted(missing_tags)}"
         )
+    production_selection = dict(
+        config.get("production_material_selection", {})
+    )
+    if production_selection:
+        required = {"winding_pack", "insulation"}
+        missing_selection = required - set(production_selection)
+        if missing_selection:
+            raise ValueError(
+                "production material selection lacks "
+                f"{sorted(missing_selection)}"
+            )
+        selected_pack = str(production_selection["winding_pack"])
+        selected_insulation = str(production_selection["insulation"])
+        if tags.get("winding_pack") != selected_pack:
+            raise ValueError(
+                "production winding-pack selection does not match its "
+                "transport material tag"
+            )
+        if selected_pack not in variants:
+            raise ValueError(
+                "production winding pack is not a resolved mixture"
+            )
+        pack_homogenization = variants[selected_pack]["homogenization"]
+        if (
+            pack_homogenization["designated_insulation_material"]
+            != selected_insulation
+        ):
+            raise ValueError(
+                "production insulation does not match the winding-pack "
+                "designated insulation"
+            )
+        insulation = materials.get(selected_insulation)
+        if insulation is None:
+            raise ValueError(
+                "production insulation is not a resolved material"
+            )
+        declared_density = production_selection.get("insulation_density_g_cm3")
+        if declared_density is not None and not np.isclose(
+            float(declared_density),
+            float(insulation["density_g_cm3"]),
+            atol=1.0e-12,
+        ):
+            raise ValueError(
+                "production insulation density disagrees with the pinned record"
+            )
+        production_selection["winding_pack"] = selected_pack
+        production_selection["insulation"] = selected_insulation
     manifest = {
         "schema": SCHEMA,
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -224,6 +307,7 @@ def resolve_material_manifest(
             "runtime_dependency": False,
         },
         "generated_artifacts": sources,
+        "production_material_selection": production_selection,
         "material_tags": tags,
         "materials": resolved,
         "assumption_policy": (
@@ -243,6 +327,9 @@ def resolve_material_manifest(
                 "selected_materials": item["selected_materials"],
             }
             for item in manifest["generated_artifacts"]
+        ],
+        "production_material_selection": manifest[
+            "production_material_selection"
         ],
         "material_tags": manifest["material_tags"],
         "materials": manifest["materials"],
@@ -296,59 +383,210 @@ def audit_nuclear_data(
     evaluation_release: str,
     photon_evaluation_release: str | None = None,
     approved_mixed_case: bool = False,
+    requested_source_max_energy_eV: float | None = None,
     temperature_method: str | None = None,
     temperature_tolerance_K: float | None = None,
 ) -> dict[str, Any]:
-    """Audit every configured nuclide without silently mixing libraries."""
+    """Audit configured nuclides against their actual OpenMC HDF5 tables.
+
+    Catalog presence alone is not treated as data coverage.  Each neutron and
+    photoatomic table is opened, hash-bound, and inspected.  The requested
+    source-energy domain is explicit so a lower-energy table cannot silently
+    pass a fusion-spectrum audit.
+    """
     source = Path(cross_sections_path).resolve()
     root = ET.parse(source).getroot()
     libraries = root.findall(".//library")
-    available_neutron = {
-        name
-        for library in libraries
-        if library.attrib.get("type") == "neutron"
-        for name in str(library.attrib.get("materials", "")).split()
-    }
-    available_photon = {
-        name
-        for library in libraries
-        if library.attrib.get("type") == "photon"
-        for name in str(library.attrib.get("materials", "")).split()
-    }
-    neutron_library_paths = {
-        name: Path(library.attrib["path"])
-        for library in libraries
-        if library.attrib.get("type") == "neutron"
-        for name in str(library.attrib.get("materials", "")).split()
-    }
-    neutron_library_paths = {
-        name: (path if path.is_absolute() else source.parent / path).resolve()
-        for name, path in neutron_library_paths.items()
-    }
+
+    def library_paths(data_type: str) -> dict[str, Path]:
+        paths: dict[str, Path] = {}
+        for library in libraries:
+            if library.attrib.get("type") != data_type:
+                continue
+            path = Path(library.attrib["path"])
+            if not path.is_absolute():
+                path = source.parent / path
+            path = path.resolve()
+            for name in str(library.attrib.get("materials", "")).split():
+                if name in paths and paths[name] != path:
+                    raise ValueError(
+                        f"cross_sections.xml maps {data_type} material "
+                        f"{name!r} to multiple tables"
+                    )
+                paths[name] = path
+        return paths
+
+    neutron_library_paths = library_paths("neutron")
+    photon_library_paths = library_paths("photon")
     requested_temperatures = {}
     for material in manifest["materials"].values():
         temperature = float(material["temperature_K"])
         for nuclide in material["nuclides"]:
             requested_temperatures.setdefault(nuclide, set()).add(temperature)
 
-    def available_temperatures_K(nuclide: str) -> list[float]:
+    try:
+        import h5py
+    except ImportError as exc:
+        raise RuntimeError(
+            "h5py is required for the nuclear-data table audit"
+        ) from exc
+
+    digest_cache: dict[Path, str] = {}
+
+    def table_file(path: Path | None) -> dict[str, Any]:
+        if path is None:
+            return {
+                "path": None,
+                "sha256": None,
+                "size_bytes": None,
+                "catalog_entry": False,
+                "file_exists": False,
+            }
+        exists = path.is_file()
+        if exists and path not in digest_cache:
+            digest_cache[path] = sha256(path)
+        return {
+            "path": str(path),
+            "sha256": digest_cache.get(path),
+            "size_bytes": path.stat().st_size if exists else None,
+            "catalog_entry": True,
+            "file_exists": exists,
+        }
+
+    def temperature_from_label(label: str) -> float | None:
+        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)K", label)
+        return float(match.group(1)) if match else None
+
+    def decode_label(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        if hasattr(value, "tobytes") and not isinstance(value, str):
+            decoded = value.tobytes().rstrip(b"\x00")
+            try:
+                return decoded.decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+        return str(value)
+
+    neutron_cache: dict[str, dict[str, Any]] = {}
+
+    def inspect_neutron_table(nuclide: str) -> dict[str, Any]:
+        if nuclide in neutron_cache:
+            return neutron_cache[nuclide]
         path = neutron_library_paths.get(nuclide)
+        result: dict[str, Any] = {
+            "file": table_file(path),
+            "readable": False,
+            "temperatures_K": [],
+            "energy_minimum_eV": None,
+            "energy_maximum_eV": None,
+            "reaction_mt_labels": [],
+            "error": None,
+        }
         if path is None or not path.is_file():
-            return []
+            neutron_cache[nuclide] = result
+            return result
         try:
-            import h5py
-        except ImportError as exc:
-            raise RuntimeError(
-                "h5py is required for the nuclear-data temperature audit"
-            ) from exc
-        with h5py.File(path, "r") as data:
-            group = data[nuclide]["kTs"]
-            values = []
-            for label in group:
-                match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)K", label)
-                if match:
-                    values.append(float(match.group(1)))
-            return sorted(values)
+            with h5py.File(path, "r") as data:
+                if nuclide not in data:
+                    raise ValueError(
+                        f"table lacks expected nuclide group {nuclide!r}"
+                    )
+                group = data[nuclide]
+                temperatures: set[float] = set()
+                if "kTs" in group:
+                    for label in group["kTs"]:
+                        temperature = temperature_from_label(str(label))
+                        if temperature is not None:
+                            temperatures.add(temperature)
+                energy_minima = []
+                energy_maxima = []
+                if "energy" not in group:
+                    raise ValueError("table lacks an incident-energy grid")
+                energy_group = group["energy"]
+                energy_items = (
+                    energy_group.items()
+                    if isinstance(energy_group, h5py.Group)
+                    else (("unspecified", energy_group),)
+                )
+                for label, dataset in energy_items:
+                    temperature = temperature_from_label(str(label))
+                    if temperature is not None:
+                        temperatures.add(temperature)
+                    values = np.asarray(dataset[...], dtype=float)
+                    values = values[np.isfinite(values)]
+                    if values.size:
+                        energy_minima.append(float(values.min()))
+                        energy_maxima.append(float(values.max()))
+                if not energy_maxima:
+                    raise ValueError("table incident-energy grid is empty")
+                reaction_parent = group.get("reactions", group)
+                reactions = []
+                for key in reaction_parent:
+                    if not str(key).startswith("reaction_"):
+                        continue
+                    reaction = reaction_parent[key]
+                    mt_value = reaction.attrs.get("mt")
+                    if mt_value is None:
+                        mt_value = str(key).split("_", maxsplit=1)[1]
+                    mt = int(mt_value)
+                    label = decode_label(
+                        reaction.attrs.get("label", f"MT={mt}")
+                    )
+                    reactions.append({"mt": mt, "label": label})
+                result.update(
+                    {
+                        "readable": True,
+                        "temperatures_K": sorted(temperatures),
+                        "energy_minimum_eV": min(energy_minima),
+                        "energy_maximum_eV": max(energy_maxima),
+                        "reaction_mt_labels": sorted(
+                            reactions, key=lambda item: item["mt"]
+                        ),
+                    }
+                )
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            result["error"] = f"{type(exc).__name__}: {exc}"
+        neutron_cache[nuclide] = result
+        return result
+
+    photon_cache: dict[str, dict[str, Any]] = {}
+
+    def inspect_photon_table(element: str) -> dict[str, Any]:
+        if element in photon_cache:
+            return photon_cache[element]
+        path = photon_library_paths.get(element)
+        result: dict[str, Any] = {
+            "file": table_file(path),
+            "readable": False,
+            "energy_minimum_eV": None,
+            "energy_maximum_eV": None,
+            "error": None,
+        }
+        if path is None or not path.is_file():
+            photon_cache[element] = result
+            return result
+        try:
+            with h5py.File(path, "r") as data:
+                if element not in data or "energy" not in data[element]:
+                    raise ValueError(
+                        f"table lacks expected photoatomic group {element!r}"
+                    )
+                values = np.asarray(data[element]["energy"][...], dtype=float)
+                values = values[np.isfinite(values)]
+                if not values.size:
+                    raise ValueError("photoatomic energy grid is empty")
+                result.update(
+                    {
+                        "readable": True,
+                        "energy_minimum_eV": float(values.min()),
+                        "energy_maximum_eV": float(values.max()),
+                    }
+                )
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            result["error"] = f"{type(exc).__name__}: {exc}"
+        photon_cache[element] = result
+        return result
 
     if temperature_method not in {None, "nearest", "interpolation"}:
         raise ValueError("temperature_method must be nearest or interpolation")
@@ -359,6 +597,15 @@ def audit_nuclear_data(
             "a nonnegative temperature_tolerance_K is required with a "
             "temperature method"
         )
+    if requested_source_max_energy_eV is not None:
+        requested_source_max_energy_eV = float(requested_source_max_energy_eV)
+        if (
+            not np.isfinite(requested_source_max_energy_eV)
+            or requested_source_max_energy_eV <= 0.0
+        ):
+            raise ValueError(
+                "requested_source_max_energy_eV must be finite and positive"
+            )
     nuclides = sorted(
         {
             nuclide
@@ -366,18 +613,28 @@ def audit_nuclear_data(
             for nuclide in material["nuclides"]
         }
     )
+    photon_release = photon_evaluation_release or evaluation_release
+    mixed = photon_release != evaluation_release
+    if mixed:
+        evaluation_classification = (
+            "EXPLICIT_APPROVED_MIXED_EVALUATION"
+            if approved_mixed_case
+            else "UNAPPROVED_MIXED_EVALUATION"
+        )
+    else:
+        evaluation_classification = "SINGLE_EVALUATION"
     rows = []
     for nuclide in nuclides:
-        present = nuclide in available_neutron
         element = re.match(r"[A-Z][a-z]?", nuclide).group()
-        photon_present = element in available_photon
+        neutron = inspect_neutron_table(nuclide)
+        photon = inspect_photon_table(element)
+        present = bool(neutron["readable"])
+        photon_present = bool(photon["readable"])
         requested = sorted(requested_temperatures.get(nuclide, ()))
-        available_temperatures = (
-            available_temperatures_K(nuclide) if present else []
-        )
+        available_temperatures = neutron["temperatures_K"]
         temperature_fallback = False
-        temperature_supported = True
-        if temperature_method is not None:
+        temperature_supported = present and temperature_method is not None
+        if temperature_supported:
             for temperature in requested:
                 if not available_temperatures:
                     temperature_supported = False
@@ -400,6 +657,18 @@ def audit_nuclear_data(
                         <= temperature
                         <= max(available_temperatures)
                     )
+        table_maximum = neutron["energy_maximum_eV"]
+        source_energy_supported = bool(
+            requested_source_max_energy_eV is not None
+            and table_maximum is not None
+            and table_maximum >= requested_source_max_energy_eV
+        )
+        reactions = neutron["reaction_mt_labels"]
+        missing_reaction_data = []
+        if not present:
+            missing_reaction_data.append("all_neutron_reactions")
+        elif not reactions:
+            missing_reaction_data.append("no_reaction_channels_found")
         rows.append(
             {
                 "nuclide": nuclide,
@@ -407,16 +676,42 @@ def audit_nuclear_data(
                 "photon_data_available": photon_present,
                 "photon_element": element,
                 "evaluation_release": evaluation_release,
+                "evaluation": {
+                    "neutron_release": evaluation_release,
+                    "photon_release": photon_release,
+                    "classification": evaluation_classification,
+                    "basis": (
+                        "explicit audit declarations hash-bound to the table "
+                        "files; OpenMC HDF5 does not encode a portable "
+                        "evaluation-release identifier"
+                    ),
+                },
+                "neutron_table": neutron["file"],
+                "photon_table": photon["file"],
+                "table_read_errors": {
+                    "neutron": neutron["error"],
+                    "photon": photon["error"],
+                },
+                "incident_energy_support": {
+                    "actual_minimum_eV": neutron["energy_minimum_eV"],
+                    "actual_maximum_eV": table_maximum,
+                    "requested_source_maximum_eV": (
+                        requested_source_max_energy_eV
+                    ),
+                    "requested_source_range_supported": (
+                        source_energy_supported
+                    ),
+                },
                 "temperature_support": {
                     "requested_K": requested,
                     "available_K": available_temperatures,
-                    "method": temperature_method or "audit_at_openmc_load",
+                    "method": temperature_method or "not_declared",
                     "tolerance_K": temperature_tolerance_K,
                     "supported": temperature_supported,
                 },
-                "missing_reaction_data": (
-                    [] if present else ["all_neutron_reactions"]
-                ),
+                "reaction_mt_labels": reactions,
+                "reaction_channel_count": len(reactions),
+                "missing_reaction_data": missing_reaction_data,
                 "fallback_used": temperature_fallback,
             }
         )
@@ -435,11 +730,58 @@ def audit_nuclear_data(
         for row in rows
         if not row["temperature_support"]["supported"]
     ]
-    mixed = bool(
-        photon_evaluation_release
-        and photon_evaluation_release != evaluation_release
-    )
+    unsupported_source_energies = [
+        row["nuclide"]
+        for row in rows
+        if not row["incident_energy_support"][
+            "requested_source_range_supported"
+        ]
+    ]
+    missing_reactions = [
+        row["nuclide"] for row in rows if row["missing_reaction_data"]
+    ]
     passes_library_policy = not mixed or approved_mixed_case
+    if not passes_library_policy:
+        status = "FAIL_UNAPPROVED_MIXED_LIBRARY"
+    elif requested_source_max_energy_eV is None:
+        status = "FAIL_SOURCE_ENERGY_UNDECLARED"
+    elif missing or missing_photon:
+        status = "FAIL_MISSING_NUCLEAR_DATA"
+    elif unsupported_source_energies:
+        status = "FAIL_SOURCE_ENERGY_RANGE"
+    elif unsupported_temperatures:
+        status = "FAIL_TEMPERATURE_SUPPORT"
+    elif missing_reactions:
+        status = "FAIL_REACTION_SUPPORT"
+    else:
+        status = "PASS"
+
+    rows_by_nuclide = {row["nuclide"]: row for row in rows}
+    material_coverage = []
+    for name, material in sorted(manifest["materials"].items()):
+        material_rows = [
+            rows_by_nuclide[nuclide] for nuclide in material["nuclides"]
+        ]
+        failed_nuclides = sorted(
+            row["nuclide"]
+            for row in material_rows
+            if not row["neutron_data_available"]
+            or not row["photon_data_available"]
+            or not row["temperature_support"]["supported"]
+            or not row["incident_energy_support"][
+                "requested_source_range_supported"
+            ]
+            or row["missing_reaction_data"]
+        )
+        material_coverage.append(
+            {
+                "material": name,
+                "temperature_K": float(material["temperature_K"]),
+                "nuclides": sorted(material["nuclides"]),
+                "failed_nuclides": failed_nuclides,
+                "status": "PASS" if not failed_nuclides else "FAIL",
+            }
+        )
     result = {
         "schema": NUCLEAR_DATA_SCHEMA,
         "cross_sections_xml": {
@@ -448,13 +790,26 @@ def audit_nuclear_data(
         },
         "approved_library": approved_library,
         "evaluation_release": evaluation_release,
-        "photon_evaluation_release": (
-            photon_evaluation_release or evaluation_release
-        ),
+        "photon_evaluation_release": photon_release,
         "mixed_library": mixed,
         "mixed_library_explicitly_approved": bool(
             approved_mixed_case if mixed else False
         ),
+        "evaluation_classification": evaluation_classification,
+        "evaluation_policy": {
+            "neutron_release": evaluation_release,
+            "photon_release": photon_release,
+            "classification": evaluation_classification,
+            "internally_consistent": not mixed,
+            "mixed_data_sensitivity_required": mixed,
+        },
+        "requested_source_energy": {
+            "maximum_eV": requested_source_max_energy_eV,
+            "declared": requested_source_max_energy_eV is not None,
+            "all_neutron_tables_support_range": not (
+                unsupported_source_energies
+            ),
+        },
         "temperature_policy": {
             "method": temperature_method,
             "tolerance_K": temperature_tolerance_K,
@@ -462,21 +817,13 @@ def audit_nuclear_data(
         },
         "fallback_used": any(row["fallback_used"] for row in rows),
         "nuclides": rows,
+        "material_coverage": material_coverage,
         "missing_nuclides": missing,
         "missing_photon_elements": missing_photon,
+        "missing_reaction_nuclides": missing_reactions,
+        "unsupported_source_energy_nuclides": unsupported_source_energies,
         "unsupported_temperature_nuclides": unsupported_temperatures,
-        "status": (
-            "PASS"
-            if not missing
-            and not missing_photon
-            and not unsupported_temperatures
-            and passes_library_policy
-            else (
-                "FAIL_UNAPPROVED_MIXED_LIBRARY"
-                if not passes_library_policy
-                else "FAIL_MISSING_NUCLEAR_DATA"
-            )
-        ),
+        "status": status,
     }
     return result
 
