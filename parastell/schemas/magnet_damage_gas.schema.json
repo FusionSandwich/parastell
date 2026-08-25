@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_damage_gas.schema.json",
+  "title": "ParaStell magnet damage-energy and gas-production manifest",
+  "type": "object",
+  "required": [
+    "schema",
+    "incident_particle",
+    "physical_source_rate_per_s",
+    "damage_energy_semantics",
+    "gas_production_semantics",
+    "response_status",
+    "provenance"
+  ],
+  "properties": {
+    "schema": {"const": "parastell.magnet_damage_gas/v1.0.0"},
+    "incident_particle": {"const": "neutron"},
+    "physical_source_rate_per_s": {"type": "number", "exclusiveMinimum": 0},
+    "response_status": {"type": "object"},
+    "provenance": {"type": "object"}
+  },
+  "additionalProperties": true
+}

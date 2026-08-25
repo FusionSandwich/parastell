@@ -1,3 +1,6 @@
+geometry_features:
+  ports: false
+
 vmec_file: wout_vmec.nc
 
 invessel_build:

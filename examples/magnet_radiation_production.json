@@ -1,0 +1,222 @@
+{
+  "template": "magnet_radiation_smoke.json",
+  "path_replacements": {
+    "magnet-radiation-smoke": "magnet-radiation-production"
+  },
+  "output_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production",
+  "magnet_selection": "all",
+  "source_mesh_convergence_shapes": [
+    [3, 9, 9],
+    [5, 21, 17],
+    [7, 41, 31],
+    [11, 81, 61]
+  ],
+  "statistics_thresholds": {
+    "scope": "The response thresholds apply only to the global responses named below; they are not reused for uncomputed per-magnet or surface-patch quantities.",
+    "neutron_global_maximum_relative_standard_error": 0.1,
+    "photon_global_maximum_relative_standard_error": 0.2,
+    "recorded_boundary_minimum_effective_sample_size": 25,
+    "recorded_boundary_minimum_aggregate_raw_count": 25,
+    "tally_effective_sample_size": "UNAVAILABLE: OpenMC tally sums do not expose event weights; no ESS threshold is applied to tally responses.",
+    "unassessed_metrics": {
+      "incoming_surface_current_by_magnet": "UNASSESSED: neither the net signed current nor the bidirectional recorded crossing weight establishes incoming current for a resolved magnet.",
+      "major_surface_patch_current": "UNASSESSED: no stable patch-level campaign response is emitted.",
+      "per_magnet_flux_and_heating": "UNASSESSED: no stable per-magnet campaign response is emitted.",
+      "selected_magnet_incoming_effective_records": "UNASSESSED: the current surface-bank response aggregates all selected envelopes."
+    }
+  },
+  "weight_window_policy": {
+    "initial_particle": "neutron",
+    "candidate_energy_groups": [4, 8, 16],
+    "candidate_max_history_splits": [100, 1000, 5000],
+    "minimum_geometric_mean_primary_fom_ratio": 2.0,
+    "minimum_primary_improved_fraction": 0.75,
+    "minimum_critical_fom_ratio": 0.8,
+    "bias_alpha": 0.05,
+    "multiple_comparison_method": "Benjamini-Hochberg",
+    "lost_particles_allowed": 0,
+    "qualification_seed_plan": [190734863, 514229, 832040],
+    "default_before_qualification": "UNBIASED"
+  },
+  "stages": {
+    "build_source": {
+      "mesh_shape": [11, 81, 61]
+    },
+    "build_source_convergence_ladder": {
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_mesh_3x9x9.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_3x9x9.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_mesh_5x21x17.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_5x21x17.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_mesh_7x41x31.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_7x41x31.json"
+      ],
+      "primary_shape": [11, 81, 61],
+      "primary_source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_mesh.h5m",
+      "primary_source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest.json",
+      "candidates": [
+        {
+          "shape": [3, 9, 9],
+          "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_mesh_3x9x9.h5m",
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_3x9x9.json"
+        },
+        {
+          "shape": [5, 21, 17],
+          "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_mesh_5x21x17.h5m",
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_5x21x17.json"
+        },
+        {
+          "shape": [7, 41, 31],
+          "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_mesh_7x41x31.h5m",
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_7x41x31.json"
+        }
+      ]
+    },
+    "qualify_source_convergence": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_3x9x9.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_5x21x17.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_7x41x31.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_3x9x9.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_5x21x17.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_7x41x31.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_11x81x61.json"
+      ],
+      "candidates": [
+        {
+          "shape": [3, 9, 9],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_3x9x9.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_3x9x9.json"
+        },
+        {
+          "shape": [5, 21, 17],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_5x21x17.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_5x21x17.json"
+        },
+        {
+          "shape": [7, 41, 31],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest_7x41x31.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_7x41x31.json"
+        },
+        {
+          "shape": [11, 81, 61],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_manifest.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/source_response_11x81x61.json"
+        }
+      ]
+    },
+    "build_geometry": {
+      "casing_thickness_cm": 5.0,
+      "minimum_mesh_size_cm": 5.0,
+      "maximum_mesh_size_cm": 20.0
+    },
+    "validate_geometry": {
+      "faceting_tolerances": {
+        "minimum_mesh_size_cm": 5.0,
+        "maximum_mesh_size_cm": 20.0
+      }
+    },
+    "build_tally_meshes": {
+      "resolution_cm": 50.0,
+      "padding_cm": 0.0,
+      "maximum_bins_per_magnet": 50000,
+      "maximum_total_bins": 500000
+    },
+    "build_weight_window_mesh": {
+      "enabled": false,
+      "disabled_reason": "Fail-closed initial production configuration: enable only a concrete Gmsh/MOAB mesh candidate after the three-seed unbiased reference is complete."
+    },
+    "prepare_unbiased_model": {
+      "tally_profile": "magnet_damage_and_handoff",
+      "neutron_structure": "regression-182",
+      "photon_structure": "photon-master-v1",
+      "particles_per_batch": 100000,
+      "batches": 100,
+      "seed": 190734863,
+      "max_surface_particles": 10000000,
+      "max_surface_files": 8
+    },
+    "run_unbiased_qualification_campaign": {
+      "particles_per_batch": 100000,
+      "batches": 100,
+      "max_surface_particles": 10000000,
+      "max_surface_files": 8
+    },
+    "qualify_production_statistics": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_seed_190734863_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_seed_514229_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_seed_832040_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_statistical_campaign.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/production_statistical_qualification.json"
+      ],
+      "result_report_paths": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_seed_190734863_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_seed_514229_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_seed_832040_responses.json"
+      ],
+      "qualification_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/production_statistical_qualification.json",
+      "minimum_seed_count": 3,
+      "qualification_thresholds": {
+        "all_magnet_neutron_track_length_flux": {
+          "maximum_relative_standard_error": 0.1
+        },
+        "all_magnet_photon_track_length_flux": {
+          "maximum_relative_standard_error": 0.2
+        },
+        "all_magnet_neutron_heating": {
+          "maximum_relative_standard_error": 0.1
+        },
+        "all_magnet_photon_heating": {
+          "maximum_relative_standard_error": 0.2
+        },
+        "all_envelope_neutron_signed_current": {
+          "maximum_relative_standard_error": 0.1
+        },
+        "all_envelope_photon_signed_current": {
+          "maximum_relative_standard_error": 0.2
+        },
+        "all_envelope_recorded_neutron_crossing_weight": {
+          "maximum_relative_standard_error": 0.1,
+          "minimum_effective_sample_size": 25,
+          "minimum_aggregate_raw_count": 25
+        },
+        "all_envelope_recorded_photon_crossing_weight": {
+          "maximum_relative_standard_error": 0.2,
+          "minimum_effective_sample_size": 25,
+          "minimum_aggregate_raw_count": 25
+        }
+      }
+    },
+    "postprocess": {
+      "minimum_realizations": 100
+    },
+    "qualify_weight_windows": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_qualification_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/weight_window_qualification_responses.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/weight_window_qualification.json"
+      ],
+      "unbiased_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/unbiased_qualification_responses.json",
+      "weight_window_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/weight_window_qualification_responses.json",
+      "qualification_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-production/weight_window_qualification.json",
+      "alpha": 0.05,
+      "minimum_geometric_mean_fom_ratio": 2.0,
+      "minimum_improved_fraction": 0.75,
+      "minimum_critical_fom_ratio": 0.8,
+      "minimum_seed_count": 3,
+      "selected_magnets_only": false,
+      "run_diagnostics": {
+        "lost_particles": 0,
+        "dagmc_navigation_failures": 0,
+        "runaway_histories": 0,
+        "pathological_split_behavior": false
+      }
+    }
+  }
+}

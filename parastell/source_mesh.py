@@ -151,6 +151,12 @@ class SourceMesh(ToroidalMesh):
 
         self.strengths = []
         self.volumes = []
+        # Preserve the thermodynamic source state used by the OpenMC 0.16
+        # temperature-dependent D-T spectrum adapter.  These are ordinary
+        # MOAB tags, so the exported source remains usable without ParaStell.
+        self.source_element_cfs = []
+        self.ion_temperatures_eV = []
+        self.source_element_centroids_cm = []
 
         self._add_tags_to_core()
 
@@ -248,6 +254,21 @@ class SourceMesh(ToroidalMesh):
             create_if_missing=True,
         )
 
+        self.ion_temperature_tag = self.mbc.tag_get_handle(
+            "Ion Temperature eV",
+            tag_size,
+            tag_type,
+            storage_type,
+            create_if_missing=True,
+        )
+        self.source_element_cfs_tag = self.mbc.tag_get_handle(
+            "Source Element CFS",
+            tag_size,
+            tag_type,
+            storage_type,
+            create_if_missing=True,
+        )
+
     def create_vertices(self):
         """Creates mesh vertices and adds them to PyMOAB core.
 
@@ -336,10 +357,20 @@ class SourceMesh(ToroidalMesh):
 
         self.strengths.append(ss)
         self.volumes.append(tet_vol)
+        mean_cfs = float(np.mean(self.coords_cfs[np.asarray(vert_ids)]))
+        _, temperature_keV = self.plasma_conditions(mean_cfs)
+        temperature_eV = float(temperature_keV) * 1.0e3
+        self.source_element_cfs.append(mean_cfs)
+        self.ion_temperatures_eV.append(temperature_eV)
+        self.source_element_centroids_cm.append(
+            np.mean(self.coords[np.asarray(vert_ids)], axis=0)
+        )
 
         # Tag tetrahedra with data
         self.mbc.tag_set_data(self.source_strength_tag, tet, [ss])
         self.mbc.tag_set_data(self.volume_tag, tet, [tet_vol])
+        self.mbc.tag_set_data(self.ion_temperature_tag, tet, [temperature_eV])
+        self.mbc.tag_set_data(self.source_element_cfs_tag, tet, [mean_cfs])
 
     def _get_vertex_id(self, vertex_idx):
         """Computes vertex index in row-major order as stored by MOAB from

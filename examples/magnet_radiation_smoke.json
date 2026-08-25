@@ -1,0 +1,735 @@
+{
+  "geometry_features": {
+    "ports": false
+  },
+  "output_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke",
+  "stages": {
+    "validate_inputs": {
+      "inputs": [
+        "./config.yaml",
+        "./wout_vmec.nc",
+        "./coils.example",
+        "./magnet_radiation_materials.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/input_validation.json"
+      ],
+      "geometry_config": "./config.yaml",
+      "required_files": {
+        "vmec": "./wout_vmec.nc",
+        "coils": "./coils.example",
+        "material_config": "./magnet_radiation_materials.json",
+        "cross_sections": "${OPENMC_CROSS_SECTIONS}"
+      },
+      "report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/input_validation.json"
+    },
+    "build_source": {
+      "inputs": [
+        "./config.yaml",
+        "./wout_vmec.nc"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json"
+      ],
+      "geometry_config": "./config.yaml",
+      "vmec_path": "./wout_vmec.nc",
+      "mesh_shape": [
+        3,
+        9,
+        9
+      ],
+      "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh.h5m",
+      "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json"
+    },
+    "build_source_convergence_ladder": {
+      "inputs": [
+        "./config.yaml",
+        "./wout_vmec.nc"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_5x21x17.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_5x21x17.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_7x41x31.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_7x41x31.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_11x81x61.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_11x81x61.json"
+      ],
+      "geometry_config": "./config.yaml",
+      "vmec_path": "./wout_vmec.nc",
+      "primary_shape": [3, 9, 9],
+      "primary_source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh.h5m",
+      "primary_source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
+      "candidates": [
+        {
+          "shape": [5, 21, 17],
+          "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_5x21x17.h5m",
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_5x21x17.json"
+        },
+        {
+          "shape": [7, 41, 31],
+          "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_7x41x31.h5m",
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_7x41x31.json"
+        },
+        {
+          "shape": [11, 81, 61],
+          "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_11x81x61.h5m",
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_11x81x61.json"
+        }
+      ]
+    },
+    "qualify_source_convergence": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_5x21x17.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_7x41x31.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_11x81x61.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_3x9x9.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_5x21x17.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_7x41x31.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_11x81x61.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_convergence.json"
+      ],
+      "candidates": [
+        {
+          "shape": [3, 9, 9],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_3x9x9.json"
+        },
+        {
+          "shape": [5, 21, 17],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_5x21x17.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_5x21x17.json"
+        },
+        {
+          "shape": [7, 41, 31],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_7x41x31.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_7x41x31.json"
+        },
+        {
+          "shape": [11, 81, 61],
+          "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest_11x81x61.json",
+          "response_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_response_11x81x61.json"
+        }
+      ],
+      "required_response_metric_ids": [
+        "whole_magnet.incoming_neutron_current",
+        "whole_magnet.incoming_photon_current",
+        "whole_magnet.neutron_flux",
+        "whole_magnet.photon_flux",
+        "whole_magnet.heating",
+        "whole_magnet.hotspot_location",
+        "computational_cost"
+      ],
+      "source_metric_tolerances": {
+        "integrated_source_rate_per_s": {
+          "maximum_relative_change": 0.01
+        },
+        "spatial.mean_x_cm": {
+          "maximum_absolute_change": 1.0
+        },
+        "spatial.mean_y_cm": {
+          "maximum_absolute_change": 1.0
+        },
+        "spatial.mean_z_cm": {
+          "maximum_absolute_change": 1.0
+        },
+        "spatial.mean_x2_cm2": {
+          "maximum_relative_change": 0.01
+        },
+        "spatial.mean_y2_cm2": {
+          "maximum_relative_change": 0.01
+        },
+        "spatial.mean_z2_cm2": {
+          "maximum_relative_change": 0.01
+        },
+        "dt_energy.mean_eV": {
+          "maximum_relative_change": 0.001
+        },
+        "dt_energy.mean_squared_eV2": {
+          "maximum_relative_change": 0.001
+        }
+      },
+      "response_metric_tolerances": {
+        "whole_magnet.incoming_neutron_current": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.incoming_photon_current": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.neutron_flux": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.photon_flux": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.heating": {
+          "maximum_relative_change": 0.05
+        },
+        "whole_magnet.hotspot_location": {
+          "maximum_absolute_change": 5.0
+        },
+        "computational_cost": {
+          "qualification_role": "selection_only"
+        }
+      },
+      "qualification_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh_convergence.json"
+    },
+    "build_geometry": {
+      "inputs": [
+        "./config.yaml",
+        "./wout_vmec.nc",
+        "./coils.example"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/geometry_manifest.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json"
+      ],
+      "geometry_config": "./config.yaml",
+      "vmec_path": "./wout_vmec.nc",
+      "coils_path": "./coils.example",
+      "dagmc_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+      "geometry_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/geometry_manifest.json",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "machine_id": "example-stellarator",
+      "sector_id": "sector-00-90deg",
+      "geometry_backend": "pydagmc-invessel-cad-to-dagmc-magnets",
+      "casing_thickness_cm": 5.0,
+      "minimum_mesh_size_cm": 5.0,
+      "maximum_mesh_size_cm": 10.0,
+      "graveyard_margin_cm": 50.0
+    },
+    "validate_geometry": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/geometry_validation.json"
+      ],
+      "dagmc_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "validation_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/geometry_validation.json",
+      "coordinate_quantum_cm": 1e-06,
+      "faceting_tolerances": {
+        "minimum_mesh_size_cm": 5.0,
+        "maximum_mesh_size_cm": 10.0
+      }
+    },
+    "inventory_magnets": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_inventory.json"
+      ],
+      "dagmc_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "selection": "all",
+      "inventory_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_inventory.json"
+    },
+    "build_tally_meshes": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json"
+      ],
+      "dagmc_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "selection": "all",
+      "resolution_cm": 100.0,
+      "padding_cm": 0.0,
+      "maximum_bins_per_magnet": 50000,
+      "maximum_total_bins": 500000,
+      "local_mesh_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json"
+    },
+    "build_weight_window_mesh": {
+      "inputs": [
+        "./config.yaml",
+        "./wout_vmec.nc",
+        "./coils.example",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_mesh_status.json"
+      ],
+      "enabled": true,
+      "reconstruct_component_steps": true,
+      "reuse_existing_component_steps": true,
+      "geometry_config": "./config.yaml",
+      "vmec_path": "./wout_vmec.nc",
+      "coils_path": "./coils.example",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "component_step_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_components",
+      "weight_window_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_mesh.h5m",
+      "weight_window_mesh_status_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_mesh_status.json",
+      "canonical_geometry_fingerprint": "AUTO",
+      "target_magnet_ids": [
+        "example-stellarator-sector-00-90deg-coil-0000"
+      ],
+      "machine_id": "example-stellarator",
+      "sector_id": "sector-00-90deg",
+      "casing_thickness_cm": 5.0,
+      "invessel_components": [
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "shield",
+        "vacuum_vessel"
+      ],
+      "invessel_characteristic_length_cm": 150.0,
+      "magnet_characteristic_length_cm": 40.0,
+      "volume_meshing_algorithm": 10,
+      "fuse_multi_volume_components": true,
+      "mode": "selected_magnet_targeted",
+      "failure_policy": "document_and_disable"
+    },
+    "prepare_unbiased_model": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh.h5m",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json",
+        "./magnet_radiation_materials.json",
+        "${OPENMC_CROSS_SECTIONS}"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json"
+      ],
+      "model_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model",
+      "dagmc_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/combined_reactor_magnets.h5m",
+      "source_mesh_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_mesh.h5m",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "local_mesh_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json",
+      "material_config": "./magnet_radiation_materials.json",
+      "resolved_material_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
+      "cross_sections_path": "${OPENMC_CROSS_SECTIONS}",
+      "nuclear_data_audit_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+      "approved_library": "FENDL-3.1d coupled neutron-photoatomic",
+      "evaluation_release": "FENDL-3.1d",
+      "photon_evaluation_release": "FENDL-3.1d",
+      "approved_mixed_case": false,
+      "temperature_method": "nearest",
+      "temperature_tolerance_K": 1000.0,
+      "temperature_policy_justification": "The pinned FENDL-3.1d HDF5 catalog provides 300 K tables for these nuclides. This smoke explicitly uses nearest available nuclear interaction data for the configured 20-900 K engineering material temperatures; material thermophysical temperatures remain unchanged.",
+      "selection": "all",
+      "tally_profile": "magnet_damage_and_handoff",
+      "neutron_structure": "smoke-7",
+      "photon_structure": "photon-master-v1",
+      "particles_per_batch": 1000,
+      "batches": 5,
+      "seed": 190734863,
+      "max_surface_particles": 5000,
+      "max_surface_files": 1,
+      "supported_responses": [
+        "reaction_families",
+        "damage-energy",
+        "H1-production",
+        "H2-production",
+        "H3-production",
+        "He3-production",
+        "He4-production",
+        "produce:photon",
+        "produce:neutron",
+        "produce:electron",
+        "produce:positron"
+      ]
+    },
+    "run_unbiased_model": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/geometry.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/materials.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/settings.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/tallies.xml"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/statepoint.5.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/surface_source.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json"
+      ],
+      "model_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model",
+      "statepoint_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/statepoint.5.h5",
+      "surface_source_paths": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/surface_source.h5"
+      ],
+      "transport_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json",
+      "openmc_executable": "openmc",
+      "expected_openmc_version": "0.16.0",
+      "expected_openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
+      "threads": 4,
+      "stream_output": true,
+      "max_surface_particles": 5000,
+      "max_surface_files": 1,
+      "require_secondary_photons": true
+    },
+    "run_unbiased_qualification_campaign": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/geometry.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/materials.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/settings.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/tallies.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/magnet_openmc_model_manifest.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_statistical_campaign",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_190734863_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_514229_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_832040_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_statistical_campaign.json"
+      ],
+      "model_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model",
+      "model_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/magnet_openmc_model_manifest.json",
+      "campaign_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_statistical_campaign",
+      "campaign_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_statistical_campaign.json",
+      "result_report_paths": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_190734863_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_514229_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_832040_responses.json"
+      ],
+      "seeds": [
+        190734863,
+        514229,
+        832040
+      ],
+      "minimum_seed_count": 3,
+      "particles_per_batch": 1000,
+      "batches": 5,
+      "max_surface_particles": 5000,
+      "max_surface_files": 1,
+      "openmc_executable": "openmc",
+      "expected_openmc_version": "0.16.0",
+      "expected_openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
+      "threads": 4,
+      "responses": [
+        {
+          "response_id": "all_magnet_neutron_track_length_flux",
+          "kind": "tally",
+          "tally_name": "pstl_magnet_neutron_ccfe_709_volume_flux",
+          "particle": "neutron",
+          "quantity": "cell_track_length_flux_sum",
+          "units": "particle-cm per source",
+          "normalization": "per_openmc_source_history",
+          "reduction": "sum",
+          "is_key_response": true
+        },
+        {
+          "response_id": "all_magnet_photon_track_length_flux",
+          "kind": "tally",
+          "tally_name": "pstl_magnet_photon_configured_volume_flux",
+          "particle": "photon",
+          "quantity": "cell_track_length_flux_sum",
+          "units": "particle-cm per source",
+          "normalization": "per_openmc_source_history",
+          "reduction": "sum",
+          "is_key_response": true
+        },
+        {
+          "response_id": "all_magnet_neutron_heating",
+          "kind": "tally",
+          "tally_name": "pstl_magnet_neutron_heating",
+          "particle": "neutron",
+          "quantity": "deposited_energy_sum",
+          "units": "eV per source",
+          "normalization": "per_openmc_source_history",
+          "reduction": "sum",
+          "is_key_response": true
+        },
+        {
+          "response_id": "all_magnet_photon_heating",
+          "kind": "tally",
+          "tally_name": "pstl_magnet_photon_heating",
+          "particle": "photon",
+          "quantity": "deposited_energy_sum",
+          "units": "eV per source",
+          "normalization": "per_openmc_source_history",
+          "reduction": "sum",
+          "is_key_response": true
+        },
+        {
+          "response_id": "all_envelope_neutron_signed_current",
+          "kind": "tally",
+          "tally_name": "pstl_envelope_neutron_current",
+          "particle": "neutron",
+          "quantity": "signed_surface_current_sum",
+          "units": "particle per source",
+          "normalization": "per_openmc_source_history",
+          "reduction": "sum",
+          "is_key_response": true
+        },
+        {
+          "response_id": "all_envelope_photon_signed_current",
+          "kind": "tally",
+          "tally_name": "pstl_envelope_photon_current",
+          "particle": "photon",
+          "quantity": "signed_surface_current_sum",
+          "units": "particle per source",
+          "normalization": "per_openmc_source_history",
+          "reduction": "sum",
+          "is_key_response": true
+        },
+        {
+          "response_id": "all_envelope_recorded_neutron_crossing_weight",
+          "kind": "surface_bank_weight",
+          "particle": "neutron",
+          "quantity": "recorded_surface_crossing_weight",
+          "units": "particle per source",
+          "normalization": "per_openmc_source_history",
+          "surface_ids": [],
+          "is_key_response": true
+        },
+        {
+          "response_id": "all_envelope_recorded_photon_crossing_weight",
+          "kind": "surface_bank_weight",
+          "particle": "photon",
+          "quantity": "recorded_surface_crossing_weight",
+          "units": "particle per source",
+          "normalization": "per_openmc_source_history",
+          "surface_ids": [],
+          "is_key_response": true
+        }
+      ],
+      "unassessed_metrics": {
+        "incoming_surface_current_by_magnet": "UNASSESSED: signed closed-envelope current can cancel and recorded bank crossing weight includes both directions; neither is claimed as incoming current for a resolved magnet.",
+        "major_surface_patch_current": "UNASSESSED: the campaign does not yet expand the facet catalog and adaptive patch map into stable patch-level response IDs.",
+        "per_magnet_flux_and_heating": "UNASSESSED: the campaign currently reduces cell-filter tallies globally and does not emit stable per-magnet response rows.",
+        "selected_magnet_incoming_effective_records": "UNASSESSED: the configured surface-bank responses aggregate every selected envelope rather than one resolved magnet identity."
+      }
+    },
+    "qualify_production_statistics": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_190734863_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_514229_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_832040_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_statistical_campaign.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/production_statistical_qualification.json"
+      ],
+      "result_report_paths": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_190734863_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_514229_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_seed_832040_responses.json"
+      ],
+      "campaign_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_statistical_campaign.json",
+      "qualification_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/production_statistical_qualification.json",
+      "minimum_seed_count": 3,
+      "qualification_thresholds": {
+        "all_magnet_neutron_track_length_flux": {
+          "maximum_relative_standard_error": 1.0
+        },
+        "all_magnet_photon_track_length_flux": {
+          "maximum_relative_standard_error": 1.0
+        },
+        "all_magnet_neutron_heating": {
+          "maximum_relative_standard_error": 1.0
+        },
+        "all_magnet_photon_heating": {
+          "maximum_relative_standard_error": 1.0
+        },
+        "all_envelope_neutron_signed_current": {
+          "maximum_relative_standard_error": 1.0
+        },
+        "all_envelope_photon_signed_current": {
+          "maximum_relative_standard_error": 1.0
+        },
+        "all_envelope_recorded_neutron_crossing_weight": {
+          "maximum_relative_standard_error": 1.0,
+          "minimum_effective_sample_size": 1,
+          "minimum_aggregate_raw_count": 1
+        },
+        "all_envelope_recorded_photon_crossing_weight": {
+          "maximum_relative_standard_error": 1.0,
+          "minimum_effective_sample_size": 1,
+          "minimum_aggregate_raw_count": 1
+        }
+      },
+      "unassessed_metrics": {
+        "incoming_surface_current_by_magnet": "UNASSESSED: signed closed-envelope current can cancel and recorded bank crossing weight includes both directions; neither is claimed as incoming current for a resolved magnet.",
+        "major_surface_patch_current": "UNASSESSED: the campaign does not yet expand the facet catalog and adaptive patch map into stable patch-level response IDs.",
+        "per_magnet_flux_and_heating": "UNASSESSED: the campaign currently reduces cell-filter tallies globally and does not emit stable per-magnet response rows.",
+        "selected_magnet_incoming_effective_records": "UNASSESSED: the configured surface-bank responses aggregate every selected envelope rather than one resolved magnet identity."
+      }
+    },
+    "prepare_weight_window_generation": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_mesh_status.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_contract.json"
+      ],
+      "weight_window_mesh_status_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_mesh_status.json",
+      "generation_contract_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_contract.json"
+    },
+    "run_weight_window_generation": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_contract.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_report.json"
+      ],
+      "generation_contract_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_contract.json",
+      "generation_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_report.json"
+    },
+    "run_weight_window_qualification_campaign": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_report.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_qualification_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_campaign_report.json"
+      ],
+      "generation_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_generation_report.json",
+      "unbiased_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_qualification_responses.json",
+      "weight_window_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification_responses.json",
+      "campaign_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_campaign_report.json"
+    },
+    "qualify_weight_windows": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_qualification_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_campaign_report.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification.json"
+      ],
+      "unbiased_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_qualification_responses.json",
+      "weight_window_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification_responses.json",
+      "campaign_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_campaign_report.json",
+      "qualification_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification.json"
+    },
+    "prepare_production_model": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/geometry.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/materials.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/settings.xml",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/tallies.xml"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/production_model",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/production_model_manifest.json"
+      ],
+      "qualification_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification.json",
+      "campaign_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_campaign_report.json",
+      "unbiased_model_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model",
+      "production_model_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/production_model",
+      "production_model_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/production_model_manifest.json"
+    },
+    "postprocess": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/statepoint.5.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/surface_source.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/magnet_openmc_model_manifest.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/scalar_flux_fields.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_heating.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_reaction_production.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_damage_gas.h5",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/boundary_handoffs",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/postprocess_report.json"
+      ],
+      "statepoint_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/statepoint.5.h5",
+      "surface_source_paths": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/surface_source.h5"
+      ],
+      "model_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_model/magnet_openmc_model_manifest.json",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "local_mesh_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/local_meshes.json",
+      "nuclear_data_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+      "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
+      "transport_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json",
+      "scalar_flux_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/scalar_flux_fields.h5",
+      "heating_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_heating.h5",
+      "reaction_production_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_reaction_production.h5",
+      "damage_gas_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_damage_gas.h5",
+      "boundary_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/boundary_handoffs",
+      "postprocess_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/postprocess_report.json",
+      "selection": "all",
+      "configured_neutron_structure": "smoke-7",
+      "configured_photon_structure": "photon-master-v1",
+      "boundary_neutron_structure": "smoke-7",
+      "boundary_photon_edges_eV": [
+        0.0,
+        100000.0,
+        1000000.0,
+        10000000.0,
+        1000000000.0
+      ],
+      "boundary_spatial_bins": [
+        4,
+        4
+      ],
+      "minimum_realizations": 5,
+      "parastell_commit": "${PARASTELL_COMMIT}"
+    },
+    "render_diagnostics": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_qualification_responses.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification_responses.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/diagnostics/weight_window_response_comparison.png",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/diagnostics/figure_manifest.json"
+      ],
+      "unbiased_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_qualification_responses.json",
+      "weight_window_responses_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/weight_window_qualification_responses.json",
+      "comparison_figure_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/diagnostics/weight_window_response_comparison.png",
+      "figure_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/diagnostics/figure_manifest.json",
+      "component_names": [
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "shield",
+        "vac_vessel",
+        "magnet_casing",
+        "winding_pack"
+      ],
+      "component_colors": {
+        "first_wall": "#4C78A8",
+        "breeder": "#F2CF5B",
+        "back_wall": "#72B7B2",
+        "shield": "#54A24B",
+        "vac_vessel": "#B279A2",
+        "magnet_casing": "#E45756",
+        "winding_pack": "#FF9DA6"
+      }
+    },
+    "export_bundle": {
+      "inputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/postprocess_report.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json"
+      ],
+      "outputs": [
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/radiation_field_bundle",
+        "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/bundle_receipt.json"
+      ],
+      "postprocess_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/postprocess_report.json",
+      "transport_report_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/unbiased_transport_report.json",
+      "associations_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/magnet_associations.json",
+      "material_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/resolved_material_manifest.json",
+      "nuclear_data_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/nuclear_data_audit.json",
+      "source_manifest_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/source_manifest.json",
+      "bundle_directory": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/radiation_field_bundle",
+      "bundle_receipt_path": "${PARASTELL_ARTIFACT_ROOT}/magnet-radiation-smoke/bundle_receipt.json",
+      "parastell_commit": "${PARASTELL_COMMIT}"
+    }
+  }
+}

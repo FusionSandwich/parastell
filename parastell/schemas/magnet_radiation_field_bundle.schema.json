@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_radiation_field_bundle.schema.json",
+  "title": "ParaStell neutral magnet radiation-field bundle manifest",
+  "type": "object",
+  "required": [
+    "schema",
+    "provenance",
+    "geometry",
+    "source",
+    "nuclear_data",
+    "materials",
+    "magnet_inventory",
+    "products",
+    "bank_completeness",
+    "verification"
+  ],
+  "properties": {
+    "schema": {"const": "parastell.magnet_radiation_field_bundle/v1.0.0"},
+    "created_utc": {"type": "string", "format": "date-time"},
+    "provenance": {
+      "type": "object",
+      "required": [
+        "parastell_commit",
+        "openmc_version",
+        "openmc_commit",
+        "statepoint_sha256",
+        "vmec_sha256",
+        "coils_sha256",
+        "source_mesh_sha256",
+        "histories",
+        "batches",
+        "seeds"
+      ],
+      "properties": {
+        "parastell_commit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+        "openmc_version": {"type": "string", "minLength": 1},
+        "openmc_commit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+        "statepoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "vmec_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "coils_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "histories": {"type": "integer", "minimum": 1},
+        "batches": {"type": "integer", "minimum": 1},
+        "seeds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "required": ["raw_h5m_sha256", "canonical_geometry_fingerprint"],
+      "properties": {
+        "raw_h5m_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "canonical_geometry_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "physical_source_rate_per_s",
+        "source_definition_sha256",
+        "source_mesh_sha256"
+      ],
+      "properties": {
+        "physical_source_rate_per_s": {"type": "number", "exclusiveMinimum": 0},
+        "source_definition_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "nuclear_data": {
+      "type": "object",
+      "required": ["manifest_sha256"],
+      "properties": {
+        "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "materials": {
+      "type": "object",
+      "anyOf": [
+        {"required": ["manifest_sha256"]},
+        {"required": ["file_sha256"]},
+        {"required": ["resolved_manifest_sha256"]}
+      ],
+      "properties": {
+        "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "resolved_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "magnet_inventory": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["magnet_id"],
+        "properties": {
+          "magnet_id": {"type": "string", "minLength": 1, "pattern": "^[^/\\\\]+$"}
+        }
+      }
+    },
+    "products": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"$ref": "#/$defs/product"},
+      "allOf": [
+        {"contains": {"properties": {"kind": {"const": "volume_scalar_flux"}}, "required": ["kind"]}, "minContains": 1},
+        {"contains": {"properties": {"kind": {"const": "boundary_phase_space"}}, "required": ["kind"]}, "minContains": 1}
+      ]
+    },
+    "bank_completeness": {"$ref": "#/$defs/bankCompleteness"},
+    "verification": {"type": "object"}
+  },
+  "$defs": {
+    "product": {
+      "type": "object",
+      "required": [
+        "kind",
+        "magnet_id",
+        "path",
+        "sha256",
+        "size_bytes",
+        "units",
+        "normalization",
+        "quantity"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "boundary_phase_space",
+            "damage_and_gas_production",
+            "volume_scalar_flux",
+            "heating",
+            "reaction_production"
+          ]
+        },
+        "magnet_id": {"type": "string", "minLength": 1, "pattern": "^[^/\\\\]+$"},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "units": {"type": "string", "minLength": 1},
+        "normalization": {"type": "string", "minLength": 1},
+        "quantity": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "volume_scalar_flux"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "path": {"pattern": "^volume_flux/[^/]+/[^/]+$"},
+              "units": {"enum": ["1/cm2/source", "particles/cm2/s"]},
+              "normalization": {"const": "physical_source_rate"},
+              "quantity": {"const": "volume_scalar_flux"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "boundary_phase_space"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "path": {"pattern": "^boundary/[^/]+/[^/]+$"},
+              "units": {"const": "crossings/source"},
+              "normalization": {"const": "per_source_history"},
+              "quantity": {"const": "partial_crossing_current"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "damage_and_gas_production"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "path": {"pattern": "^damage_and_gas_production/[^/]+/[^/]+$"},
+              "units": {"const": "mixed_explicit_in_product"},
+              "normalization": {"const": "physical_source_rate"},
+              "quantity": {"const": "damage_energy_and_gas_production"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "heating"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "path": {"pattern": "^heating/[^/]+/[^/]+$"},
+              "units": {"enum": ["W", "W/cm3"]},
+              "quantity": {"const": "heating"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "reaction_production"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "path": {"pattern": "^reaction_production/[^/]+/[^/]+$"},
+              "units": {"enum": ["events/source", "events/s"]},
+              "quantity": {"const": "reaction_and_particle_production"}
+            }
+          }
+        }
+      ]
+    },
+    "bankCompleteness": {
+      "type": "object",
+      "required": [
+        "status",
+        "bank_count",
+        "classification_counts",
+        "record_count_total",
+        "empty_bank_count",
+        "all_banks_valid",
+        "all_banks_complete",
+        "empty_banks_are_physical_zero"
+      ],
+      "properties": {
+        "status": {"enum": ["NO_BOUNDARY_BANKS", "INVALID", "SAMPLED", "COMPLETE"]},
+        "bank_count": {"type": "integer", "minimum": 0},
+        "classification_counts": {
+          "type": "object",
+          "required": [
+            "COMPLETE_CROSSING_BANK",
+            "SAMPLED_CROSSING_BANK",
+            "TRUNCATED_INVALID_BANK"
+          ],
+          "properties": {
+            "COMPLETE_CROSSING_BANK": {"type": "integer", "minimum": 0},
+            "SAMPLED_CROSSING_BANK": {"type": "integer", "minimum": 0},
+            "TRUNCATED_INVALID_BANK": {"type": "integer", "minimum": 0}
+          }
+        },
+        "record_count_total": {"type": "integer", "minimum": 0},
+        "empty_bank_count": {"type": "integer", "minimum": 0},
+        "all_banks_valid": {"type": "boolean"},
+        "all_banks_complete": {"type": "boolean"},
+        "empty_banks_are_physical_zero": {"const": false}
+      }
+    }
+  },
+  "additionalProperties": true
+}

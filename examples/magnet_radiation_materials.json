@@ -1,0 +1,164 @@
+{
+  "fusion_material_db": {
+    "repository": "FusionSandwich/fusion-material-db",
+    "commit": "9d8f84ad7b3ac2c587edfbe8ec1ed74891484498"
+  },
+  "generated_artifacts": [
+    {
+      "path": "${FUSION_MATERIAL_DB}/db-outputs/PureFusionMaterials_libv1.json",
+      "sha256": "bb15bbad56395269b2e07df183d35fa37894dd5f752ebc793166566d40d61577",
+      "selected_materials": [
+        "Ag",
+        "Cu",
+        "YBa2Cu3O7",
+        "HastelloyC276",
+        "SS316L"
+      ]
+    }
+  ],
+  "explicit_materials": {
+    "LithiumOrthosilicateProxy": {
+      "density": 2.4,
+      "temperature_K": 900.0,
+      "composition_basis": "mass_fraction",
+      "comp": {
+        "Li6": 0.015202422306032871,
+        "Li7": 0.21594182953674756,
+        "Si28": 0.21550485169751618,
+        "Si29": 0.011338807128947937,
+        "Si30": 0.007741417946352708,
+        "O16": 0.5328232031560548,
+        "O17": 0.00021565140117912245,
+        "O18": 0.0012318168271686714
+      },
+      "metadata": {
+        "citation": "stoichiometric natural-isotope Li4SiO4 engineering proxy; enrichment is configurable"
+      }
+    },
+    "TransportVacuum": {
+      "density": 1e-12,
+      "temperature_K": 293.6,
+      "composition_basis": "mass_fraction",
+      "comp": {
+        "H1": 1.0
+      },
+      "metadata": {
+        "citation": "numerical transport void proxy"
+      }
+    },
+    "BufferAl2O3": {
+      "density": 3.95,
+      "temperature_K": 20.0,
+      "composition_basis": "mass_fraction",
+      "comp": {
+        "Al27": 0.5292507,
+        "O16": 0.469605379201,
+        "O17": 0.000178884734,
+        "O18": 0.000965036065
+      },
+      "metadata": {
+        "citation": "project engineering proxy; not manufacturer-authoritative"
+      }
+    },
+    "CableMatrixCu": {
+      "density": 8.96,
+      "temperature_K": 20.0,
+      "composition_basis": "mass_fraction",
+      "comp": {
+        "Cu63": 0.6847919524171371,
+        "Cu65": 0.315208047582863
+      },
+      "metadata": {
+        "citation": "project copper-matrix assumption based on pinned Cu record"
+      }
+    },
+    "InsulationCarbon": {
+      "density": 1.4,
+      "temperature_K": 20.0,
+      "composition_basis": "mass_fraction",
+      "comp": {
+        "C12": 0.9884,
+        "C13": 0.0116
+      },
+      "metadata": {
+        "citation": "project carbon-equivalent insulation proxy"
+      }
+    },
+    "VoidHelium": {
+      "density": 0.000166,
+      "temperature_K": 20.0,
+      "composition_basis": "mass_fraction",
+      "comp": {
+        "He3": 0.00000134,
+        "He4": 0.99999866
+      },
+      "metadata": {
+        "citation": "project helium/void representation; density is configurable"
+      }
+    }
+  },
+  "winding_pack_variants": {
+    "WindingPackReference": {
+      "fraction_basis": "volume",
+      "temperature_K": 20.0,
+      "uncertainty_variant": "reference",
+      "source": "explicit_project_assumption",
+      "citation": "engineering homogenization; not manufacturer-authoritative",
+      "constituent_volume_fractions": {
+        "Cu": 0.47,
+        "Ag": 0.03,
+        "YBa2Cu3O7": 0.04,
+        "BufferAl2O3": 0.02,
+        "HastelloyC276": 0.25,
+        "CableMatrixCu": 0.08,
+        "InsulationCarbon": 0.08,
+        "VoidHelium": 0.03
+      }
+    },
+    "WindingPackLowMetal": {
+      "fraction_basis": "volume",
+      "temperature_K": 20.0,
+      "uncertainty_variant": "low_metal_high_void_insulation",
+      "source": "explicit_project_assumption",
+      "citation": "sensitivity bound; not manufacturer-authoritative",
+      "constituent_volume_fractions": {
+        "Cu": 0.40,
+        "Ag": 0.02,
+        "YBa2Cu3O7": 0.04,
+        "BufferAl2O3": 0.02,
+        "HastelloyC276": 0.22,
+        "CableMatrixCu": 0.06,
+        "InsulationCarbon": 0.16,
+        "VoidHelium": 0.08
+      }
+    },
+    "WindingPackHighMetal": {
+      "fraction_basis": "volume",
+      "temperature_K": 20.0,
+      "uncertainty_variant": "high_metal_low_void_insulation",
+      "source": "explicit_project_assumption",
+      "citation": "sensitivity bound; not manufacturer-authoritative",
+      "constituent_volume_fractions": {
+        "Cu": 0.52,
+        "Ag": 0.04,
+        "YBa2Cu3O7": 0.05,
+        "BufferAl2O3": 0.02,
+        "HastelloyC276": 0.27,
+        "CableMatrixCu": 0.07,
+        "InsulationCarbon": 0.02,
+        "VoidHelium": 0.01
+      }
+    }
+  },
+  "material_tags": {
+    "Vacuum": "TransportVacuum",
+    "first_wall": "SS316L",
+    "breeder": "LithiumOrthosilicateProxy",
+    "back_wall": "SS316L",
+    "shield": "SS316L",
+    "vac_vessel": "SS316L",
+    "magnet_casing": "SS316L",
+    "winding_pack": "WindingPackReference",
+    "Graveyard": "TransportVacuum"
+  }
+}

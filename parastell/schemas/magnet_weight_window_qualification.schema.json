@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_weight_window_qualification.schema.json",
+  "title": "ParaStell magnet weight-window terminal decision",
+  "type": "object",
+  "required": ["schema", "classification", "weight_windows_enabled"],
+  "properties": {
+    "schema": {"type": "string", "pattern": "^parastell\\.magnet_weight_window"},
+    "classification": {
+      "enum": [
+        "QUALIFIED_AND_ENABLED",
+        "QUALIFIED_FOR_NEUTRONS_ONLY",
+        "QUALIFIED_FOR_SELECTED_MAGNETS_ONLY",
+        "NO_MATERIAL_BENEFIT_DISABLE",
+        "REJECTED_BIAS",
+        "REJECTED_INSTABILITY",
+        "INSUFFICIENT_PILOT_STATISTICS"
+      ]
+    },
+    "weight_windows_enabled": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}

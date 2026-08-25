@@ -43,7 +43,6 @@ dependencies = [
     "gmsh",
     "pymoab>=5.5",
     "cad_to_dagmc>=0.9.1",
-    "openmc>=0.15",
     "matplotlib",
     "numpy",
     "scipy",
@@ -54,6 +53,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-cov"]
+
+radiation = ["openmc>=0.16", "h5py"]
 
 format = ["black==25.*"]
 
@@ -66,7 +67,7 @@ Repository = "https://github.com/svalinn/parastell.git"
 "Bug Tracker" = "https://github.com/svalinn/parastell/issues"
 
 [project.scripts]
-"parastell" = "parastell.parastell:parastell"
+"parastell" = "parastell.cli:main"
 
 [build-system]
 requires = ["setuptools>=64.0.0"]
@@ -78,3 +79,7 @@ target-version = ['py311', 'py312', 'py313']
 
 [tool.setuptools.packages.find]
 exclude = ["images"]
+
+[tool.setuptools.package-data]
+"parastell.energy_groups" = ["data/*.json"]
+"parastell.schemas" = ["*.json"]

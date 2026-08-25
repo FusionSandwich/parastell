@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_boundary_source.schema.json",
+  "title": "ParaStell closed magnet boundary-source manifest",
+  "type": "object",
+  "required": [
+    "schema",
+    "schema_version",
+    "envelope",
+    "normalization",
+    "provenance",
+    "record_count",
+    "integrated_current",
+    "facet_catalog"
+  ],
+  "properties": {
+    "schema": {"type": "string", "pattern": "^parastell\\.magnet_boundary_source/v"},
+    "schema_version": {"type": "string"},
+    "envelope": {"type": "object"},
+    "normalization": {"type": "object"},
+    "provenance": {"type": "object"},
+    "record_count": {"type": "integer", "minimum": 0},
+    "integrated_current": {"type": "number", "minimum": 0},
+    "facet_catalog": {
+      "type": "object",
+      "required": ["available"],
+      "properties": {"available": {"type": "boolean"}}
+    }
+  },
+  "additionalProperties": true
+}

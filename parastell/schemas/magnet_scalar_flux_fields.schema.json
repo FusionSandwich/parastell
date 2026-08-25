@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_scalar_flux_fields.schema.json",
+  "title": "ParaStell magnet scalar-flux field manifest",
+  "type": "object",
+  "required": [
+    "schema",
+    "quantity",
+    "normalization",
+    "material_manifest_sha256",
+    "provenance",
+    "fields"
+  ],
+  "properties": {
+    "schema": {"const": "parastell.magnet_scalar_flux_fields/v1.0.0"},
+    "quantity": {"const": "volume_scalar_flux"},
+    "normalization": {"type": "object"},
+    "material_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "provenance": {"type": "object"},
+    "fields": {"type": "array", "minItems": 1}
+  },
+  "additionalProperties": true
+}

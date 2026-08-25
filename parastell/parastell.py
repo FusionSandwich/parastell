@@ -779,6 +779,49 @@ class Stellarator(object):
         export_path = Path(export_dir) / Path(filename).with_suffix(".h5m")
         self.pydagmc_model.write_file(str(export_path))
 
+    def prepare_magnet_radiation_field(
+        self,
+        dagmc_path,
+        *,
+        magnet_selection="all",
+        particles=("neutron", "photon"),
+        tally_profile="magnet_damage_and_handoff",
+        boundary_source=True,
+        volume_flux=True,
+        local_mesh=True,
+        associations=None,
+        centreline_points_by_coil=None,
+        coordinate_quantum_cm=1.0e-6,
+        faceting_tolerances=None,
+        expected_canonical_geometry_fingerprint=None,
+    ):
+        """Create the optional producer facade without executing OpenMC.
+
+        ``dagmc_path`` is authoritative, which keeps the radiation handoff
+        independent of CadQuery object identity after H5M export.
+        """
+        from .magnet_radiation_field import MagnetRadiationFieldProducer
+        from .magnet_radiation_field import ProducerSelection
+
+        return MagnetRadiationFieldProducer(
+            dagmc_path,
+            selection=ProducerSelection(
+                magnet_selection=magnet_selection,
+                particles=tuple(particles),
+                tally_profile=tally_profile,
+                boundary_source=boundary_source,
+                volume_flux=volume_flux,
+                local_mesh=local_mesh,
+            ),
+            associations=associations,
+            centreline_points_by_coil=centreline_points_by_coil,
+            coordinate_quantum_cm=coordinate_quantum_cm,
+            faceting_tolerances=faceting_tolerances,
+            expected_canonical_geometry_fingerprint=(
+                expected_canonical_geometry_fingerprint
+            ),
+        )
+
 
 def parse_args():
     """Parser for running as a script."""

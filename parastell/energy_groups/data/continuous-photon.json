@@ -1,0 +1,23 @@
+{
+  "name": "continuous-photon",
+  "aliases": ["photon-continuous-energy"],
+  "particle": "photon",
+  "intended_purposes": [
+    "authoritative magnet boundary phase-space energy representation"
+  ],
+  "group_count": null,
+  "edge_units": "eV",
+  "minimum_energy": null,
+  "maximum_energy": null,
+  "edge_ordering": "ascending",
+  "representation": "continuous",
+  "status": "authoritative-representation",
+  "edge_sha256": null,
+  "authoritative_source": {
+    "organization": "ParaStell",
+    "revision": "magnet-boundary-source-v2",
+    "access_date": "2026-08-20",
+    "license_or_redistribution_note": "Schema declaration; particle records remain in the handoff payload."
+  },
+  "edges": null
+}
