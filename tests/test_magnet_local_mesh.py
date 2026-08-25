@@ -1,7 +1,9 @@
 import numpy as np
 
 from parastell.coil_frame import parallel_transport_frame
+from parastell.magnet_local_mesh import LocalMeshDefinition
 from parastell.magnet_local_mesh import build_local_mesh_definition
+from parastell.magnet_local_mesh import qualify_local_mesh_nonoverlap
 
 
 def test_local_mesh_centroids_volumes_and_frame_identity():
@@ -101,3 +103,53 @@ def test_local_mesh_does_not_fabricate_missing_centreline_linkage():
     )
     assert "centreline_arclength_cm" not in metadata
     assert "distance_to_centreline_cm" not in metadata
+
+
+def _identity_mesh(magnet_id, translation):
+    return LocalMeshDefinition(
+        magnet_id=magnet_id,
+        lower_left_local_cm=(-1.0, -1.0, -1.0),
+        upper_right_local_cm=(1.0, 1.0, 1.0),
+        dimension=(1, 1, 1),
+        rotation_local_to_global=(
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+        ),
+        translation_global_cm=translation,
+        requested_resolution_cm=2.0,
+    )
+
+
+def test_nonoverlap_requires_both_geometric_proof_and_component_filter():
+    separated = (
+        _identity_mesh("magnet-A", (0.0, 0.0, 0.0)),
+        _identity_mesh("magnet-B", (10.0, 0.0, 0.0)),
+    )
+    unfiltered = qualify_local_mesh_nonoverlap(
+        separated, cell_filter_applied=False
+    )
+    assert unfiltered["geometric_pairwise_disjoint_proven"]
+    assert not unfiltered["nonoverlap_qualified"]
+    assert unfiltered["blocking_reasons"] == [
+        "LOCAL_MESH_TALLIES_ARE_NOT_COMPONENT_FILTERED"
+    ]
+
+    filtered = qualify_local_mesh_nonoverlap(
+        separated, cell_filter_applied=True
+    )
+    assert filtered["nonoverlap_qualified"]
+    assert filtered["status"] == "QUALIFIED"
+
+    overlapping = (
+        separated[0],
+        _identity_mesh("magnet-C", (1.0, 0.0, 0.0)),
+    )
+    unresolved = qualify_local_mesh_nonoverlap(
+        overlapping, cell_filter_applied=True
+    )
+    assert not unresolved["geometric_pairwise_disjoint_proven"]
+    assert not unresolved["nonoverlap_qualified"]
+    assert unresolved["blocking_reasons"] == [
+        "PAIRWISE_GEOMETRIC_DISJOINTNESS_NOT_PROVEN"
+    ]

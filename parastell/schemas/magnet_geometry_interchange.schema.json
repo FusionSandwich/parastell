@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parastell.dev/schemas/magnet_geometry_interchange.schema.json",
+  "title": "ParaStell magnet geometry interchange",
+  "type": "object",
+  "required": [
+    "schema",
+    "schema_version",
+    "units",
+    "geometry_fingerprint",
+    "magnets",
+    "provenance",
+    "content_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "parastell.magnet_geometry_interchange/v1.0.0"
+    },
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "units": {
+      "$ref": "#/$defs/units"
+    },
+    "geometry_fingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "magnets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/magnet"
+      }
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "content_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "vector2": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "number"},
+        {"type": "number"}
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "vector3": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "number"},
+        {"type": "number"},
+        {"type": "number"}
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "row4": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "number"},
+        {"type": "number"},
+        {"type": "number"},
+        {"type": "number"}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "transform": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/row4"},
+        {"$ref": "#/$defs/row4"},
+        {"$ref": "#/$defs/row4"},
+        {"$ref": "#/$defs/row4"}
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "units": {
+      "type": "object",
+      "required": ["length", "angle"],
+      "properties": {
+        "length": {"const": "cm"},
+        "angle": {"const": "rad"}
+      },
+      "additionalProperties": false
+    },
+    "closure": {
+      "type": "object",
+      "required": [
+        "source_filament_closed",
+        "represented_segment_closed",
+        "represented_segment_kind"
+      ],
+      "properties": {
+        "source_filament_closed": {"type": "boolean"},
+        "represented_segment_closed": {"type": "boolean"},
+        "represented_segment_kind": {
+          "enum": [
+            "full_filament",
+            "field_period_segment",
+            "sector_segment",
+            "explicit_open_segment"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "centreline": {
+      "type": "object",
+      "required": [
+        "definition_kind",
+        "points_global_cm",
+        "arc_length_cm",
+        "total_length_cm",
+        "represented_segment_closed"
+      ],
+      "properties": {
+        "definition_kind": {"const": "polyline"},
+        "points_global_cm": {
+          "type": "array",
+          "minItems": 3,
+          "items": {"$ref": "#/$defs/vector3"}
+        },
+        "arc_length_cm": {
+          "type": "array",
+          "minItems": 3,
+          "items": {"type": "number", "minimum": 0}
+        },
+        "total_length_cm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "represented_segment_closed": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "cross_section": {
+      "type": "object",
+      "required": [
+        "definition_kind",
+        "coordinate_axes",
+        "vertices_local_cm",
+        "closed"
+      ],
+      "properties": {
+        "definition_kind": {"const": "polygon"},
+        "coordinate_axes": {
+          "const": ["width_direction", "normal_direction"]
+        },
+        "vertices_local_cm": {
+          "type": "array",
+          "minItems": 3,
+          "items": {"$ref": "#/$defs/vector2"}
+        },
+        "closed": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "cross_sections": {
+      "type": "object",
+      "required": [
+        "outer_casing",
+        "outer_winding_pack",
+        "casing_thickness_cm"
+      ],
+      "properties": {
+        "outer_casing": {"$ref": "#/$defs/cross_section"},
+        "outer_winding_pack": {"$ref": "#/$defs/cross_section"},
+        "casing_thickness_cm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "frame_sample": {
+      "type": "object",
+      "required": [
+        "s_cm",
+        "normalized_s",
+        "point_global_cm",
+        "tangent_global",
+        "width_direction_global",
+        "normal_direction_global"
+      ],
+      "properties": {
+        "s_cm": {"type": "number", "minimum": 0},
+        "normalized_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "point_global_cm": {"$ref": "#/$defs/vector3"},
+        "tangent_global": {"$ref": "#/$defs/vector3"},
+        "width_direction_global": {"$ref": "#/$defs/vector3"},
+        "normal_direction_global": {"$ref": "#/$defs/vector3"}
+      },
+      "additionalProperties": false
+    },
+    "frame": {
+      "type": "object",
+      "required": [
+        "frame_kind",
+        "tape_twist_resolved",
+        "handedness",
+        "continuity",
+        "closure_twist_rad",
+        "quality_status",
+        "samples"
+      ],
+      "properties": {
+        "frame_kind": {"const": "engineering_parallel_transport"},
+        "tape_twist_resolved": {"const": false},
+        "handedness": {"const": "right"},
+        "continuity": {"const": "continuous"},
+        "closure_twist_rad": {"type": "number"},
+        "quality_status": {"type": "string", "minLength": 1},
+        "samples": {
+          "type": "array",
+          "minItems": 3,
+          "items": {"$ref": "#/$defs/frame_sample"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "sector_transform": {
+      "type": "object",
+      "required": [
+        "field_period_index",
+        "sector_index",
+        "transform_to_native_global"
+      ],
+      "properties": {
+        "field_period_index": {"type": "integer", "minimum": 0},
+        "sector_index": {"type": "integer", "minimum": 0},
+        "transform_to_native_global": {"$ref": "#/$defs/transform"}
+      },
+      "additionalProperties": false
+    },
+    "available_artifact": {
+      "type": "object",
+      "required": ["status", "sha256", "size_bytes"],
+      "properties": {
+        "status": {"const": "available"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "unavailable_artifact": {
+      "type": "object",
+      "required": ["status", "reason"],
+      "properties": {
+        "status": {"const": "unavailable"},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "oneOf": [
+        {"$ref": "#/$defs/available_artifact"},
+        {"$ref": "#/$defs/unavailable_artifact"}
+      ]
+    },
+    "artifacts": {
+      "type": "object",
+      "required": [
+        "outer_step",
+        "outer_stl",
+        "outer_h5m",
+        "winding_pack_step",
+        "winding_pack_stl"
+      ],
+      "properties": {
+        "outer_step": {"$ref": "#/$defs/artifact"},
+        "outer_stl": {"$ref": "#/$defs/artifact"},
+        "outer_h5m": {"$ref": "#/$defs/artifact"},
+        "winding_pack_step": {"$ref": "#/$defs/artifact"},
+        "winding_pack_stl": {"$ref": "#/$defs/artifact"}
+      },
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "required": ["component_name", "material_name"],
+      "properties": {
+        "component_name": {"type": "string", "minLength": 1},
+        "material_name": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "magnet": {
+      "type": "object",
+      "required": [
+        "magnet_id",
+        "coil_filament_source_sha256",
+        "closure",
+        "native_global_transform",
+        "centreline",
+        "cross_sections",
+        "frame",
+        "field_period_sector_transform",
+        "artifacts",
+        "surface_ids",
+        "facet_ids",
+        "components",
+        "units"
+      ],
+      "properties": {
+        "magnet_id": {"type": "string", "minLength": 1},
+        "coil_filament_source_sha256": {"$ref": "#/$defs/sha256"},
+        "closure": {"$ref": "#/$defs/closure"},
+        "native_global_transform": {"$ref": "#/$defs/transform"},
+        "centreline": {"$ref": "#/$defs/centreline"},
+        "cross_sections": {"$ref": "#/$defs/cross_sections"},
+        "frame": {"$ref": "#/$defs/frame"},
+        "field_period_sector_transform": {
+          "$ref": "#/$defs/sector_transform"
+        },
+        "artifacts": {"$ref": "#/$defs/artifacts"},
+        "surface_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "facet_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "oneOf": [
+              {"type": "integer", "minimum": 0},
+              {"type": "string", "minLength": 1}
+            ]
+          }
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/component"}
+        },
+        "units": {"$ref": "#/$defs/units"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

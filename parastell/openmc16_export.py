@@ -518,6 +518,13 @@ def export_openmc16_handoffs(
             {
                 "envelope_id": envelope.envelope.envelope_id,
                 "magnet_component": envelope.envelope.magnet_component,
+                "boundary_role": envelope.envelope.metadata.get(
+                    "boundary_role", "winding_pack"
+                ),
+                "dagmc_volume_ids": envelope.envelope.metadata.get(
+                    "dagmc_volume_ids",
+                    [envelope.envelope.dagmc_volume_id],
+                ),
                 "dagmc_volume_id": envelope.envelope.dagmc_volume_id,
                 "path": str(path.resolve()),
                 "sha256": _hash(path),

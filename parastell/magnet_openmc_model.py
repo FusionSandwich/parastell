@@ -180,6 +180,33 @@ def prepare_magnet_openmc_model(
     }
     materials = openmc_materials_from_manifest(material_manifest)
     materials.cross_sections = str(cross_sections_path)
+    material_ids_by_name = {
+        str(material.name): int(material.id) for material in materials
+    }
+    dagmc_openmc_cell_map = []
+    for pair in producer.selected_pairs:
+        for component in (pair.winding_pack, pair.casing):
+            if component is None:
+                continue
+            material_name = str(
+                material_manifest["material_tags"][component.material]
+            )
+            dagmc_openmc_cell_map.append(
+                {
+                    "magnet_id": pair.magnet_id,
+                    "component_role": component.component_role,
+                    "dagmc_volume_id": int(component.volume_id),
+                    "openmc_cell_id": int(component.volume_id),
+                    "material_tag": component.material,
+                    "material_name": material_name,
+                    "openmc_material_id": material_ids_by_name[material_name],
+                    "mapping_basis": (
+                        "OpenMC DAGMCUniverse(auto_geom_ids=False) retains "
+                        "DAGMC volume IDs as DAGMC cell IDs"
+                    ),
+                    "transport_statepoint_verified": False,
+                }
+            )
     model = openmc.Model(
         geometry=geometry, materials=materials, settings=settings
     )
@@ -246,6 +273,8 @@ def prepare_magnet_openmc_model(
                 "resolved_manifest_sha256"
             ],
         },
+        "openmc_material_ids_by_name": material_ids_by_name,
+        "dagmc_openmc_cell_map": dagmc_openmc_cell_map,
         "cross_sections": {
             "path": str(cross_sections_path),
             "sha256": _sha256(cross_sections_path),

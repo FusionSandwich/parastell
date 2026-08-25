@@ -19,6 +19,7 @@ from .dagmc_envelope import (
     MagnetVolumeInventory,
     canonical_geometry_policy,
     discover_magnet_volumes,
+    extract_closed_component_union,
     extract_closed_envelope,
     select_magnet_pairs,
 )
@@ -612,9 +613,24 @@ class MagnetRadiationFieldProducer:
             Mapping[str, Mapping[str, Sequence[float]]] | None
         ) = None,
         spatial_bins: tuple[int, int] = (4, 4),
+        boundary_roles: Sequence[str] = (
+            "outer_magnet",
+            "winding_pack",
+        ),
     ) -> tuple[DagmcEnvelope, ...]:
         if self.inventory is None:
             self.discover()
+        roles = tuple(str(value) for value in boundary_roles)
+        supported_roles = {"outer_magnet", "winding_pack"}
+        if (
+            not roles
+            or len(roles) != len(set(roles))
+            or set(roles) - supported_roles
+        ):
+            raise ValueError(
+                "boundary_roles must contain distinct outer_magnet and/or "
+                "winding_pack values"
+            )
         explicit = dict(frames_by_magnet or {})
         outputs = []
         for pair in self.selected_pairs:
@@ -648,24 +664,68 @@ class MagnetRadiationFieldProducer:
                 raise ValueError(
                     f"magnet {pair.magnet_id} frame is missing {sorted(missing)}"
                 )
-            outputs.append(
-                extract_closed_envelope(
+            common = {
+                "dagmc_path": self.dagmc_path,
+                "magnet_id": pair.magnet_id,
+                "plasma_direction_global": frame["plasma_direction_global"],
+                "toroidal_direction_global": frame[
+                    "toroidal_direction_global"
+                ],
+                "poloidal_direction_global": frame[
+                    "poloidal_direction_global"
+                ],
+                "spatial_bins": spatial_bins,
+                **self.canonical_geometry_policy,
+                "centreline_frame": centreline,
+            }
+            if "outer_magnet" in roles:
+                casing = getattr(pair, "casing", None)
+                if casing is not None:
+                    outer = extract_closed_component_union(
+                        volume_ids=(
+                            casing.volume_id,
+                            pair.winding_pack.volume_id,
+                        ),
+                        envelope_id=f"outer-magnet-{pair.magnet_id}",
+                        **common,
+                    )
+                    outputs.append(outer)
+                elif "winding_pack" not in roles:
+                    outer = extract_closed_envelope(
+                        self.dagmc_path,
+                        pair.winding_pack.volume_id,
+                        envelope_id=f"outer-magnet-{pair.magnet_id}",
+                        **{
+                            key: value
+                            for key, value in common.items()
+                            if key != "dagmc_path"
+                        },
+                    )
+                    if hasattr(outer, "envelope"):
+                        outer.envelope.metadata["boundary_role"] = (
+                            "outer_magnet"
+                        )
+                        outer.envelope.metadata["dagmc_volume_ids"] = [
+                            pair.winding_pack.volume_id
+                        ]
+                    outputs.append(outer)
+            if "winding_pack" in roles:
+                winding = extract_closed_envelope(
                     self.dagmc_path,
                     pair.winding_pack.volume_id,
                     envelope_id=f"winding-pack-{pair.magnet_id}",
-                    magnet_id=pair.magnet_id,
-                    plasma_direction_global=frame["plasma_direction_global"],
-                    toroidal_direction_global=frame[
-                        "toroidal_direction_global"
-                    ],
-                    poloidal_direction_global=frame[
-                        "poloidal_direction_global"
-                    ],
-                    spatial_bins=spatial_bins,
-                    **self.canonical_geometry_policy,
-                    centreline_frame=centreline,
+                    **{
+                        key: value
+                        for key, value in common.items()
+                        if key != "dagmc_path"
+                    },
                 )
-            )
+                if hasattr(winding, "envelope"):
+                    winding.envelope.metadata["boundary_role"] = "winding_pack"
+                    winding.envelope.metadata["dagmc_volume_ids"] = [
+                        pair.winding_pack.volume_id
+                    ]
+                outputs.append(winding)
         self.envelopes = tuple(outputs)
         return self.envelopes
 
@@ -697,7 +757,10 @@ class MagnetRadiationFieldProducer:
             }
         )
         cell_ids = [
-            pair.winding_pack.volume_id for pair in self.selected_pairs
+            component.volume_id
+            for pair in self.selected_pairs
+            for component in (pair.winding_pack, pair.casing)
+            if component is not None
         ]
         self.tally_inventory = add_envelope_tallies(
             model,
@@ -740,6 +803,16 @@ class MagnetRadiationFieldProducer:
             "selected_magnet_ids": [
                 pair.magnet_id for pair in self.selected_pairs
             ],
+            "boundary_roles": sorted(
+                {
+                    str(
+                        item.envelope.metadata.get(
+                            "boundary_role", "winding_pack"
+                        )
+                    )
+                    for item in self.envelopes
+                }
+            ),
             "envelopes": [item.envelope.to_dict() for item in self.envelopes],
             "centreline_frames": {
                 name: frame.to_dict()

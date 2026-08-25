@@ -178,6 +178,97 @@ class LocalMeshDefinition:
         }
 
 
+def _global_axis_aligned_bounds(
+    mesh: LocalMeshDefinition,
+) -> tuple[np.ndarray, np.ndarray]:
+    lower = np.asarray(mesh.lower_left_local_cm, dtype=float)
+    upper = np.asarray(mesh.upper_right_local_cm, dtype=float)
+    corners = np.asarray(
+        [
+            [x, y, z]
+            for x in (lower[0], upper[0])
+            for y in (lower[1], upper[1])
+            for z in (lower[2], upper[2])
+        ]
+    )
+    rotation = np.asarray(mesh.rotation_local_to_global, dtype=float)
+    translation = np.asarray(mesh.translation_global_cm, dtype=float)
+    global_corners = corners @ rotation.T + translation
+    return global_corners.min(axis=0), global_corners.max(axis=0)
+
+
+def qualify_local_mesh_nonoverlap(
+    meshes: Sequence[LocalMeshDefinition],
+    *,
+    cell_filter_applied: bool,
+    separation_tolerance_cm: float = 1.0e-9,
+) -> dict[str, Any]:
+    """Conservatively qualify disjoint, component-filtered R2S meshes.
+
+    A separating global AABB axis proves that two rotated mesh volumes are
+    disjoint.  Overlapping AABBs are reported as unqualified even when a more
+    expensive oriented-box test might prove separation.  This one-sided test
+    cannot create a false non-overlap claim.  Spatial mesh tallies that are not
+    component-filtered remain unqualified regardless of geometric separation.
+    """
+
+    selected = tuple(meshes)
+    if not selected:
+        raise ValueError("at least one local mesh is required")
+    if type(cell_filter_applied) is not bool:
+        raise TypeError("cell_filter_applied must be boolean")
+    tolerance = float(separation_tolerance_cm)
+    if not np.isfinite(tolerance) or tolerance < 0.0:
+        raise ValueError(
+            "mesh separation tolerance must be finite and nonnegative"
+        )
+    magnet_ids = [mesh.magnet_id for mesh in selected]
+    if len(magnet_ids) != len(set(magnet_ids)):
+        raise ValueError("local mesh magnet IDs must be unique")
+    bounds = {
+        mesh.magnet_id: _global_axis_aligned_bounds(mesh) for mesh in selected
+    }
+    pair_rows = []
+    all_pairs_separated = True
+    for first_index, first in enumerate(selected):
+        first_lower, first_upper = bounds[first.magnet_id]
+        for second in selected[first_index + 1 :]:
+            second_lower, second_upper = bounds[second.magnet_id]
+            separated_axes = [
+                axis
+                for axis in range(3)
+                if first_upper[axis] + tolerance < second_lower[axis]
+                or second_upper[axis] + tolerance < first_lower[axis]
+            ]
+            separated = bool(separated_axes)
+            all_pairs_separated = all_pairs_separated and separated
+            pair_rows.append(
+                {
+                    "magnet_ids": [first.magnet_id, second.magnet_id],
+                    "separated": separated,
+                    "separating_global_axes": separated_axes,
+                }
+            )
+    qualified = bool(cell_filter_applied and all_pairs_separated)
+    blockers = []
+    if not cell_filter_applied:
+        blockers.append("LOCAL_MESH_TALLIES_ARE_NOT_COMPONENT_FILTERED")
+    if not all_pairs_separated:
+        blockers.append("PAIRWISE_GEOMETRIC_DISJOINTNESS_NOT_PROVEN")
+    return {
+        "method": "conservative_global_aabb_separating_axis",
+        "separation_tolerance_cm": tolerance,
+        "mesh_count": len(selected),
+        "tested_pair_count": len(pair_rows),
+        "pairwise_evidence": pair_rows,
+        "geometric_pairwise_disjoint_proven": all_pairs_separated,
+        "cell_filter_applied": cell_filter_applied,
+        "nonoverlap_qualified": qualified,
+        "status": "QUALIFIED" if qualified else "NOT_QUALIFIED",
+        "blocking_reasons": blockers,
+    }
+
+
 def build_local_mesh_definition(
     magnet_id: str,
     *,

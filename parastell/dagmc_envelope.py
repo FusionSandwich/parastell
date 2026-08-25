@@ -918,6 +918,199 @@ def extract_closed_envelope(
     )
 
 
+def component_union_boundary_surface_ids(
+    volumes: Sequence[Any],
+) -> tuple[int, ...]:
+    """Return surfaces on exactly one selected volume, excluding interfaces.
+
+    DAGMC identifies a conformal material interface by the same surface ID on
+    both adjacent volumes.  Counting selected-volume ownership therefore
+    removes casing/winding interfaces without relying on geometry tolerances.
+    """
+    if len(volumes) < 2:
+        raise ValueError("a component union requires at least two volumes")
+    volume_ids = [int(volume.id) for volume in volumes]
+    if len(volume_ids) != len(set(volume_ids)):
+        raise ValueError("component union volume IDs must be unique")
+    owners: dict[int, set[int]] = {}
+    for volume in volumes:
+        surfaces = tuple(getattr(volume, "surfaces", ()))
+        if not surfaces:
+            raise ValueError(
+                f"component union volume {int(volume.id)} has no surfaces"
+            )
+        for surface in surfaces:
+            owners.setdefault(int(surface.id), set()).add(int(volume.id))
+    shared = {
+        surface_id for surface_id, values in owners.items() if len(values) > 1
+    }
+    if not shared:
+        raise ValueError("component union has no conformal shared interface")
+    return tuple(
+        sorted(
+            surface_id
+            for surface_id, values in owners.items()
+            if len(values) == 1
+        )
+    )
+
+
+def extract_closed_component_union(
+    dagmc_path: str | Path,
+    volume_ids: Sequence[int],
+    *,
+    envelope_id: str,
+    magnet_id: str,
+    plasma_direction_global: Sequence[float],
+    toroidal_direction_global: Sequence[float],
+    poloidal_direction_global: Sequence[float],
+    spatial_bins: tuple[int, int] = (4, 4),
+    edge_round_decimals: int = 8,
+    coordinate_quantum_cm: float = DEFAULT_CANONICAL_COORDINATE_QUANTUM_CM,
+    faceting_tolerances: Mapping[str, Any] | None = None,
+    centreline_frame: Any | None = None,
+) -> DagmcEnvelope:
+    """Extract the closed exterior of conformal casing/winding components.
+
+    Shared material interfaces are omitted.  The returned surface bank is the
+    outer boundary of the selected component union, while the contributing
+    DAGMC volume IDs remain explicit in metadata.
+    """
+    import pydagmc
+
+    selected_ids = tuple(int(value) for value in volume_ids)
+    if len(selected_ids) < 2 or len(selected_ids) != len(set(selected_ids)):
+        raise ValueError("component union requires distinct volume IDs")
+    model = pydagmc.Model(str(dagmc_path))
+    missing = set(selected_ids) - set(model.volumes_by_id)
+    if missing:
+        raise ValueError(
+            f"component union DAGMC volumes do not exist: {sorted(missing)}"
+        )
+    volumes = tuple(model.volumes_by_id[value] for value in selected_ids)
+    exterior_ids = set(component_union_boundary_surface_ids(volumes))
+    components = tuple(
+        extract_closed_envelope(
+            dagmc_path,
+            volume_id,
+            envelope_id=f"{envelope_id}-component-{volume_id}",
+            magnet_id=magnet_id,
+            plasma_direction_global=plasma_direction_global,
+            toroidal_direction_global=toroidal_direction_global,
+            poloidal_direction_global=poloidal_direction_global,
+            spatial_bins=spatial_bins,
+            edge_round_decimals=edge_round_decimals,
+            coordinate_quantum_cm=coordinate_quantum_cm,
+            faceting_tolerances=faceting_tolerances,
+            centreline_frame=centreline_frame,
+        )
+        for volume_id in selected_ids
+    )
+    surface_rows = {
+        int(surface.surface_id): surface
+        for component in components
+        for surface in component.envelope.surfaces
+        if int(surface.surface_id) in exterior_ids
+    }
+    facet_rows = {
+        int(surface.surface_id): surface
+        for component in components
+        for surface in component.faceted_surfaces
+        if int(surface.surface_id) in exterior_ids
+    }
+    if set(surface_rows) != exterior_ids or set(facet_rows) != exterior_ids:
+        raise ValueError(
+            "component union exterior surface extraction is incomplete"
+        )
+
+    edge_counts: dict[Any, int] = {}
+    vector_area = np.zeros(3)
+    total_area = 0.0
+    for surface in facet_rows.values():
+        vector_area += np.sum(
+            surface.triangle_normals_outward
+            * surface.triangle_areas_cm2[:, None],
+            axis=0,
+        )
+        total_area += float(np.sum(surface.triangle_areas_cm2))
+        for triangle in surface.triangles_cm:
+            rounded = np.round(triangle, edge_round_decimals)
+            for first, second in ((0, 1), (1, 2), (2, 0)):
+                edge = tuple(
+                    sorted((tuple(rounded[first]), tuple(rounded[second])))
+                )
+                edge_counts[edge] = edge_counts.get(edge, 0) + 1
+    bad = {edge: count for edge, count in edge_counts.items() if count != 2}
+    if bad:
+        raise ValueError(
+            "DAGMC component-union envelope is not watertight; "
+            f"edge counts {list(bad.items())[:5]}"
+        )
+    closure = float(np.linalg.norm(vector_area) / total_area)
+    if closure > 1.0e-7:
+        raise ValueError(
+            f"DAGMC component-union vector-area closure failed: {closure}"
+        )
+    audits = [
+        component.envelope.metadata["faceted_volume_audit"]
+        for component in components
+    ]
+    fingerprint = components[0].envelope.metadata[
+        "canonical_geometry_fingerprint"
+    ]
+    if any(
+        component.envelope.metadata["canonical_geometry_fingerprint"]
+        != fingerprint
+        for component in components
+    ):
+        raise ValueError("component union geometry fingerprints disagree")
+    union_volume = float(sum(float(audit["volume_cm3"]) for audit in audits))
+    envelope = MagnetBoundaryEnvelope(
+        envelope_id=envelope_id,
+        magnet_component=magnet_id,
+        dagmc_volume_id=selected_ids[0],
+        surfaces=tuple(surface_rows[key] for key in sorted(surface_rows)),
+        dagmc_geometry_sha256=_hash(dagmc_path),
+        metadata={
+            "boundary_role": "outer_magnet_component_union",
+            "dagmc_volume_ids": list(selected_ids),
+            "excluded_shared_surface_ids": sorted(
+                {
+                    int(surface.id)
+                    for volume in volumes
+                    for surface in volume.surfaces
+                }
+                - exterior_ids
+            ),
+            "material": "component_union",
+            "volume_cm3": union_volume,
+            "component_volume_audits": audits,
+            "watertight_proof": (
+                "shared DAGMC interfaces removed and every exterior rounded "
+                "faceted edge occurs exactly twice"
+            ),
+            "faceted_vector_area_closure_relative": closure,
+            "canonical_geometry_fingerprint": fingerprint,
+            "canonical_coordinate_quantum_cm": coordinate_quantum_cm,
+            "canonical_faceting_tolerances": dict(faceting_tolerances or {}),
+            "canonical_facet_count": int(
+                sum(
+                    len(surface.canonical_facet_ids)
+                    for surface in facet_rows.values()
+                )
+            ),
+        },
+    )
+    return DagmcEnvelope(
+        envelope,
+        tuple(facet_rows[key] for key in sorted(facet_rows)),
+        len(edge_counts),
+        0,
+        closure,
+        centreline_frame,
+    )
+
+
 @dataclass(frozen=True)
 class MagnetVolumeRecord:
     """Stable identity for one magnet-related DAGMC volume."""
@@ -937,6 +1130,7 @@ class MagnetVolumeRecord:
     volume_cm3: float | None = None
     source_coil_provenance: Mapping[str, Any] | None = None
     faceted_volume_audit: Mapping[str, Any] | None = None
+    canonical_facet_ids: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -996,6 +1190,39 @@ class MagnetPairRecord:
                 self.casing.to_dict() if self.casing is not None else None
             ),
         }
+
+
+def magnet_pair_canonical_facet_ids(
+    pair: MagnetPairRecord, *, require_casing: bool = False
+) -> tuple[str, ...]:
+    """Return every available, deterministic facet ID for a magnet pair.
+
+    Geometry-interchange exports use this helper instead of emitting an empty
+    placeholder.  A missing facet catalog is a scientific input failure, not a
+    reason to invent identifiers.
+    """
+
+    components = [pair.winding_pack]
+    if pair.casing is not None:
+        components.append(pair.casing)
+    elif require_casing:
+        raise ValueError(
+            f"magnet {pair.magnet_id!r} requires a casing facet catalog"
+        )
+    result: set[str] = set()
+    for component in components:
+        facet_ids = tuple(component.canonical_facet_ids)
+        if not facet_ids:
+            raise ValueError(
+                "canonical facet IDs are unavailable for DAGMC volume "
+                f"{component.volume_id}"
+            )
+        result.update(facet_ids)
+    if not result:
+        raise ValueError(
+            f"magnet {pair.magnet_id!r} has no canonical facet identities"
+        )
+    return tuple(sorted(result))
 
 
 @dataclass(frozen=True)
@@ -1139,12 +1366,23 @@ def discover_magnet_volumes(
     associations: Mapping[int, Mapping[str, Any]] | None = None,
     coordinate_quantum_cm: float = DEFAULT_CANONICAL_COORDINATE_QUANTUM_CM,
     faceting_tolerances: Mapping[str, Any] | None = None,
+    include_canonical_facet_ids: bool = False,
 ) -> MagnetVolumeInventory:
     """Inventory magnet volumes by stable DAGMC IDs and exact material tags."""
     import pydagmc
 
+    if type(include_canonical_facet_ids) is not bool:
+        raise TypeError("include_canonical_facet_ids must be boolean")
     path = Path(dagmc_path).resolve()
     model = pydagmc.Model(str(path))
+    policy = canonical_geometry_policy(
+        coordinate_quantum_cm, faceting_tolerances
+    )
+    fingerprint = canonical_dagmc_fingerprint(
+        path,
+        coordinate_quantum_cm=policy["coordinate_quantum_cm"],
+        faceting_tolerances=policy["faceting_tolerances"],
+    )
     winding_keys = {_material_key(item) for item in winding_pack_materials}
     casing_keys = {_material_key(item) for item in casing_materials}
     overlap = winding_keys & casing_keys
@@ -1193,6 +1431,30 @@ def discover_magnet_volumes(
         volume_audit = audit_closed_triangle_volume(
             volume, coordinate_quantum_cm=coordinate_quantum_cm
         )
+        canonical_facet_ids: tuple[str, ...] = ()
+        if include_canonical_facet_ids:
+            canonical_facet_ids = tuple(
+                sorted(
+                    _canonical_facet_id(
+                        fingerprint["canonical_fingerprint"],
+                        int(surface.id),
+                        triangle,
+                        _openmc_to_outward_normal_sign(
+                            surface, int(volume_id)
+                        ),
+                        policy["coordinate_quantum_cm"],
+                    )
+                    for surface in volume.surfaces
+                    for triangle in _triangles(surface.triangle_coords)
+                )
+            )
+            if not canonical_facet_ids or len(canonical_facet_ids) != len(
+                set(canonical_facet_ids)
+            ):
+                raise ValueError(
+                    f"magnet DAGMC volume {volume_id} has unavailable or "
+                    "non-unique canonical facet IDs"
+                )
         records.append(
             MagnetVolumeRecord(
                 volume_id=int(volume_id),
@@ -1213,16 +1475,9 @@ def discover_magnet_volumes(
                     "source_coil_provenance"
                 ),
                 faceted_volume_audit=volume_audit.to_dict(),
+                canonical_facet_ids=canonical_facet_ids,
             )
         )
-    policy = canonical_geometry_policy(
-        coordinate_quantum_cm, faceting_tolerances
-    )
-    fingerprint = canonical_dagmc_fingerprint(
-        path,
-        coordinate_quantum_cm=policy["coordinate_quantum_cm"],
-        faceting_tolerances=policy["faceting_tolerances"],
-    )
     pairs = _pair_magnet_records(
         [item for item in records if item.component_role == "winding_pack"],
         [item for item in records if item.component_role == "magnet_casing"],
