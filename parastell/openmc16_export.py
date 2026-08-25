@@ -296,6 +296,8 @@ def export_openmc16_handoff(
     surface_source_sampling_applied: bool = False,
     mpi_ranks: int | None = None,
     centreline_frame=None,
+    facet_barycentric_tolerance: float = 1.0e-7,
+    facet_source_tolerance_cm: float = 1.0e-5,
 ) -> dict:
     """Write raw correlated records and a same-run integrity comparison."""
     import openmc
@@ -339,7 +341,13 @@ def export_openmc16_handoff(
     particles = np.asarray([inverse_pdg[int(value)] for value in pdg])
     positions = _vectors(records, "r")
     directions = _vectors(records, "u")
-    facet_mapping = envelope.facet_mappings(surface_ids, positions)
+    facet_mapping = envelope.facet_mappings(
+        surface_ids,
+        positions,
+        require_valid=True,
+        barycentric_tolerance=facet_barycentric_tolerance,
+        source_tolerance_cm=facet_source_tolerance_cm,
+    )
     normals = facet_mapping.pop("outward_normal_global")
     transport_weights = np.asarray(records["wgt"]).reshape(-1) / histories
     bank = build_correlated_bank(
@@ -415,7 +423,22 @@ def export_openmc16_handoff(
             "surface_bank_completeness": completeness,
             "zero_record_interpretation": zero_record_interpretation,
             "canonical_bank": True,
-            "facet_identity": "canonical geometry fingerprint + DAGMC surface + oriented quantized triangle",
+            "facet_identity": (
+                "canonical geometry fingerprint + DAGMC volume + DAGMC "
+                "surface + outward-oriented quantized triangle"
+            ),
+            "facet_mapping_contract": {
+                "schema": "parastell.magnet_boundary_source/v2.2.0",
+                "classification": "FACET_COMPLETE_BOUNDARY_PASS",
+                "accepted_match_classes": [
+                    "EXACT_FACET_MATCH",
+                    "EDGE_TOLERANCE_MATCH",
+                    "VERTEX_TOLERANCE_MATCH",
+                ],
+                "fatal_match_class": "NO_VALID_FACET_MATCH",
+                "barycentric_tolerance": facet_barycentric_tolerance,
+                "source_tolerance_cm": facet_source_tolerance_cm,
+            },
             "frame_type": (
                 "coil_centerline_parallel_transport"
                 if centreline_frame is not None
@@ -443,6 +466,9 @@ def export_openmc16_handoff(
         "openmc_version": openmc.__version__,
         "openmc_statepoint_sha256": _hash(statepoint_path),
         "dagmc_geometry_sha256": envelope.envelope.dagmc_geometry_sha256,
+        "canonical_geometry_fingerprint": envelope.envelope.metadata.get(
+            "canonical_geometry_fingerprint"
+        ),
         "source_definition_sha256": source_definition_sha256,
         "histories": histories,
         "surface_source_sha256": source_hashes,
@@ -476,6 +502,8 @@ def export_openmc16_handoffs(
     surface_source_sampling_applied: bool = False,
     mpi_ranks: int | None = None,
     centreline_frames: Mapping[str, Any] | None = None,
+    facet_barycentric_tolerance: float = 1.0e-7,
+    facet_source_tolerance_cm: float = 1.0e-5,
 ) -> dict:
     """Write one raw correlated handoff for every selected magnet."""
     selected = tuple(envelopes)
@@ -513,6 +541,8 @@ def export_openmc16_handoffs(
             centreline_frame=(centreline_frames or {}).get(
                 envelope.envelope.envelope_id
             ),
+            facet_barycentric_tolerance=facet_barycentric_tolerance,
+            facet_source_tolerance_cm=facet_source_tolerance_cm,
         )
         outputs.append(
             {

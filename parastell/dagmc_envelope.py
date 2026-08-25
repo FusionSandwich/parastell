@@ -16,6 +16,8 @@ from .magnet_boundary_envelope import MagnetBoundaryEnvelope
 
 
 DEFAULT_CANONICAL_COORDINATE_QUANTUM_CM = 1.0e-6
+DEFAULT_FACET_BARYCENTRIC_TOLERANCE = 1.0e-7
+DEFAULT_FACET_SOURCE_TOLERANCE_CM = 1.0e-5
 
 
 def canonical_geometry_policy(
@@ -258,10 +260,60 @@ class FacetedSurface:
     triangle_areas_cm2: np.ndarray
     centroid_global_cm: np.ndarray
     canonical_facet_ids: tuple[str, ...] = ()
+    dagmc_volume_id: int | None = None
 
     @property
     def area_cm2(self) -> float:
         return float(self.triangle_areas_cm2.sum())
+
+    @staticmethod
+    def _closest_point(
+        point: np.ndarray, triangle: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return the closest triangle point and its constrained barycentrics."""
+        a, b, c = np.asarray(triangle, dtype=float)
+        ab = b - a
+        ac = c - a
+        ap = point - a
+        d1 = float(np.dot(ab, ap))
+        d2 = float(np.dot(ac, ap))
+        if d1 <= 0.0 and d2 <= 0.0:
+            return a, np.asarray([1.0, 0.0, 0.0])
+        bp = point - b
+        d3 = float(np.dot(ab, bp))
+        d4 = float(np.dot(ac, bp))
+        if d3 >= 0.0 and d4 <= d3:
+            return b, np.asarray([0.0, 1.0, 0.0])
+        vc = d1 * d4 - d3 * d2
+        if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+            fraction = d1 / (d1 - d3)
+            return a + fraction * ab, np.asarray(
+                [1.0 - fraction, fraction, 0.0]
+            )
+        cp = point - c
+        d5 = float(np.dot(ab, cp))
+        d6 = float(np.dot(ac, cp))
+        if d6 >= 0.0 and d5 <= d6:
+            return c, np.asarray([0.0, 0.0, 1.0])
+        vb = d5 * d2 - d1 * d6
+        if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+            fraction = d2 / (d2 - d6)
+            return a + fraction * ac, np.asarray(
+                [1.0 - fraction, 0.0, fraction]
+            )
+        va = d3 * d6 - d5 * d4
+        if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
+            fraction = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+            return b + fraction * (c - b), np.asarray(
+                [0.0, 1.0 - fraction, fraction]
+            )
+        denominator = 1.0 / (va + vb + vc)
+        bary_u_value = vb * denominator
+        bary_v_value = vc * denominator
+        barycentric = np.asarray(
+            [1.0 - bary_u_value - bary_v_value, bary_u_value, bary_v_value]
+        )
+        return np.einsum("i,ij->j", barycentric, triangle), barycentric
 
     def facet_metadata(
         self, centreline_frame: Any | None = None
@@ -291,16 +343,31 @@ class FacetedSurface:
         centroids = np.asarray(self.triangles_cm, dtype=float).mean(axis=1)
         metadata: dict[str, Any] = {
             "facet_id": facet_ids[order],
+            "canonical_facet_id": facet_ids[order],
             "facet_index": np.arange(count, dtype=int)[order],
             "surface_id": np.full(count, int(self.surface_id), dtype=int),
+            "dagmc_volume_id": np.full(
+                count,
+                -1 if self.dagmc_volume_id is None else self.dagmc_volume_id,
+                dtype=int,
+            ),
             "surface_role": np.full(count, self.role, dtype=object),
+            "triangle_vertices_global_cm": np.asarray(
+                self.triangles_cm, dtype=float
+            )[order],
             "facet_centroid_global_cm": centroids[order],
             "outward_normal_global": np.asarray(
+                self.triangle_normals_outward, dtype=float
+            )[order],
+            "triangle_outward_normal_global": np.asarray(
                 self.triangle_normals_outward, dtype=float
             )[order],
             "facet_area_cm2": np.asarray(self.triangle_areas_cm2, dtype=float)[
                 order
             ],
+            "triangle_area_cm2": np.asarray(
+                self.triangle_areas_cm2, dtype=float
+            )[order],
             "centreline_linkage_available": centreline_frame is not None,
             "centreline_linkage_status": np.full(
                 count,
@@ -350,11 +417,25 @@ class FacetedSurface:
         )
         return metadata
 
-    def locate(self, position_global_cm: Sequence[float]) -> dict[str, Any]:
-        """Return a stable facet ID, barycentric point, and plane residual."""
+    def locate(
+        self,
+        position_global_cm: Sequence[float],
+        *,
+        barycentric_tolerance: float = DEFAULT_FACET_BARYCENTRIC_TOLERANCE,
+        source_tolerance_cm: float = DEFAULT_FACET_SOURCE_TOLERANCE_CM,
+    ) -> dict[str, Any]:
+        """Locate a crossing on a facet without fabricating nearest identity.
+
+        A match is accepted only when the projected point is inside a facet up
+        to the declared barycentric tolerance and the point-to-facet residual
+        is no larger than ``source_tolerance_cm``.  Failed rows deliberately
+        carry no canonical ID and are fatal to the production exporter.
+        """
         point = np.asarray(position_global_cm, dtype=float)
         if point.shape != (3,) or not np.all(np.isfinite(point)):
             raise ValueError("facet query position must be a finite vector")
+        if barycentric_tolerance < 0.0 or source_tolerance_cm <= 0.0:
+            raise ValueError("facet mapping tolerances must be positive")
         first = self.triangles_cm[:, 0]
         edge_u = self.triangles_cm[:, 1] - first
         edge_v = self.triangles_cm[:, 2] - first
@@ -377,38 +458,90 @@ class FacetedSurface:
             )
         bary_u = (vv * pu - uv * pv) / denominator
         bary_v = (uu * pv - uv * pu) / denominator
-        tolerance = 1.0e-7
+        tolerance = float(barycentric_tolerance)
         contains = (
             (bary_u >= -tolerance)
             & (bary_v >= -tolerance)
             & (bary_u + bary_v <= 1.0 + tolerance)
+            & (np.abs(plane_distance) <= source_tolerance_cm)
         )
         if np.any(contains):
             candidates = np.flatnonzero(contains)
             index = int(
                 candidates[np.argmin(np.abs(plane_distance[candidates]))]
             )
-            mapping_status = "CONTAINING_FACET"
+            barycentric = np.asarray(
+                [
+                    1.0 - bary_u[index] - bary_v[index],
+                    bary_u[index],
+                    bary_v[index],
+                ]
+            )
+            near_boundary = barycentric <= tolerance
+            boundary_count = int(np.count_nonzero(near_boundary))
+            if boundary_count >= 2:
+                mapping_status = "VERTEX_TOLERANCE_MATCH"
+            elif boundary_count == 1:
+                mapping_status = "EDGE_TOLERANCE_MATCH"
+            else:
+                mapping_status = "EXACT_FACET_MATCH"
         else:
-            # Surface-source coordinates may differ from faceted coordinates by
-            # transport tolerances.  Fall back deterministically and preserve
-            # the residual rather than pretending the point was exact.
-            centroids = self.triangles_cm.mean(axis=1)
-            index = int(np.argmin(np.sum((centroids - point) ** 2, axis=1)))
-            mapping_status = "NEAREST_FACET"
-        barycentric = np.asarray(
-            [1.0 - bary_u[index] - bary_v[index], bary_u[index], bary_v[index]]
-        )
+            closest = [
+                self._closest_point(point, triangle)
+                for triangle in self.triangles_cm
+            ]
+            distances = np.asarray(
+                [np.linalg.norm(point - row[0]) for row in closest]
+            )
+            index = int(np.argmin(distances))
+            reconstructed, barycentric = closest[index]
+            nearest_residual = float(distances[index])
+            if nearest_residual <= source_tolerance_cm:
+                boundary_count = int(
+                    np.count_nonzero(barycentric <= tolerance)
+                )
+                mapping_status = (
+                    "VERTEX_TOLERANCE_MATCH"
+                    if boundary_count >= 2
+                    else "EDGE_TOLERANCE_MATCH"
+                )
+            else:
+                return {
+                    "facet_id": "",
+                    "canonical_facet_id": "",
+                    "facet_index": -1,
+                    "barycentric_coordinates": barycentric,
+                    "reconstructed_position_global_cm": reconstructed,
+                    "signed_plane_residual_cm": float(plane_distance[index]),
+                    "nearest_point_residual_cm": nearest_residual,
+                    "distance_to_facet_residual_cm": abs(
+                        float(plane_distance[index])
+                    ),
+                    "inside_facet": False,
+                    "outward_normal_global": np.full(3, np.nan),
+                    "mapping_status": "NO_VALID_FACET_MATCH",
+                }
         facet_id = (
             self.canonical_facet_ids[index]
             if self.canonical_facet_ids
             else f"surface-{self.surface_id}-facet-{index}"
         )
+        reconstructed = np.einsum(
+            "i,ij->j", barycentric, self.triangles_cm[index]
+        )
+        signed_residual = float(plane_distance[index])
+        nearest_residual = float(np.linalg.norm(point - reconstructed))
         return {
             "facet_id": facet_id,
+            "canonical_facet_id": facet_id,
             "facet_index": index,
             "barycentric_coordinates": barycentric,
-            "distance_to_facet_residual_cm": abs(float(plane_distance[index])),
+            "reconstructed_position_global_cm": reconstructed,
+            "signed_plane_residual_cm": signed_residual,
+            "nearest_point_residual_cm": nearest_residual,
+            # Backward-compatible v2.1 alias retained with its absolute meaning.
+            "distance_to_facet_residual_cm": abs(signed_residual),
+            "inside_facet": bool(np.all(barycentric >= -tolerance)),
             "outward_normal_global": self.triangle_normals_outward[
                 index
             ].copy(),
@@ -416,7 +549,12 @@ class FacetedSurface:
         }
 
     def normal_at(self, position_global_cm: Sequence[float]) -> np.ndarray:
-        return self.locate(position_global_cm)["outward_normal_global"]
+        result = self.locate(position_global_cm)
+        if result["mapping_status"] == "NO_VALID_FACET_MATCH":
+            raise ValueError(
+                f"position has no valid facet match on surface {self.surface_id}"
+            )
+        return result["outward_normal_global"]
 
 
 @dataclass(frozen=True)
@@ -445,7 +583,13 @@ class DagmcEnvelope:
         )
 
     def facet_mappings(
-        self, surface_ids, positions_global_cm
+        self,
+        surface_ids,
+        positions_global_cm,
+        *,
+        require_valid: bool = False,
+        barycentric_tolerance: float = DEFAULT_FACET_BARYCENTRIC_TOLERANCE,
+        source_tolerance_cm: float = DEFAULT_FACET_SOURCE_TOLERANCE_CM,
     ) -> dict[str, np.ndarray]:
         """Map crossing points back to canonical DAGMC facets."""
         ids = np.asarray(surface_ids, dtype=int)
@@ -453,15 +597,36 @@ class DagmcEnvelope:
         if positions.shape != (len(ids), 3):
             raise ValueError("surface IDs and positions must align")
         rows = [
-            self.surface(surface_id).locate(point)
+            self.surface(surface_id).locate(
+                point,
+                barycentric_tolerance=barycentric_tolerance,
+                source_tolerance_cm=source_tolerance_cm,
+            )
             for surface_id, point in zip(ids, positions)
         ]
+        invalid = [
+            index
+            for index, row in enumerate(rows)
+            if row["mapping_status"] == "NO_VALID_FACET_MATCH"
+        ]
+        if require_valid and invalid:
+            raise ValueError(
+                "facet-complete export rejected NO_VALID_FACET_MATCH rows; "
+                f"count={len(invalid)}, sample_record_indices={invalid[:10]}"
+            )
         if not rows:
             return {
                 "facet_id": np.empty(0, dtype=object),
+                "canonical_facet_id": np.empty(0, dtype=object),
                 "facet_index": np.empty(0, dtype=int),
                 "barycentric_coordinates": np.empty((0, 3), dtype=float),
+                "reconstructed_position_global_cm": np.empty(
+                    (0, 3), dtype=float
+                ),
+                "signed_plane_residual_cm": np.empty(0, dtype=float),
+                "nearest_point_residual_cm": np.empty(0, dtype=float),
                 "distance_to_facet_residual_cm": np.empty(0, dtype=float),
+                "inside_facet": np.empty(0, dtype=bool),
                 "facet_mapping_status": np.empty(0, dtype=object),
                 "outward_normal_global": np.empty((0, 3), dtype=float),
             }
@@ -469,11 +634,26 @@ class DagmcEnvelope:
             "facet_id": np.asarray(
                 [row["facet_id"] for row in rows], dtype=object
             ),
+            "canonical_facet_id": np.asarray(
+                [row["canonical_facet_id"] for row in rows], dtype=object
+            ),
             "facet_index": np.asarray(
                 [row["facet_index"] for row in rows], dtype=int
             ),
             "barycentric_coordinates": np.asarray(
                 [row["barycentric_coordinates"] for row in rows], dtype=float
+            ),
+            "reconstructed_position_global_cm": np.asarray(
+                [row["reconstructed_position_global_cm"] for row in rows],
+                dtype=float,
+            ),
+            "signed_plane_residual_cm": np.asarray(
+                [row["signed_plane_residual_cm"] for row in rows],
+                dtype=float,
+            ),
+            "nearest_point_residual_cm": np.asarray(
+                [row["nearest_point_residual_cm"] for row in rows],
+                dtype=float,
             ),
             "distance_to_facet_residual_cm": np.asarray(
                 [row["distance_to_facet_residual_cm"] for row in rows],
@@ -481,6 +661,9 @@ class DagmcEnvelope:
             ),
             "facet_mapping_status": np.asarray(
                 [row["mapping_status"] for row in rows], dtype=object
+            ),
+            "inside_facet": np.asarray(
+                [row["inside_facet"] for row in rows], dtype=bool
             ),
             "outward_normal_global": np.asarray(
                 [row["outward_normal_global"] for row in rows], dtype=float
@@ -498,12 +681,21 @@ class DagmcEnvelope:
         if not catalogs:
             return {
                 "facet_id": np.empty(0, dtype=object),
+                "canonical_facet_id": np.empty(0, dtype=object),
                 "facet_index": np.empty(0, dtype=int),
+                "dagmc_volume_id": np.empty(0, dtype=int),
                 "surface_id": np.empty(0, dtype=int),
                 "surface_role": np.empty(0, dtype=object),
+                "triangle_vertices_global_cm": np.empty(
+                    (0, 3, 3), dtype=float
+                ),
                 "facet_centroid_global_cm": np.empty((0, 3), dtype=float),
                 "outward_normal_global": np.empty((0, 3), dtype=float),
+                "triangle_outward_normal_global": np.empty(
+                    (0, 3), dtype=float
+                ),
                 "facet_area_cm2": np.empty(0, dtype=float),
+                "triangle_area_cm2": np.empty(0, dtype=float),
                 "centreline_linkage_available": self.centreline_frame
                 is not None,
                 "centreline_linkage_status": np.empty(0, dtype=object),
@@ -717,6 +909,7 @@ def _openmc_to_outward_normal_sign(surface, volume_id: int) -> int:
 
 def _canonical_facet_id(
     geometry_fingerprint: str,
+    volume_id: int,
     surface_id: int,
     triangle_cm: np.ndarray,
     outward_sign: int,
@@ -737,7 +930,9 @@ def _canonical_facet_id(
     payload = json.dumps(
         {
             "canonical_geometry_fingerprint": geometry_fingerprint,
+            "dagmc_volume_id": int(volume_id),
             "surface_id": int(surface_id),
+            "openmc_to_outward_normal_sign": int(outward_sign),
             "oriented_quantized_vertices": oriented,
         },
         sort_keys=True,
@@ -808,6 +1003,7 @@ def extract_closed_envelope(
         facet_ids = tuple(
             _canonical_facet_id(
                 fingerprint["canonical_fingerprint"],
+                int(volume.id),
                 int(surface.id),
                 triangle,
                 openmc_normal_sign,
@@ -825,6 +1021,7 @@ def extract_closed_envelope(
                 areas,
                 centroid,
                 facet_ids,
+                int(volume.id),
             )
         )
         area_vector = np.sum(normals * areas[:, None], axis=0)

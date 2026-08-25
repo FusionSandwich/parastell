@@ -194,7 +194,7 @@ def test_correlated_condition_projection_and_round_trip(tmp_path):
         },
     )
     manifest, restored_envelope, restored = read_handoff(output)
-    assert manifest["schema_version"] == "2.1.0"
+    assert manifest["schema_version"] == "2.2.0"
     assert manifest["canonical_bank"] is False
     assert manifest["field_availability"]["history_id"]["available"] is False
     assert restored_envelope.surface_ids == envelope.surface_ids

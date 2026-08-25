@@ -37,7 +37,7 @@ def test_facet_mapping_retains_barycentric_coordinates_and_residual():
     )
     result = surface.locate([0.25, 0.25, 2.0e-8])
     assert result["facet_id"] == "facet-stable"
-    assert result["mapping_status"] == "CONTAINING_FACET"
+    assert result["mapping_status"] == "EXACT_FACET_MATCH"
     assert result["barycentric_coordinates"] == pytest.approx(
         [0.5, 0.25, 0.25]
     )

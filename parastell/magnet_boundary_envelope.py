@@ -20,9 +20,9 @@ import numpy as np
 
 
 SCHEMA_NAME = "parastell.magnet_boundary_source"
-SCHEMA_VERSION = "2.1.0"
+SCHEMA_VERSION = "2.2.0"
 SCHEMA_URI = f"{SCHEMA_NAME}/v{SCHEMA_VERSION}"
-SUPPORTED_SCHEMA_VERSIONS = ("2.0.0", SCHEMA_VERSION)
+SUPPORTED_SCHEMA_VERSIONS = ("2.0.0", "2.1.0", SCHEMA_VERSION)
 SUPPORTED_SCHEMA_URIS = tuple(
     f"{SCHEMA_NAME}/v{version}" for version in SUPPORTED_SCHEMA_VERSIONS
 )
@@ -64,15 +64,23 @@ OPTIONAL_RECORD_FIELDS = (
     "time_s",
     "weight_std_dev",
     "facet_id",
+    "canonical_facet_id",
     "facet_index",
     "barycentric_coordinates",
+    "reconstructed_position_global_cm",
+    "signed_plane_residual_cm",
+    "nearest_point_residual_cm",
     "distance_to_facet_residual_cm",
+    "inside_facet",
     "facet_mapping_status",
     "centreline_arclength_cm",
     "normalized_arclength",
     "centreline_tangent",
     "centreline_radial",
     "centreline_transverse",
+    "parallel_transport_tangent",
+    "parallel_transport_width_axis",
+    "parallel_transport_thickness_normal",
     "local_centreline_coordinates_cm",
     "distance_to_centreline_cm",
     "frame_type",
@@ -85,6 +93,12 @@ BANK_CLASSIFICATIONS = (
     "COMPLETE_CROSSING_BANK",
     "SAMPLED_CROSSING_BANK",
     "TRUNCATED_INVALID_BANK",
+)
+FACET_MATCH_CLASSIFICATIONS = (
+    "EXACT_FACET_MATCH",
+    "EDGE_TOLERANCE_MATCH",
+    "VERTEX_TOLERANCE_MATCH",
+    "NO_VALID_FACET_MATCH",
 )
 
 
@@ -433,6 +447,21 @@ class CorrelatedBoundaryBank:
             self.columns["weight"] < 0.0
         ):
             raise ValueError("bank weights must be finite and nonnegative")
+        if "facet_mapping_status" in self.columns:
+            statuses = np.asarray(self.columns["facet_mapping_status"]).astype(
+                str
+            )
+            unknown = set(statuses) - set(FACET_MATCH_CLASSIFICATIONS)
+            if unknown:
+                raise ValueError(
+                    f"unknown facet-match classifications: {sorted(unknown)}"
+                )
+        if "canonical_facet_id" in self.columns and "facet_id" in self.columns:
+            if not np.array_equal(
+                np.asarray(self.columns["canonical_facet_id"]).astype(str),
+                np.asarray(self.columns["facet_id"]).astype(str),
+            ):
+                raise ValueError("facet_id must alias canonical_facet_id")
 
     def __len__(self) -> int:
         return len(self.columns["record_id"])
@@ -835,9 +864,14 @@ def build_correlated_bank(
     if facet_mapping is not None:
         allowed = {
             "facet_id",
+            "canonical_facet_id",
             "facet_index",
             "barycentric_coordinates",
+            "reconstructed_position_global_cm",
+            "signed_plane_residual_cm",
+            "nearest_point_residual_cm",
             "distance_to_facet_residual_cm",
+            "inside_facet",
             "facet_mapping_status",
         }
         unknown = set(facet_mapping) - allowed
@@ -845,16 +879,52 @@ def build_correlated_bank(
             raise ValueError(
                 f"unknown facet-mapping fields: {sorted(unknown)}"
             )
-        required = allowed - {"facet_mapping_status"}
+        # v2.1 callers may still supply only the legacy four fields.  The
+        # producer's v2.2 export path supplies and validates the full set.
+        required = {
+            "facet_id",
+            "facet_index",
+            "barycentric_coordinates",
+            "distance_to_facet_residual_cm",
+        }
         missing = required - set(facet_mapping)
         if missing:
             raise ValueError(f"facet mapping is missing {sorted(missing)}")
         for name, value in facet_mapping.items():
             array = np.asarray(value)
-            expected = (n, 3) if name == "barycentric_coordinates" else (n,)
+            expected = (
+                (n, 3)
+                if name
+                in {
+                    "barycentric_coordinates",
+                    "reconstructed_position_global_cm",
+                }
+                else (n,)
+            )
             if array.shape != expected:
                 raise ValueError(f"{name} must have shape {expected}")
             columns[name] = array
+        if "canonical_facet_id" not in columns:
+            columns["canonical_facet_id"] = np.asarray(
+                columns["facet_id"], dtype=object
+            )
+        if "facet_mapping_status" in columns:
+            invalid = (
+                np.asarray(columns["facet_mapping_status"]).astype(str)
+                == "NO_VALID_FACET_MATCH"
+            )
+            if np.any(invalid):
+                raise ValueError(
+                    "canonical boundary bank cannot contain "
+                    "NO_VALID_FACET_MATCH records"
+                )
+        barycentric = np.asarray(
+            columns["barycentric_coordinates"], dtype=float
+        )
+        if not np.allclose(
+            barycentric.sum(axis=1), 1.0, rtol=0.0, atol=1.0e-7
+        ) or np.any(barycentric < -1.0e-7):
+            raise ValueError("facet barycentric coordinates are invalid")
     if centreline_frame is not None:
         frame_values = centreline_frame.sample(positions)
         for name in (
@@ -867,6 +937,15 @@ def build_correlated_bank(
             "distance_to_centreline_cm",
         ):
             columns[name] = np.asarray(frame_values[name])
+        columns["parallel_transport_tangent"] = np.asarray(
+            frame_values["centreline_tangent"]
+        )
+        columns["parallel_transport_width_axis"] = np.asarray(
+            frame_values["centreline_radial"]
+        )
+        columns["parallel_transport_thickness_normal"] = np.asarray(
+            frame_values["centreline_transverse"]
+        )
         columns["frame_type"] = np.full(
             n, frame_values["frame_type"], dtype=object
         )
@@ -909,6 +988,11 @@ def build_correlated_bank(
     field_availability["facet_id"]["semantics"] = (
         "canonical_dagmc_facet_identity"
         if "facet_id" in columns
+        else "facet_geometry_not_supplied"
+    )
+    field_availability["canonical_facet_id"]["semantics"] = (
+        "canonical_dagmc_facet_identity"
+        if "canonical_facet_id" in columns
         else "facet_geometry_not_supplied"
     )
     field_availability["frame_type"]["semantics"] = (
@@ -1165,6 +1249,26 @@ def write_handoff(
     facet_catalog: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     projection = conservative_projection(bank)
+    provenance_geometry = provenance.get("dagmc_geometry_sha256")
+    if (
+        provenance_geometry is not None
+        and str(provenance_geometry) != envelope.dagmc_geometry_sha256
+    ):
+        raise ValueError(
+            "boundary-source geometry SHA disagrees with the envelope"
+        )
+    envelope_fingerprint = envelope.metadata.get(
+        "canonical_geometry_fingerprint"
+    )
+    provenance_fingerprint = provenance.get("canonical_geometry_fingerprint")
+    if (
+        envelope_fingerprint is not None
+        and provenance_fingerprint is not None
+        and str(envelope_fingerprint) != str(provenance_fingerprint)
+    ):
+        raise ValueError(
+            "boundary-source canonical geometry fingerprint mismatch"
+        )
     required_norm = {
         "basis",
         "particles_per_source_history",
@@ -1206,6 +1310,10 @@ def write_handoff(
             for name, value in facet_catalog.items()
             if name != "centreline_linkage_available"
         }
+        if "canonical_facet_id" not in normalized_facet_catalog:
+            normalized_facet_catalog["canonical_facet_id"] = np.asarray(
+                normalized_facet_catalog["facet_id"], dtype=object
+            )
         facet_count = len(normalized_facet_catalog["facet_id"])
         if facet_count == 0:
             raise ValueError("facet catalog must contain at least one facet")
@@ -1217,6 +1325,11 @@ def write_handoff(
             != facet_count
         ):
             raise ValueError("facet catalog IDs must be unique")
+        if not np.array_equal(
+            normalized_facet_catalog["facet_id"].astype(str),
+            normalized_facet_catalog["canonical_facet_id"].astype(str),
+        ):
+            raise ValueError("facet_id must alias canonical_facet_id")
         if not set(
             normalized_facet_catalog["surface_id"].astype(int)
         ).issubset(set(envelope.surface_ids)):
@@ -1232,6 +1345,49 @@ def write_handoff(
                 ~np.isfinite(values)
             ):
                 raise ValueError(f"facet catalog field {name!r} is invalid")
+        facet_complete_fields = {
+            "canonical_facet_id",
+            "dagmc_volume_id",
+            "surface_id",
+            "triangle_vertices_global_cm",
+            "triangle_outward_normal_global",
+            "triangle_area_cm2",
+            "facet_centroid_global_cm",
+        }
+        facet_complete = facet_complete_fields.issubset(
+            normalized_facet_catalog
+        )
+        if facet_complete:
+            vertices = np.asarray(
+                normalized_facet_catalog["triangle_vertices_global_cm"],
+                dtype=float,
+            )
+            triangle_normals = np.asarray(
+                normalized_facet_catalog["triangle_outward_normal_global"],
+                dtype=float,
+            )
+            if vertices.shape != (facet_count, 3, 3) or np.any(
+                ~np.isfinite(vertices)
+            ):
+                raise ValueError("facet triangle vertices are invalid")
+            if triangle_normals.shape != (facet_count, 3) or np.any(
+                ~np.isfinite(triangle_normals)
+            ):
+                raise ValueError("facet triangle normals are invalid")
+            if not np.allclose(
+                np.linalg.norm(triangle_normals, axis=1),
+                1.0,
+                rtol=1.0e-10,
+                atol=1.0e-12,
+            ):
+                raise ValueError("facet triangle normals are not unit vectors")
+            volume_ids = np.asarray(
+                normalized_facet_catalog["dagmc_volume_id"], dtype=int
+            )
+            if np.any(volume_ids != int(envelope.dagmc_volume_id)):
+                raise ValueError(
+                    "facet catalog DAGMC volume identity disagrees with envelope"
+                )
         areas = np.asarray(
             normalized_facet_catalog["facet_area_cm2"], dtype=float
         )
@@ -1290,6 +1446,8 @@ def write_handoff(
             "sha256": facet_catalog_sha256,
             "centreline_linkage_available": linkage_available,
             "fields": sorted(normalized_facet_catalog),
+            "facet_complete_v22": facet_complete,
+            "facet_complete_fields": sorted(facet_complete_fields),
         }
     manifest = {
         "schema": SCHEMA_URI,
@@ -1321,6 +1479,33 @@ def write_handoff(
         ),
         "time_semantics": "prompt particle flight time, not irradiation time",
         "facet_catalog": facet_catalog_manifest,
+        "facet_complete_boundary": {
+            "schema_revision": SCHEMA_URI,
+            "record_fields_complete": all(
+                name in bank.columns
+                for name in (
+                    "canonical_facet_id",
+                    "barycentric_coordinates",
+                    "reconstructed_position_global_cm",
+                    "signed_plane_residual_cm",
+                    "nearest_point_residual_cm",
+                    "inside_facet",
+                    "facet_mapping_status",
+                )
+            ),
+            "all_records_valid": bool(
+                "facet_mapping_status" in bank.columns
+                and np.all(
+                    np.asarray(bank.columns["facet_mapping_status"]).astype(
+                        str
+                    )
+                    != "NO_VALID_FACET_MATCH"
+                )
+            ),
+            "catalog_complete": bool(
+                facet_catalog_manifest.get("facet_complete_v22", False)
+            ),
+        },
     }
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -19,8 +19,11 @@ def _manifest(path: str | Path) -> dict[str, Any]:
     if isinstance(value, bytes):
         value = value.decode("utf-8")
     manifest = json.loads(value)
-    if manifest.get("schema") != "parastell.magnet_boundary_source/v2.1.0":
-        raise ValueError("independent closure requires boundary schema v2.1.0")
+    if manifest.get("schema") not in {
+        "parastell.magnet_boundary_source/v2.1.0",
+        "parastell.magnet_boundary_source/v2.2.0",
+    }:
+        raise ValueError("independent closure requires boundary schema v2.1+")
     closure = manifest.get("bank_metadata", {}).get(
         "same_run_integrity_closure"
     )
