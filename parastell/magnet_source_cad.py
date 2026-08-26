@@ -183,6 +183,10 @@ def export_selected_magnet_source_cad(
             "source": {
                 "kind": "ParaStell MagnetSetFromFilaments retained CAD",
                 "revision": str(source_revision),
+                "exporter_implementation": {
+                    "local_identifier": Path(__file__).name,
+                    "sha256": _sha256(Path(__file__)),
+                },
                 "coils_path_local_identifier": coils_file.name,
                 "coils_sha256": _sha256(coils_file),
                 "centreline_point_count": len(coordinates),

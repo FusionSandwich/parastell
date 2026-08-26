@@ -1,10 +1,12 @@
 import hashlib
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import cadquery as cq
 import pytest
 
+from parastell import magnet_source_cad
 from parastell.magnet_source_cad import (
     SCHEMA,
     export_selected_magnet_source_cad,
@@ -80,6 +82,12 @@ def test_export_is_role_explicit_hash_bound_and_unqualified(tmp_path):
         "UNQUALIFIED_UNTIL_DAGMC_BOUNDARY_COMPARISON"
     )
     assert stored["source_filament_index"] == 8
+    assert stored["source"]["exporter_implementation"]["local_identifier"] == (
+        "magnet_source_cad.py"
+    )
+    assert stored["source"]["exporter_implementation"]["sha256"] == sha256(
+        Path(magnet_source_cad.__file__)
+    )
     assert stored["target_dagmc"]["role_volume_ids"] == {
         "casing": 7,
         "winding_pack": 8,
