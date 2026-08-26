@@ -114,6 +114,7 @@ def build_material_intersection_volume_manifest(
     estimator_provenance_sha256: str,
     coordinate_transform_qualification: Mapping[str, Any],
     maximum_relative_standard_deviation: float = 0.05,
+    minimum_qualified_volume_fraction: float = 0.99,
     selected_magnet_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Build a hash-bound, fail-closed material-intersection volume manifest.
@@ -182,6 +183,15 @@ def build_material_intersection_volume_manifest(
     if not math.isfinite(tolerance) or tolerance <= 0.0:
         raise ValueError(
             "intersection-volume relative tolerance must be positive"
+        )
+    coverage_threshold = float(minimum_qualified_volume_fraction)
+    if (
+        not math.isfinite(coverage_threshold)
+        or coverage_threshold <= 0.0
+        or coverage_threshold > 1.0
+    ):
+        raise ValueError(
+            "minimum qualified intersection-volume fraction must be in (0, 1]"
         )
     transform = dict(
         _mapping(
@@ -258,6 +268,17 @@ def build_material_intersection_volume_manifest(
             )
             for value in relative
         ]
+        total_intersection_volume = float(sum(volumes))
+        qualified_intersection_volume = float(
+            sum(
+                volume
+                for volume, status in zip(volumes, statuses)
+                if status == "QUALIFIED"
+            )
+        )
+        qualified_volume_fraction = (
+            qualified_intersection_volume / total_intersection_volume
+        )
         dagmc_volume_id = int(component.get("volume_id", 0))
         material_tag = str(component.get("material", ""))
         if dagmc_volume_id not in cell_map or material_tag not in material_map:
@@ -281,13 +302,25 @@ def build_material_intersection_volume_manifest(
             "positive_intersection_bin_count": sum(
                 value > 0.0 for value in volumes
             ),
-            "total_intersection_volume_cm3": float(sum(volumes)),
+            "total_intersection_volume_cm3": total_intersection_volume,
+            "qualified_intersection_volume_cm3": qualified_intersection_volume,
+            "qualified_volume_fraction": qualified_volume_fraction,
+            "excluded_insufficient_bin_count": sum(
+                status == "INSUFFICIENT_GEOMETRY_STATISTICS"
+                for status in statuses
+            ),
+            "excluded_insufficient_volume_cm3": (
+                total_intersection_volume - qualified_intersection_volume
+            ),
+            "qualification_rule": (
+                "bins exceeding the relative-uncertainty tolerance remain "
+                "explicitly classified and are excluded downstream; the mesh "
+                "qualifies only when retained bins cover the declared minimum "
+                "intersection-volume fraction"
+            ),
             "status": (
                 "QUALIFIED"
-                if all(
-                    status in {"QUALIFIED", "EMPTY_INTERSECTION"}
-                    for status in statuses
-                )
+                if qualified_volume_fraction >= coverage_threshold
                 else "INSUFFICIENT_GEOMETRY_STATISTICS"
             ),
         }
@@ -300,6 +333,7 @@ def build_material_intersection_volume_manifest(
         "method": method.strip(),
         "estimator_provenance_sha256": estimator_sha,
         "maximum_relative_standard_deviation": tolerance,
+        "minimum_qualified_volume_fraction": coverage_threshold,
         "coordinate_transform_qualification": transform,
         "selected_magnet_ids": list(selected),
         "selection_scope": (
@@ -359,6 +393,15 @@ def validate_material_intersection_volume_manifest(
     tolerance = float(payload.get("maximum_relative_standard_deviation", 0.0))
     if not math.isfinite(tolerance) or tolerance <= 0.0:
         raise ValueError("invalid material-intersection volume tolerance")
+    coverage_threshold = float(
+        payload.get("minimum_qualified_volume_fraction", 1.0)
+    )
+    if (
+        not math.isfinite(coverage_threshold)
+        or coverage_threshold <= 0.0
+        or coverage_threshold > 1.0
+    ):
+        raise ValueError("invalid qualified intersection-volume fraction")
     meshes = _mapping(payload.get("meshes"), "intersection meshes")
     if not meshes:
         raise ValueError("intersection-volume manifest contains no meshes")
@@ -496,14 +539,36 @@ def validate_material_intersection_volume_manifest(
             raise ValueError(
                 "intersection bin qualification statuses are inconsistent"
             )
+        total_intersection_volume = float(sum(volumes))
+        qualified_intersection_volume = float(
+            sum(
+                volume
+                for volume, status in zip(volumes, statuses)
+                if status == "QUALIFIED"
+            )
+        )
+        qualified_volume_fraction = (
+            qualified_intersection_volume / total_intersection_volume
+        )
         expected_row_status = (
             "QUALIFIED"
-            if all(
-                value in {"QUALIFIED", "EMPTY_INTERSECTION"}
-                for value in statuses
-            )
+            if qualified_volume_fraction >= coverage_threshold
             else "INSUFFICIENT_GEOMETRY_STATISTICS"
         )
+        for key, expected in (
+            ("total_intersection_volume_cm3", total_intersection_volume),
+            (
+                "qualified_intersection_volume_cm3",
+                qualified_intersection_volume,
+            ),
+            ("qualified_volume_fraction", qualified_volume_fraction),
+        ):
+            if key in row and not math.isclose(
+                float(row[key]), expected, rel_tol=1.0e-12, abs_tol=1.0e-12
+            ):
+                raise ValueError(
+                    "intersection mesh volume coverage is inconsistent"
+                )
         if row.get("status") != expected_row_status:
             raise ValueError("intersection mesh qualification is inconsistent")
         if expected_row_status != "QUALIFIED":

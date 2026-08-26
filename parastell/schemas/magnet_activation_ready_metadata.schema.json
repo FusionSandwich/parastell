@@ -355,6 +355,8 @@
         "bin_status",
         "positive_intersection_bin_count",
         "total_intersection_volume_cm3",
+        "qualified_volume_fraction",
+        "excluded_insufficient_bin_count",
         "volume_basis",
         "status"
       ],
@@ -378,7 +380,13 @@
         "bin_status": {
           "type": "array",
           "minItems": 1,
-          "items": {"enum": ["QUALIFIED", "EMPTY_INTERSECTION"]}
+          "items": {
+            "enum": [
+              "QUALIFIED",
+              "EMPTY_INTERSECTION",
+              "INSUFFICIENT_GEOMETRY_STATISTICS"
+            ]
+          }
         },
         "positive_intersection_bin_count": {
           "type": "integer",
@@ -387,6 +395,15 @@
         "total_intersection_volume_cm3": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "qualified_volume_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "excluded_insufficient_bin_count": {
+          "type": "integer",
+          "minimum": 0
         },
         "volume_basis": {
           "const": "qualified_component_intersection_volume"

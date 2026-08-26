@@ -433,6 +433,12 @@ def _mesh(
                 value > 0.0 for value in volumes
             ),
             "total_intersection_volume_cm3": float(sum(volumes)),
+            "qualified_volume_fraction": float(
+                intersection.get("qualified_volume_fraction", 1.0)
+            ),
+            "excluded_insufficient_bin_count": int(
+                intersection.get("excluded_insufficient_bin_count", 0)
+            ),
             "volume_basis": "qualified_component_intersection_volume",
             "status": "QUALIFIED",
         }
@@ -942,6 +948,8 @@ def _validate_mesh(value: Mapping[str, Any], material_tags: set[str]) -> None:
                 "bin_status",
                 "positive_intersection_bin_count",
                 "total_intersection_volume_cm3",
+                "qualified_volume_fraction",
+                "excluded_insufficient_bin_count",
                 "volume_basis",
                 "status",
             },
@@ -1004,13 +1012,15 @@ def _validate_mesh(value: Mapping[str, Any], material_tags: set[str]) -> None:
             normalized_deviations.append(deviation)
         if not any(value > 0.0 for value in normalized_volumes):
             raise ValueError("component-intersection volumes are all empty")
+        allowed_statuses = {
+            "QUALIFIED",
+            "EMPTY_INTERSECTION",
+            "INSUFFICIENT_GEOMETRY_STATISTICS",
+        }
         if any(
-            value not in {"QUALIFIED", "EMPTY_INTERSECTION"}
-            for value in intersection_statuses
+            value not in allowed_statuses for value in intersection_statuses
         ):
-            raise ValueError(
-                "component-intersection bin status is unqualified"
-            )
+            raise ValueError("component-intersection bin status is invalid")
         positive_count = sum(value > 0.0 for value in normalized_volumes)
         if intersection["positive_intersection_bin_count"] != positive_count:
             raise ValueError(
@@ -1023,6 +1033,32 @@ def _validate_mesh(value: Mapping[str, Any], material_tags: set[str]) -> None:
             abs_tol=0.0,
         ):
             raise ValueError("component-intersection total volume disagrees")
+        total_volume = sum(normalized_volumes)
+        qualified_volume = sum(
+            volume
+            for volume, status in zip(
+                normalized_volumes, intersection_statuses
+            )
+            if status == "QUALIFIED"
+        )
+        qualified_fraction = qualified_volume / total_volume
+        if not math.isclose(
+            float(intersection["qualified_volume_fraction"]),
+            qualified_fraction,
+            rel_tol=1.0e-12,
+            abs_tol=1.0e-12,
+        ):
+            raise ValueError(
+                "component-intersection qualified volume fraction disagrees"
+            )
+        excluded_count = sum(
+            status == "INSUFFICIENT_GEOMETRY_STATISTICS"
+            for status in intersection_statuses
+        )
+        if intersection["excluded_insufficient_bin_count"] != excluded_count:
+            raise ValueError(
+                "component-intersection excluded bin count disagrees"
+            )
         intersection_ready = True
     readiness = _mapping(value["activation_readiness"], "mesh readiness")
     _validate_readiness(readiness, mesh=True)

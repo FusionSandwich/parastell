@@ -485,11 +485,17 @@ def build_scalar_flux_fields_from_statepoint(
             intersection_std = np.asarray(
                 volume_row["standard_deviation_cm3"], dtype=float
             )
+            intersection_status = np.asarray(
+                volume_row["bin_status"], dtype=object
+            )
             if intersection_volumes.shape != (mesh.bin_count,):
                 raise ValueError(
                     f"{magnet_id} intersection volumes do not align with mesh bins"
                 )
-            selected_bins = intersection_volumes > 0.0
+            selected_bins = np.logical_and(
+                intersection_volumes > 0.0,
+                intersection_status == "QUALIFIED",
+            )
             if not np.any(selected_bins):
                 raise ValueError(
                     f"{magnet_id} has no positive winding-pack mesh intersections"
@@ -522,6 +528,15 @@ def build_scalar_flux_fields_from_statepoint(
                     "material_volume_fraction": (
                         intersection_volumes[selected_bins]
                         / geometric_volume[selected_bins]
+                    ),
+                    "qualified_intersection_volume_fraction": float(
+                        volume_row.get("qualified_volume_fraction", 1.0)
+                    ),
+                    "excluded_insufficient_intersection_bin_count": int(
+                        np.count_nonzero(
+                            intersection_status
+                            == "INSUFFICIENT_GEOMETRY_STATISTICS"
+                        )
                     ),
                     "local_mesh_source_bin_index": np.flatnonzero(
                         selected_bins

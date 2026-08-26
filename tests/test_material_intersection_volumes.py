@@ -124,6 +124,26 @@ def test_reader_rejects_hash_tampering(tmp_path):
         read_material_intersection_volume_manifest(output)
 
 
+def test_mesh_qualification_uses_declared_retained_volume_coverage():
+    arguments = _inputs()
+    arguments["results_by_magnet"][MAGNET_ID] = {
+        "intersection_volume_cm3": [0.99, 0.01],
+        "standard_deviation_cm3": [0.01, 0.01],
+    }
+    arguments["minimum_qualified_volume_fraction"] = 0.98
+    artifact = build_material_intersection_volume_manifest(**arguments)
+    row = artifact["meshes"][MAGNET_ID]
+
+    assert row["bin_status"] == [
+        "QUALIFIED",
+        "INSUFFICIENT_GEOMETRY_STATISTICS",
+    ]
+    assert row["qualified_volume_fraction"] == pytest.approx(0.99)
+    assert row["excluded_insufficient_bin_count"] == 1
+    assert row["status"] == "QUALIFIED"
+    assert artifact["status"] == "QUALIFIED"
+
+
 def test_explicit_selected_magnet_subset_preserves_full_input_binding(
     tmp_path,
 ):
