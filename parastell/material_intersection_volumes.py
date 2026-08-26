@@ -9,15 +9,14 @@ those volumes without pretending that ParaStell has performed activation.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
 import hashlib
 import json
 import math
-from pathlib import Path
 import re
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
-
 
 SCHEMA = "parastell.material_intersection_volumes/v1.0.0"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -115,6 +114,7 @@ def build_material_intersection_volume_manifest(
     estimator_provenance_sha256: str,
     coordinate_transform_qualification: Mapping[str, Any],
     maximum_relative_standard_deviation: float = 0.05,
+    selected_magnet_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Build a hash-bound, fail-closed material-intersection volume manifest.
 
@@ -132,12 +132,29 @@ def build_material_intersection_volume_manifest(
             "material-intersection normalization requires component-filtered "
             "local mesh tallies"
         )
-    meshes = _mapping(local_mesh_manifest.get("meshes"), "local meshes")
-    components = _component_by_magnet(associations)
-    if set(meshes) != set(components) or set(results_by_magnet) != set(meshes):
+    all_meshes = _mapping(local_mesh_manifest.get("meshes"), "local meshes")
+    all_components = _component_by_magnet(associations)
+    if set(all_meshes) != set(all_components):
         raise ValueError(
-            "local meshes, winding packs, and intersection results must identify "
-            "the same magnets"
+            "local meshes and winding packs must identify the same magnets"
+        )
+    if selected_magnet_ids is None:
+        selected = tuple(sorted(all_meshes))
+    else:
+        selected = tuple(str(value) for value in selected_magnet_ids)
+        if (
+            not selected
+            or len(set(selected)) != len(selected)
+            or any(not value for value in selected)
+            or not set(selected).issubset(all_meshes)
+        ):
+            raise ValueError(
+                "selected magnet IDs must be a unique nonempty subset"
+            )
+        selected = tuple(sorted(selected))
+    if set(results_by_magnet) != set(selected):
+        raise ValueError(
+            "intersection results must identify exactly the selected magnets"
         )
     fingerprint = _sha256(
         associations.get("canonical_geometry_fingerprint"),
@@ -190,9 +207,9 @@ def build_material_intersection_volume_manifest(
         str(key): int(value)
         for key, value in openmc_material_ids_by_tag.items()
     }
-    for magnet_id in sorted(meshes):
-        definition = _mapping(meshes[magnet_id], f"{magnet_id} local mesh")
-        component = components[magnet_id]
+    for magnet_id in selected:
+        definition = _mapping(all_meshes[magnet_id], f"{magnet_id} local mesh")
+        component = all_components[magnet_id]
         result = _mapping(results_by_magnet[magnet_id], f"{magnet_id} result")
         count = int(definition.get("bin_count", 0))
         geometric = float(definition.get("bin_volume_cm3", 0.0))
@@ -284,6 +301,12 @@ def build_material_intersection_volume_manifest(
         "estimator_provenance_sha256": estimator_sha,
         "maximum_relative_standard_deviation": tolerance,
         "coordinate_transform_qualification": transform,
+        "selected_magnet_ids": list(selected),
+        "selection_scope": (
+            "all_local_meshes"
+            if set(selected) == set(all_meshes)
+            else "explicit_selected_magnets"
+        ),
         "meshes": rows,
         "status": (
             "QUALIFIED"
@@ -339,6 +362,29 @@ def validate_material_intersection_volume_manifest(
     meshes = _mapping(payload.get("meshes"), "intersection meshes")
     if not meshes:
         raise ValueError("intersection-volume manifest contains no meshes")
+    selected_raw = payload.get("selected_magnet_ids")
+    if selected_raw is None:
+        selected = tuple(sorted(meshes))
+    else:
+        selected = tuple(
+            str(value)
+            for value in _sequence(selected_raw, "selected magnet IDs")
+        )
+        if (
+            not selected
+            or len(set(selected)) != len(selected)
+            or tuple(sorted(selected)) != selected
+            or set(selected) != set(meshes)
+        ):
+            raise ValueError(
+                "selected magnet IDs must exactly identify the intersection meshes"
+            )
+    scope = payload.get("selection_scope")
+    if scope is not None and scope not in {
+        "all_local_meshes",
+        "explicit_selected_magnets",
+    }:
+        raise ValueError("invalid material-intersection selection scope")
     expected_meshes = None
     if local_mesh_manifest is not None:
         local_mesh_manifest = _mapping(
@@ -357,9 +403,18 @@ def validate_material_intersection_volume_manifest(
         expected_meshes = _mapping(
             local_mesh_manifest.get("meshes"), "local meshes"
         )
-        if set(meshes) != set(expected_meshes):
+        if not set(meshes).issubset(expected_meshes):
             raise ValueError(
-                "intersection volumes do not cover every local mesh"
+                "intersection volumes identify an unknown local mesh"
+            )
+        expected_scope = (
+            "all_local_meshes"
+            if set(meshes) == set(expected_meshes)
+            else "explicit_selected_magnets"
+        )
+        if scope is not None and scope != expected_scope:
+            raise ValueError(
+                "material-intersection selection scope is inconsistent"
             )
     if associations is not None:
         associations = _mapping(associations, "associations")
@@ -370,9 +425,9 @@ def validate_material_intersection_volume_manifest(
                 "intersection volumes use a different geometry fingerprint"
             )
         components = _component_by_magnet(associations)
-        if set(meshes) != set(components):
+        if not set(meshes).issubset(components):
             raise ValueError(
-                "intersection meshes do not cover the winding packs"
+                "intersection meshes identify an unknown winding pack"
             )
     overall = "QUALIFIED"
     for magnet_id, raw in meshes.items():

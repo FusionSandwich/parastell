@@ -4,14 +4,9 @@ import pytest
 
 from parastell.material_intersection_volumes import (
     build_material_intersection_volume_manifest,
-)
-from parastell.material_intersection_volumes import (
     read_material_intersection_volume_manifest,
-)
-from parastell.material_intersection_volumes import (
     write_material_intersection_volume_manifest,
 )
-
 
 MAGNET_ID = "machine-sector-coil-0005"
 
@@ -127,3 +122,35 @@ def test_reader_rejects_hash_tampering(tmp_path):
     output.write_text(json.dumps(tampered), encoding="utf-8")
     with pytest.raises(ValueError, match="artifact hash mismatch"):
         read_material_intersection_volume_manifest(output)
+
+
+def test_explicit_selected_magnet_subset_preserves_full_input_binding(
+    tmp_path,
+):
+    arguments = _inputs()
+    other = "machine-sector-coil-0006"
+    arguments["local_mesh_manifest"]["meshes"][other] = {
+        **arguments["local_mesh_manifest"]["meshes"][MAGNET_ID],
+        "magnet_id": other,
+    }
+    arguments["associations"]["inventory"]["magnet_pairs"].append(
+        {
+            "magnet_id": other,
+            "winding_pack": {"volume_id": 19, "material": "winding_pack"},
+        }
+    )
+    arguments["selected_magnet_ids"] = [MAGNET_ID]
+
+    artifact = build_material_intersection_volume_manifest(**arguments)
+    assert artifact["selected_magnet_ids"] == [MAGNET_ID]
+    assert artifact["selection_scope"] == "explicit_selected_magnets"
+    assert list(artifact["meshes"]) == [MAGNET_ID]
+
+    output = tmp_path / "selected_material_intersection_volumes.json"
+    write_material_intersection_volume_manifest(output, artifact)
+    loaded = read_material_intersection_volume_manifest(
+        output,
+        local_mesh_manifest=arguments["local_mesh_manifest"],
+        associations=arguments["associations"],
+    )
+    assert loaded == artifact
