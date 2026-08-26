@@ -296,6 +296,7 @@ def export_openmc16_handoff(
     surface_source_sampling_applied: bool = False,
     mpi_ranks: int | None = None,
     centreline_frame=None,
+    transport_openmc_version: str | None = None,
     facet_barycentric_tolerance: float = 1.0e-7,
     facet_source_tolerance_cm: float = 1.0e-5,
 ) -> dict:
@@ -463,7 +464,12 @@ def export_openmc16_handoff(
     }
     provenance = {
         "parastell_commit": parastell_commit,
-        "openmc_version": openmc.__version__,
+        # The statepoint can be read with an API source overlay whose installed
+        # distribution metadata names a different OpenMC release.  Callers
+        # re-exporting a retained same-run bank may therefore supply the
+        # version recorded by the statepoint itself.  Ordinary callers retain
+        # the existing installed-runtime behavior.
+        "openmc_version": transport_openmc_version or openmc.__version__,
         "openmc_statepoint_sha256": _hash(statepoint_path),
         "dagmc_geometry_sha256": envelope.envelope.dagmc_geometry_sha256,
         "canonical_geometry_fingerprint": envelope.envelope.metadata.get(
@@ -502,6 +508,7 @@ def export_openmc16_handoffs(
     surface_source_sampling_applied: bool = False,
     mpi_ranks: int | None = None,
     centreline_frames: Mapping[str, Any] | None = None,
+    transport_openmc_version: str | None = None,
     facet_barycentric_tolerance: float = 1.0e-7,
     facet_source_tolerance_cm: float = 1.0e-5,
 ) -> dict:
@@ -541,6 +548,7 @@ def export_openmc16_handoffs(
             centreline_frame=(centreline_frames or {}).get(
                 envelope.envelope.envelope_id
             ),
+            transport_openmc_version=transport_openmc_version,
             facet_barycentric_tolerance=facet_barycentric_tolerance,
             facet_source_tolerance_cm=facet_source_tolerance_cm,
         )
