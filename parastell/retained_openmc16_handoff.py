@@ -176,15 +176,9 @@ def _assert_envelope_matches_v21(
     frame_crosswalk = []
     for surface_id, earlier in old_surfaces.items():
         later = new_surfaces[surface_id]
-        if earlier["openmc_normal_sign"] != later.openmc_normal_sign:
-            raise ValueError(
-                f"surface {surface_id} topological sense changed during re-export"
-            )
         comparisons: Sequence[tuple[str, Any]] = (
             ("area_cm2", later.area_cm2),
             ("centroid_global_cm", later.centroid_global_cm),
-            ("outward_normal_global", later.outward_normal_global),
-            ("vector_area_global_cm2", later.vector_area_global_cm2),
         )
         for name, value in comparisons:
             if not np.allclose(
@@ -196,9 +190,47 @@ def _assert_envelope_matches_v21(
                 raise ValueError(
                     f"surface {surface_id} {name} changed during re-export"
                 )
+        earlier_normal = np.asarray(
+            earlier["outward_normal_global"], dtype=float
+        )
+        later_normal = np.asarray(later.outward_normal_global, dtype=float)
+        normal_dot = float(np.dot(earlier_normal, later_normal))
+        if not np.isclose(abs(normal_dot), 1.0, rtol=0.0, atol=1.0e-12):
+            raise ValueError(
+                f"surface {surface_id} normal axis changed during re-export"
+            )
+        earlier_vector_area = np.asarray(
+            earlier["vector_area_global_cm2"], dtype=float
+        )
+        later_vector_area = np.asarray(
+            later.vector_area_global_cm2, dtype=float
+        )
+        aligned_residual = min(
+            float(np.linalg.norm(earlier_vector_area - later_vector_area)),
+            float(np.linalg.norm(earlier_vector_area + later_vector_area)),
+        )
+        if aligned_residual > max(
+            1.0e-8,
+            1.0e-12
+            * max(
+                float(np.linalg.norm(earlier_vector_area)),
+                float(np.linalg.norm(later_vector_area)),
+            ),
+        ):
+            raise ValueError(
+                f"surface {surface_id} vector area changed during re-export"
+            )
         frame_crosswalk.append(
             {
                 "surface_id": surface_id,
+                "retained_v21_openmc_normal_sign": earlier[
+                    "openmc_normal_sign"
+                ],
+                "v22_topological_openmc_normal_sign": later.openmc_normal_sign,
+                "normal_sign_changed": (
+                    earlier["openmc_normal_sign"] != later.openmc_normal_sign
+                ),
+                "retained_to_v22_normal_dot": normal_dot,
                 "retained_v21_role": earlier["role"],
                 "v22_centreline_role": later.role,
                 "role_changed": earlier["role"] != later.role,
@@ -236,12 +268,14 @@ def _assert_envelope_matches_v21(
             "raw_h5m_sha256",
             "dagmc_volume_id",
             "surface_ids",
-            "openmc_normal_sign",
             "area_cm2",
             "centroid_global_cm",
-            "outward_normal_global",
-            "vector_area_global_cm2",
+            "normal_axis_collinearity_up_to_legacy_sign",
+            "vector_area_up_to_legacy_sign",
         ],
+        "normal_convention_change": (
+            "retained v2.1 legacy sign to v2.2 target-volume DAGMC topology"
+        ),
         "coordinate_frame_change": (
             "retained v2.1 global surface frame to v2.2 continuous centreline frame"
         ),
