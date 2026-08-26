@@ -112,6 +112,17 @@ class MagnetSet(ABC):
 
         cq.exporters.export(coil_set, str(self.step_path))
 
+    def export_selected_source_cad(self, **kwargs):
+        """Export one retained filament-magnet CAD pair with provenance.
+
+        See :func:`parastell.magnet_source_cad.export_selected_magnet_source_cad`.
+        Transport volume IDs and the target geometry fingerprint are required;
+        ParaStell never infers them from the CAD list order.
+        """
+        from .magnet_source_cad import export_selected_magnet_source_cad
+
+        return export_selected_magnet_source_cad(self, **kwargs)
+
     def mesh_magnets_cubit(
         self,
         mesh_size=5,
