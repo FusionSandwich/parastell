@@ -689,6 +689,16 @@ class MagnetRadiationFieldProducer:
                         envelope_id=f"outer-magnet-{pair.magnet_id}",
                         **common,
                     )
+                    if hasattr(outer, "envelope"):
+                        # Preserve how the surface was constructed separately
+                        # from the stable public interface role requested by
+                        # this producer method.
+                        outer.envelope.metadata["construction_kind"] = (
+                            outer.envelope.metadata.get("boundary_role")
+                        )
+                        outer.envelope.metadata["boundary_role"] = (
+                            "outer_magnet"
+                        )
                     outputs.append(outer)
                 elif "winding_pack" not in roles:
                     outer = extract_closed_envelope(

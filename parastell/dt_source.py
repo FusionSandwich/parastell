@@ -182,10 +182,16 @@ def build_temperature_dependent_mesh_source(source_mesh, mesh_path):
     sources = []
     means = []
     widths = []
+    spectrum_cache = {}
     for probability, temperature in zip(sampling_probabilities, temperatures):
-        spectrum = openmc.stats.fusion_neutron_spectrum(
-            ion_temp=float(temperature), reactants="DT"
-        )
+        temperature_key = float(temperature)
+        if temperature_key not in spectrum_cache:
+            spectrum_cache[temperature_key] = (
+                openmc.stats.fusion_neutron_spectrum(
+                    ion_temp=temperature_key, reactants="DT"
+                )
+            )
+        spectrum = spectrum_cache[temperature_key]
         means.append(float(spectrum.mean_value))
         widths.append(float(spectrum.std_dev))
         sources.append(

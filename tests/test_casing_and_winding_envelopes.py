@@ -201,6 +201,8 @@ def test_default_envelope_roles_request_outer_union_and_pack(monkeypatch):
     )
     assert len(result) == 2
     assert calls == [("outer_magnet", (7, 8)), ("winding_pack", (8,))]
+    assert result[0].envelope.metadata["boundary_role"] == "outer_magnet"
+    assert result[0].envelope.metadata["construction_kind"] is None
     assert result[1].envelope.metadata["boundary_role"] == "winding_pack"
 
 

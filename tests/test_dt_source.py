@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from parastell.dt_source import build_temperature_dependent_mesh_source
 from parastell.dt_source import source_convergence_observables
 
 
@@ -81,3 +82,50 @@ def test_source_convergence_observables_fail_closed_on_invalid_arrays(
     )
     with pytest.raises(ValueError):
         source_convergence_observables(source)
+
+
+def test_mesh_source_reuses_identical_temperature_spectra(monkeypatch, tmp_path):
+    calls = []
+
+    def spectrum(*, ion_temp, reactants):
+        calls.append((ion_temp, reactants))
+        return _Spectrum(ion_temp)
+
+    class _IndependentSource:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class _MeshSource:
+        def __init__(self, mesh, sources):
+            self.mesh = mesh
+            self.sources = sources
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "openmc",
+        SimpleNamespace(
+            stats=SimpleNamespace(
+                fusion_neutron_spectrum=spectrum,
+                Isotropic=lambda: "isotropic",
+            ),
+            IndependentSource=_IndependentSource,
+            UnstructuredMesh=lambda path, library: (path, library),
+            MeshSource=_MeshSource,
+        ),
+    )
+    mesh_path = tmp_path / "source.h5m"
+    mesh_path.write_bytes(b"source")
+    source = SimpleNamespace(
+        strengths=[1.0, 2.0, 3.0],
+        volumes=[1.0, 1.0, 1.0],
+        ion_temperatures_eV=[1000.0, 1000.0, 2000.0],
+    )
+
+    mesh_source, audit = build_temperature_dependent_mesh_source(
+        source, mesh_path
+    )
+
+    assert calls == [(1000.0, "DT"), (2000.0, "DT")]
+    assert len(mesh_source.sources) == 3
+    assert audit.tetrahedra == 3
+    assert audit.sampling_strength_sum == pytest.approx(1.0)

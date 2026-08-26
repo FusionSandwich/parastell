@@ -44,12 +44,17 @@ def _decode_hdf5_text(value) -> str:
     )
 
 
-def _directional_current_from_statepoint(
+def _directional_current_native_from_statepoint(
     statepoint_path: str | Path,
     particle: str,
-    envelope: DagmcEnvelope,
-) -> dict[int, dict[str, tuple[float, float]]]:
-    """Read one directional-current tally without loading unrelated filters."""
+) -> dict[int, dict[int, tuple[float, float]]]:
+    """Read one tally once and return native +/- current by surface.
+
+    Surface-normal sense belongs to each closed-envelope contract, so this
+    intermediate deliberately retains the OpenMC-native mu sign.  Consumers
+    comparing many envelopes can reuse it without rereading the full tally.
+    """
+
     tally_name = f"pstl_envelope_{particle}_directional_current"
     with h5py.File(statepoint_path) as statepoint:
         tallies = statepoint["tallies"]
@@ -101,31 +106,17 @@ def _directional_current_from_statepoint(
         surface_axis = filter_types.index("surface")
         mu_axis = filter_types.index("musurface")
         surface_ids = np.asarray(filters[surface_axis]["bins"][:], dtype=int)
-        envelope_surface_ids = {
-            int(value) for value in envelope.envelope.surface_ids
-        }
-        missing_surface_ids = envelope_surface_ids - set(surface_ids)
-        if missing_surface_ids:
-            raise ValueError(
-                f"{tally_name} omits envelope surfaces {sorted(missing_surface_ids)}"
-            )
         mu_edges = np.asarray(filters[mu_axis]["bins"][:], dtype=float)
         if len(mu_edges) != dimensions[mu_axis] + 1:
             raise ValueError(f"{tally_name} has malformed mu-surface edges")
         output = {
             int(surface_id): {
-                "incoming": (0.0, 0.0),
-                "outgoing": (0.0, 0.0),
+                -1: (0.0, 0.0),
+                1: (0.0, 0.0),
             }
             for surface_id in surface_ids
-            if int(surface_id) in envelope_surface_ids
         }
         for surface_index, surface_id in enumerate(surface_ids):
-            if int(surface_id) not in envelope_surface_ids:
-                continue
-            normal_sign = envelope.envelope.surface(
-                int(surface_id)
-            ).openmc_normal_sign
             for mu_index, (mu_low, mu_high) in enumerate(
                 zip(mu_edges[:-1], mu_edges[1:])
             ):
@@ -144,17 +135,59 @@ def _directional_current_from_statepoint(
                 deviations = standard_deviation[tuple(selection)]
                 value = float(abs(values.sum()))
                 deviation = float(np.sqrt(np.sum(deviations**2)))
-                sense = (
-                    "outgoing"
-                    if normal_sign * native_sense > 0
-                    else "incoming"
-                )
-                prior_value, prior_deviation = output[int(surface_id)][sense]
-                output[int(surface_id)][sense] = (
+                prior_value, prior_deviation = output[int(surface_id)][
+                    native_sense
+                ]
+                output[int(surface_id)][native_sense] = (
                     prior_value + value,
                     float(np.hypot(prior_deviation, deviation)),
                 )
     return output
+
+
+def _directional_current_for_envelope(
+    native_current: Mapping[int, Mapping[int, tuple[float, float]]],
+    envelope: DagmcEnvelope,
+) -> dict[int, dict[str, tuple[float, float]]]:
+    """Apply one envelope's qualified outward-normal convention."""
+
+    envelope_surface_ids = {
+        int(value) for value in envelope.envelope.surface_ids
+    }
+    missing = envelope_surface_ids - set(native_current)
+    if missing:
+        raise ValueError(
+            "directional-current tally omits envelope surfaces "
+            f"{sorted(missing)}"
+        )
+    output = {}
+    for surface_id in sorted(envelope_surface_ids):
+        normal_sign = envelope.envelope.surface(
+            surface_id
+        ).openmc_normal_sign
+        senses = {"incoming": (0.0, 0.0), "outgoing": (0.0, 0.0)}
+        for native_sense in (-1, 1):
+            sense = (
+                "outgoing"
+                if normal_sign * native_sense > 0
+                else "incoming"
+            )
+            senses[sense] = tuple(native_current[surface_id][native_sense])
+        output[surface_id] = senses
+    return output
+
+
+def _directional_current_from_statepoint(
+    statepoint_path: str | Path,
+    particle: str,
+    envelope: DagmcEnvelope,
+) -> dict[int, dict[str, tuple[float, float]]]:
+    """Read and orient one directional-current tally for one envelope."""
+
+    return _directional_current_for_envelope(
+        _directional_current_native_from_statepoint(statepoint_path, particle),
+        envelope,
+    )
 
 
 def _closure_quantity(tally, tally_std, bank, bank_std):

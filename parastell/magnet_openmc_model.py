@@ -38,6 +38,26 @@ def _local_mesh(value: Mapping[str, Any]) -> LocalMeshDefinition:
     )
 
 
+def _material_binding(
+    material_manifest: Mapping[str, Any],
+    material_ids_by_tag: Mapping[str, int],
+    dagmc_material_tag: str,
+) -> tuple[str, int]:
+    """Return the resolved record name and OpenMC ID for a DAGMC tag."""
+    tag = str(dagmc_material_tag)
+    try:
+        material_name = str(material_manifest["material_tags"][tag])
+    except KeyError as exc:
+        raise ValueError(f"DAGMC material tag {tag!r} is not configured") from exc
+    try:
+        material_id = int(material_ids_by_tag[tag])
+    except KeyError as exc:
+        raise ValueError(
+            f"OpenMC material for DAGMC tag {tag!r} was not constructed"
+        ) from exc
+    return material_name, material_id
+
+
 def prepare_magnet_openmc_model(
     output_directory: str | Path,
     *,
@@ -180,16 +200,22 @@ def prepare_magnet_openmc_model(
     }
     materials = openmc_materials_from_manifest(material_manifest)
     materials.cross_sections = str(cross_sections_path)
-    material_ids_by_name = {
+    material_ids_by_tag = {
         str(material.name): int(material.id) for material in materials
+    }
+    material_ids_by_name = {
+        str(material_manifest["material_tags"][tag]): material_id
+        for tag, material_id in material_ids_by_tag.items()
     }
     dagmc_openmc_cell_map = []
     for pair in producer.selected_pairs:
         for component in (pair.winding_pack, pair.casing):
             if component is None:
                 continue
-            material_name = str(
-                material_manifest["material_tags"][component.material]
+            material_name, openmc_material_id = _material_binding(
+                material_manifest,
+                material_ids_by_tag,
+                component.material,
             )
             dagmc_openmc_cell_map.append(
                 {
@@ -199,7 +225,7 @@ def prepare_magnet_openmc_model(
                     "openmc_cell_id": int(component.volume_id),
                     "material_tag": component.material,
                     "material_name": material_name,
-                    "openmc_material_id": material_ids_by_name[material_name],
+                    "openmc_material_id": openmc_material_id,
                     "mapping_basis": (
                         "OpenMC DAGMCUniverse(auto_geom_ids=False) retains "
                         "DAGMC volume IDs as DAGMC cell IDs"
@@ -274,6 +300,7 @@ def prepare_magnet_openmc_model(
             ],
         },
         "openmc_material_ids_by_name": material_ids_by_name,
+        "openmc_material_ids_by_tag": material_ids_by_tag,
         "dagmc_openmc_cell_map": dagmc_openmc_cell_map,
         "cross_sections": {
             "path": str(cross_sections_path),
