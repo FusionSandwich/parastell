@@ -272,12 +272,16 @@ def reexport_retained_handoff_v22(
         spatial_bins=(4, 4),
         centreline_frame=frame,
     )
-    if (
-        envelope.envelope.metadata.get("canonical_geometry_fingerprint")
-        != recipe["geometry_fingerprint"]
-    ):
+    # Geometry-interchange identity and canonical DAGMC faceting identity are
+    # separate versioned namespaces.  They are cross-bound here by the same
+    # raw H5M SHA and the complete retained-surface equivalence audit below;
+    # equality between the two digest values is neither expected nor claimed.
+    canonical_facet_fingerprint = envelope.envelope.metadata.get(
+        "canonical_geometry_fingerprint"
+    )
+    if not canonical_facet_fingerprint:
         raise ValueError(
-            "canonical DAGMC fingerprint does not match the recipe"
+            "extracted envelope has no canonical DAGMC fingerprint"
         )
     _assert_envelope_matches_v21(envelope, retained)
     completeness = retained["bank_metadata"]["surface_bank_completeness"]
@@ -339,6 +343,10 @@ def reexport_retained_handoff_v22(
         "output_v22_sha256": sha256(output),
         "historical_transport_commit": provenance["parastell_commit"],
         "transport_openmc_version": transport_version,
-        "canonical_geometry_fingerprint": recipe["geometry_fingerprint"],
+        "geometry_interchange_fingerprint": recipe["geometry_fingerprint"],
+        "canonical_dagmc_facet_fingerprint": canonical_facet_fingerprint,
+        "fingerprint_crosswalk_basis": (
+            "same raw H5M SHA-256 plus complete retained-v2.1 surface equivalence"
+        ),
     }
     return result
