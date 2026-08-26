@@ -1,0 +1,79 @@
+{
+  "associations": {
+    "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/magnet_associations.json",
+    "sha256": "35fb076628e95c6e71953998486dde0e305bcd154104789709f2be8866365ab0"
+  },
+  "cross_section_definition": {
+    "casing_thickness_cm": 5.0,
+    "winding_thickness_cm": 50.0,
+    "winding_width_cm": 40.0
+  },
+  "geometry_fingerprint": "4f3588b5bdbc80977ed69cdb32188e2bd6ea4e2a414a8338801a0824fbf2c709",
+  "interchange": {
+    "content_sha256": "68a74646156129412e995549fe12a9821c49017da4fa9b183e214e07001e4fad",
+    "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/selected_magnet_geometry_e63d8f9_exact/magnet_geometry_interchange.json",
+    "sha256": "1deabaada3d040a927a893ee6aa2b49d09be35ca36b65d603b28fc225410f94e",
+    "size_bytes": 2740191
+  },
+  "magnet_id": "example-stellarator-sector-00-90deg-coil-0005",
+  "outer_stl": {
+    "coordinate_units": "cm",
+    "envelope_id": "outer-magnet-example-stellarator-sector-00-90deg-coil-0005",
+    "format": "binary_stl",
+    "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/selected_magnet_geometry_e63d8f9_exact/example-stellarator-sector-00-90deg-coil-0005.outer-casing-envelope.stl",
+    "sha256": "8f805c0facab9926a7819a703b81c476dbdcb5e8f8eca8e9481000bda6bd048e",
+    "size_bytes": 612684,
+    "status": "available",
+    "surface_ids": [
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      97,
+      102,
+      103
+    ],
+    "triangle_count": 12252
+  },
+  "schema": "parastell.selected_magnet_geometry_artifacts/v1.0.0",
+  "source_h5m": {
+    "canonical_geometry_fingerprint": "4f3588b5bdbc80977ed69cdb32188e2bd6ea4e2a414a8338801a0824fbf2c709",
+    "path": "/home/apollon/josma/runs/parastell-medium-qualification/inputs/prompt1-port-free-smoke/combined_reactor_magnets.h5m",
+    "sha256": "7c710fe3dd261ce7f46e5d08b4f9d2924513994ccb6229468933d0b91b2cd7cb",
+    "size_bytes": 14343172,
+    "status": "available"
+  },
+  "status": "PASS",
+  "step_status": "UNAVAILABLE_NOT_RETAINED_BY_CURRENT_BUILD",
+  "transport_model_manifest": {
+    "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/photon_calibration_eins_e63d8f9/replica-001/model/magnet_openmc_model_manifest.json",
+    "sha256": "6fd03bc0f7c5d94e3c3f4b9f07e75d7d05bba90641d2a36eb53e6a9eae679524"
+  },
+  "winding_pack_stl": {
+    "coordinate_units": "cm",
+    "envelope_id": "winding-pack-example-stellarator-sector-00-90deg-coil-0005",
+    "format": "binary_stl",
+    "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/selected_magnet_geometry_e63d8f9_exact/example-stellarator-sector-00-90deg-coil-0005.winding-pack-envelope.stl",
+    "sha256": "133f0e928418070d0f680f81a479935f38d4cfafac0011a87e2e06ff464f0cd3",
+    "size_bytes": 499384,
+    "status": "available",
+    "surface_ids": [
+      93,
+      94,
+      95,
+      96,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103
+    ],
+    "triangle_count": 9986
+  }
+}
