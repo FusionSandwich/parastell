@@ -3,7 +3,6 @@ from types import SimpleNamespace
 import h5py
 import numpy as np
 import pytest
-
 from parastell.magnet_damage_gas import (
     DAMAGE_TALLY,
     GAS_OPENMC_SCORES,
@@ -125,6 +124,26 @@ def test_damage_gas_round_trip_preserves_units_scaling_and_semantics(tmp_path):
         )
         assert np.isnan(damage["relative_error"][0, 0])
         assert damage["sample_status_code"][0, 0] == 0
+
+
+def test_two_component_cells_can_share_one_magnet_axis_identity(tmp_path):
+    path = export_magnet_damage_gas(
+        _statepoint(),
+        tmp_path / "paired-components.h5",
+        tally_inventory=_inventory(),
+        cell_magnet_ids={20: "magnet-20", 22: "magnet-20"},
+        cell_volumes_cm3={20: 10.0, 22: 20.0},
+        physical_source_rate_per_s=5.0,
+        provenance={"parastell_commit": "a" * 40},
+    )
+
+    summary = validate_magnet_damage_gas(path)
+
+    assert summary["magnets"] == 1
+    with h5py.File(path, "r") as stream:
+        assert tuple(
+            stream["damage_energy/neutron/magnet_ids"].asstr()[...]
+        ) == ("magnet-20", "magnet-20")
 
 
 def test_unavailable_gas_response_is_absent_not_zero(tmp_path):

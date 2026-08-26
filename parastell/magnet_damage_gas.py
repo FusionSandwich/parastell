@@ -628,7 +628,9 @@ def export_magnet_damage_gas(
     return output
 
 
-def _validate_axes(group: h5py.Group) -> tuple[np.ndarray, np.ndarray, int]:
+def _validate_axes(
+    group: h5py.Group,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     required = {
         "cell_ids",
         "magnet_ids",
@@ -647,7 +649,7 @@ def _validate_axes(group: h5py.Group) -> tuple[np.ndarray, np.ndarray, int]:
         or len(np.unique(cells)) != len(cells)
     ):
         raise ValueError("invalid response cell axis")
-    if magnets.shape != cells.shape or len(set(magnets)) != len(magnets):
+    if magnets.shape != cells.shape or any(not value for value in magnets):
         raise ValueError("invalid response magnet axis")
     if (
         volumes.shape != cells.shape
@@ -670,7 +672,7 @@ def _validate_axes(group: h5py.Group) -> tuple[np.ndarray, np.ndarray, int]:
     for name, units in expected_units.items():
         if group[name].attrs.get("units") != units:
             raise ValueError(f"{group.name}/{name} has invalid units")
-    return cells, volumes, len(edges) - 1
+    return cells, magnets, volumes, len(edges) - 1
 
 
 def _validated_dataset(
@@ -805,6 +807,7 @@ def validate_magnet_damage_gas(path: str | Path) -> dict[str, Any]:
                 "damage-energy payload disagrees with response status"
             )
         reference_cells = None
+        reference_magnets = None
         if damage_available:
             group = stream["damage_energy/neutron"]
             if (
@@ -813,7 +816,7 @@ def validate_magnet_damage_gas(path: str | Path) -> dict[str, Any]:
                 or bool(group.attrs.get("is_dpa"))
             ):
                 raise ValueError("damage-energy metadata is invalid")
-            cells, volumes, n_energy = _validate_axes(group)
+            cells, magnets, volumes, n_energy = _validate_axes(group)
             mean, std_dev = _validate_statistics(
                 group,
                 expected_shape=(len(cells), n_energy),
@@ -859,6 +862,7 @@ def validate_magnet_damage_gas(path: str | Path) -> dict[str, Any]:
             )
             damage_total = float(mean.sum())
             reference_cells = cells
+            reference_magnets = magnets
 
         available_gas = tuple(
             response
@@ -878,12 +882,18 @@ def validate_magnet_damage_gas(path: str | Path) -> dict[str, Any]:
                 group.attrs.get("is_appm")
             ):
                 raise ValueError("gas-production metadata is invalid")
-            cells, volumes, n_energy = _validate_axes(group)
+            cells, magnets, volumes, n_energy = _validate_axes(group)
             if reference_cells is not None and not np.array_equal(
                 cells, reference_cells
             ):
                 raise ValueError(
                     "damage and gas product cell axes do not match"
+                )
+            if reference_magnets is not None and not np.array_equal(
+                magnets, reference_magnets
+            ):
+                raise ValueError(
+                    "damage and gas product magnet axes do not match"
                 )
             if (
                 "score_labels" not in group
@@ -950,7 +960,7 @@ def validate_magnet_damage_gas(path: str | Path) -> dict[str, Any]:
         return {
             "schema": SCHEMA,
             "magnets": len(
-                reference_cells if reference_cells is not None else cells
+                set(reference_magnets if reference_magnets is not None else magnets)
             ),
             "damage_energy_eV_per_source": damage_total,
             "gas_atoms_per_source": gas_totals,
