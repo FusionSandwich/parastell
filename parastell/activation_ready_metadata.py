@@ -8,17 +8,16 @@ IDs selected by the caller.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
 import hashlib
 import json
 import math
-from pathlib import Path
 import re
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .magnet_local_mesh import LocalMeshDefinition
-
 
 SCHEMA = "parastell.activation_ready_metadata/v1.0.0"
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -618,11 +617,19 @@ def build_activation_ready_metadata(
         raise ValueError(
             "material-intersection volumes reference unknown local meshes"
         )
-    if intersections_by_magnet and set(intersections_by_magnet) != set(
-        magnet_ids
+    if (
+        intersections_by_magnet
+        and mesh_material_intersection_artifact_sha256 is None
     ):
         raise ValueError(
-            "material-intersection volumes must cover every local mesh"
+            "material-intersection volumes require their artifact SHA-256"
+        )
+    if (
+        not intersections_by_magnet
+        and mesh_material_intersection_artifact_sha256 is not None
+    ):
+        raise ValueError(
+            "material-intersection artifact SHA-256 was supplied without volumes"
         )
     material_tags = set(
         _mapping(
@@ -640,6 +647,8 @@ def build_activation_ready_metadata(
             intersection=intersections_by_magnet.get(magnet_id),
             intersection_artifact_sha256=(
                 mesh_material_intersection_artifact_sha256
+                if magnet_id in intersections_by_magnet
+                else None
             ),
         )
         for magnet_id in sorted(magnet_ids)

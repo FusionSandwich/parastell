@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import h5py
 import numpy as np
-
 
 SCHEMA = "parastell.magnet_volume_scalar_flux/v1.0.0"
 FIELD_SCHEMA = "parastell.magnet_scalar_flux_fields/v1.0.0"
@@ -434,8 +434,11 @@ def build_scalar_flux_fields_from_statepoint(
                 ),
             }
         )
+    intersection_magnet_ids = set(intersections["meshes"])
     for cell_id, pair in sorted(pair_by_winding_cell.items()):
         magnet_id = pair["magnet_id"]
+        if magnet_id not in intersection_magnet_ids:
+            continue
         value = local_collection["meshes"][magnet_id]
         mesh = LocalMeshDefinition(
             magnet_id=value["magnet_id"],
@@ -713,7 +716,7 @@ def export_volume_scalar_flux(
             )
         manifest = {
             "schema": SCHEMA,
-            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "created_utc": datetime.now(UTC).isoformat(),
             "quantity": "volume_scalar_flux",
             "estimator": "OpenMC track-length flux divided by explicit cell volume",
             "normalization": {
@@ -1178,7 +1181,7 @@ def export_scalar_flux_fields(
             )
         manifest = {
             "schema": FIELD_SCHEMA,
-            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "created_utc": datetime.now(UTC).isoformat(),
             "quantity": "volume_scalar_flux",
             "estimator": "OpenMC track-length flux divided by explicit region volume",
             "formula": "phi_physical = track_length_per_source / volume * source_rate",

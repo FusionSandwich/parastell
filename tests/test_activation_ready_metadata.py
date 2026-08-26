@@ -2,20 +2,13 @@ import json
 
 import pytest
 
-from parastell.activation_ready_metadata import SCHEMA
 from parastell.activation_ready_metadata import (
+    SCHEMA,
     build_activation_ready_metadata,
-)
-from parastell.activation_ready_metadata import (
     read_activation_ready_metadata,
-)
-from parastell.activation_ready_metadata import (
     validate_activation_ready_metadata,
-)
-from parastell.activation_ready_metadata import (
     write_activation_ready_metadata,
 )
-
 
 MAGNET_ID = "machine-sector-coil-0001"
 
@@ -225,6 +218,61 @@ def test_qualified_component_intersection_volumes_enable_local_activation():
     ]
     assert artifact["activation_readiness"][
         "post_transport_mesh_metadata_ready"
+    ]
+
+
+def test_selected_intersection_volumes_qualify_only_the_selected_local_mesh():
+    arguments = inputs(nonoverlap_qualified=True)
+    other = "machine-sector-coil-0002"
+    other_mesh = {
+        **arguments["local_mesh_manifest"]["meshes"][MAGNET_ID],
+        "magnet_id": other,
+    }
+    arguments["local_mesh_manifest"]["meshes"][other] = other_mesh
+    arguments["associations"]["inventory"]["magnet_pairs"].append(
+        {
+            "magnet_id": other,
+            "winding_pack": {
+                "volume_id": 201,
+                "material": "winding_pack",
+                "component_id": f"{other}:winding_pack",
+                "magnet_id": other,
+                "surface_ids": [23, 22],
+                "volume_cm3": 10.0,
+            },
+            "casing": {
+                "volume_id": 202,
+                "material": "magnet_casing",
+                "component_id": f"{other}:casing",
+                "magnet_id": other,
+                "surface_ids": [24, 25],
+                "volume_cm3": 5.0,
+            },
+        }
+    )
+    arguments["openmc_cell_ids_by_dagmc_volume"].update({201: 601, 202: 602})
+    arguments["local_mesh_manifest"]["cell_filter_applied"] = True
+    arguments["mesh_material_intersection_artifact_sha256"] = "7" * 64
+    arguments["mesh_material_intersection_volumes_by_magnet"] = {
+        MAGNET_ID: {
+            "component_role": "winding_pack",
+            "dagmc_volume_id": 101,
+            "openmc_cell_id": 501,
+            "material_tag": "winding_pack",
+            "openmc_material_id": 41,
+            "intersection_volume_cm3": [8.0, 2.0],
+            "standard_deviation_cm3": [0.0, 0.1],
+            "bin_status": ["QUALIFIED", "QUALIFIED"],
+            "status": "QUALIFIED",
+        }
+    }
+
+    artifact = build_activation_ready_metadata(**arguments)
+    meshes = {row["magnet_id"]: row for row in artifact["local_meshes"]}
+    assert meshes[MAGNET_ID]["component_intersection_volumes"] is not None
+    assert meshes[other]["component_intersection_volumes"] is None
+    assert not meshes[other]["activation_readiness"]["post_transport"][
+        "post_transport_depletable"
     ]
 
 
