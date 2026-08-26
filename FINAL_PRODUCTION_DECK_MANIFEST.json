@@ -1,0 +1,68 @@
+{
+  "schema": "parastell.final_production_deck_manifest/v1.0.0",
+  "generated_at": "2026-08-26T13:42:53-04:00",
+  "status": "BLOCKED_GATES_FAILED",
+  "PRODUCTION_DECK_READY": "BLOCKED_GATES_FAILED",
+  "READY_FOR_USER_AUTHORIZED_PRODUCTION_RUN": "BLOCKED_GATES_FAILED",
+  "submission_authorized": false,
+  "submission_performed": false,
+  "immutable_geometry": {
+    "path": "external artifact: combined_reactor_magnets.h5m",
+    "sha256": "7c710fe3dd261ce7f46e5d08b4f9d2924513994ccb6229468933d0b91b2cd7cb",
+    "canonical_fingerprint": "4f3588b5bdbc80977ed69cdb32188e2bd6ea4e2a414a8338801a0824fbf2c709",
+    "selection_status": "REJECTED_NATIVE_OVERLAP_GATE"
+  },
+  "source_mesh": {
+    "candidate_hashes": {
+      "3x9x9": "424f961aaacab01daf80a7dad57303360262abf081dc298201aeff3a0e655b1c",
+      "5x21x17": "5b73aaec5f8c9b1a59ace7df29179b567f1d03ad9994f0ecd5084e8743e94dd4",
+      "7x41x31": "9036908239f4dc2f27038e6188d9deed5867b81b5bee58b0b339e761a16c15d2",
+      "11x81x61": "dc8c597afabed83b83b648dac6fa13aa1a53428db44715009f064c8b27fca2e2"
+    },
+    "selected": null,
+    "status": "SOURCE_MESH_CONVERGENCE_NOT_REACHED"
+  },
+  "coupling_surfaces": {
+    "winding_pack": "PASS_ALL_18_CLOSED",
+    "outer_casing_external": "FAIL_16_OF_18_OPEN",
+    "consumer_choice_policy": "exactly one of outer_casing_external or winding_pack",
+    "selected_for_production": null
+  },
+  "transport_configuration": {
+    "materials_and_nuclear_data_manifest": null,
+    "all_magnet_tally_definitions": "PROMPT_1B_DEFINITIONS_AUDITED_BUT_NOT_PRODUCTION_QUALIFIED",
+    "surface_bank_capacity": null,
+    "batches": null,
+    "particles_per_batch": null,
+    "seeds": null,
+    "mpi_openmp_layout": null,
+    "restart_checkpoint_plan": null,
+    "storage_plan": null,
+    "weight_windows_enabled": false
+  },
+  "history_selection": {
+    "selected_histories": null,
+    "status": "BLOCKED_INSUFFICIENT_FIELD_AND_SCALING_EVIDENCE",
+    "automatic_2_064B_selection_used": false
+  },
+  "gate_statuses": {
+    "geometry_full_assembly": "FAIL_NATIVE_OVERLAPS_AND_GEOMETRY_DEBUG_NOT_COMPLETED",
+    "winding_pack_envelopes": "PASS",
+    "outer_casing_envelopes": "FAIL_16_OF_18_OPEN",
+    "boundary_localization": "BLOCKED_OUTER_INTERFACE_DECLARATION_MISMATCH",
+    "surface_bank_completeness": "PASS_REPRESENTATIVE_BANKS_COMPLETE",
+    "short_run_field_analysis": "PASS_WITH_EXPLICIT_INSUFFICIENT_STATISTICS",
+    "source_mesh_convergence": "SOURCE_MESH_CONVERGENCE_NOT_REACHED",
+    "all_magnet_coarse_field": "INSUFFICIENT_STATISTICS",
+    "selected_magnet_local_field": "INSUFFICIENT_STATISTICS",
+    "parallel_scaling": "NOT_RUN_FAILED_PREREQUISITE_GATES"
+  },
+  "required_next_actions": [
+    "Repair and requalify the seven unintended volume overlaps.",
+    "Produce genuinely closed external-only casing envelopes for all 18 magnets without adding winding-pack-only faces.",
+    "Repeat the source-mesh response ladder with a refined candidate or revised predeclared protocol.",
+    "Obtain qualified all-magnet and representative local statistics.",
+    "Validate an MPI-enabled Alliance build and run the fixed-history scaling ladder.",
+    "Rebuild the deck and obtain separate explicit user authorization before production submission."
+  ]
+}

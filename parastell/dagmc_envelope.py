@@ -295,6 +295,9 @@ class FacetedSurface:
             "surface_id": np.full(count, int(self.surface_id), dtype=int),
             "surface_role": np.full(count, self.role, dtype=object),
             "facet_centroid_global_cm": centroids[order],
+            "facet_vertices_global_cm": np.asarray(
+                self.triangles_cm, dtype=float
+            )[order],
             "outward_normal_global": np.asarray(
                 self.triangle_normals_outward, dtype=float
             )[order],
@@ -350,8 +353,20 @@ class FacetedSurface:
         )
         return metadata
 
-    def locate(self, position_global_cm: Sequence[float]) -> dict[str, Any]:
-        """Return a stable facet ID, barycentric point, and plane residual."""
+    def locate(
+        self,
+        position_global_cm: Sequence[float],
+        *,
+        barycentric_tolerance: float = 1.0e-7,
+        residual_tolerance_cm: float | None = None,
+        require_containing: bool = False,
+    ) -> dict[str, Any]:
+        """Return a stable facet ID, barycentric point, and plane residual.
+
+        ``require_containing`` is the fail-closed qualification mode.  The
+        historical nearest-facet fallback remains available for diagnostic
+        reprocessing, but never masquerades as an exact localization.
+        """
         point = np.asarray(position_global_cm, dtype=float)
         if point.shape != (3,) or not np.all(np.isfinite(point)):
             raise ValueError("facet query position must be a finite vector")
@@ -377,7 +392,18 @@ class FacetedSurface:
             )
         bary_u = (vv * pu - uv * pv) / denominator
         bary_v = (uu * pv - uv * pu) / denominator
-        tolerance = 1.0e-7
+        tolerance = float(barycentric_tolerance)
+        if not np.isfinite(tolerance) or tolerance < 0.0:
+            raise ValueError(
+                "barycentric_tolerance must be finite and nonnegative"
+            )
+        if residual_tolerance_cm is not None and (
+            not np.isfinite(residual_tolerance_cm)
+            or float(residual_tolerance_cm) < 0.0
+        ):
+            raise ValueError(
+                "residual_tolerance_cm must be finite and nonnegative"
+            )
         contains = (
             (bary_u >= -tolerance)
             & (bary_v >= -tolerance)
@@ -390,12 +416,24 @@ class FacetedSurface:
             )
             mapping_status = "CONTAINING_FACET"
         else:
+            if require_containing:
+                raise ValueError(
+                    f"point is not contained by any facet on surface {self.surface_id}"
+                )
             # Surface-source coordinates may differ from faceted coordinates by
             # transport tolerances.  Fall back deterministically and preserve
             # the residual rather than pretending the point was exact.
             centroids = self.triangles_cm.mean(axis=1)
             index = int(np.argmin(np.sum((centroids - point) ** 2, axis=1)))
             mapping_status = "NEAREST_FACET"
+        residual = abs(float(plane_distance[index]))
+        if residual_tolerance_cm is not None and residual > float(
+            residual_tolerance_cm
+        ):
+            raise ValueError(
+                f"facet plane residual {residual} cm exceeds "
+                f"{float(residual_tolerance_cm)} cm"
+            )
         barycentric = np.asarray(
             [1.0 - bary_u[index] - bary_v[index], bary_u[index], bary_v[index]]
         )
@@ -408,7 +446,7 @@ class FacetedSurface:
             "facet_id": facet_id,
             "facet_index": index,
             "barycentric_coordinates": barycentric,
-            "distance_to_facet_residual_cm": abs(float(plane_distance[index])),
+            "distance_to_facet_residual_cm": residual,
             "outward_normal_global": self.triangle_normals_outward[
                 index
             ].copy(),
@@ -445,7 +483,13 @@ class DagmcEnvelope:
         )
 
     def facet_mappings(
-        self, surface_ids, positions_global_cm
+        self,
+        surface_ids,
+        positions_global_cm,
+        *,
+        barycentric_tolerance: float = 1.0e-7,
+        residual_tolerance_cm: float | None = None,
+        require_containing: bool = False,
     ) -> dict[str, np.ndarray]:
         """Map crossing points back to canonical DAGMC facets."""
         ids = np.asarray(surface_ids, dtype=int)
@@ -453,7 +497,12 @@ class DagmcEnvelope:
         if positions.shape != (len(ids), 3):
             raise ValueError("surface IDs and positions must align")
         rows = [
-            self.surface(surface_id).locate(point)
+            self.surface(surface_id).locate(
+                point,
+                barycentric_tolerance=barycentric_tolerance,
+                residual_tolerance_cm=residual_tolerance_cm,
+                require_containing=require_containing,
+            )
             for surface_id, point in zip(ids, positions)
         ]
         if not rows:
@@ -502,6 +551,7 @@ class DagmcEnvelope:
                 "surface_id": np.empty(0, dtype=int),
                 "surface_role": np.empty(0, dtype=object),
                 "facet_centroid_global_cm": np.empty((0, 3), dtype=float),
+                "facet_vertices_global_cm": np.empty((0, 3, 3), dtype=float),
                 "outward_normal_global": np.empty((0, 3), dtype=float),
                 "facet_area_cm2": np.empty(0, dtype=float),
                 "centreline_linkage_available": self.centreline_frame
@@ -1293,6 +1343,43 @@ def _pair_magnet_records(
     winding_packs: Sequence[MagnetVolumeRecord],
     casings: Sequence[MagnetVolumeRecord],
 ) -> tuple[MagnetPairRecord, ...]:
+    all_records = tuple(winding_packs) + tuple(casings)
+    explicit = [bool(item.magnet_id and item.coil_id) for item in all_records]
+    if any(explicit) and not all(explicit):
+        raise ValueError(
+            "partial magnet identities are unsafe; every casing and winding "
+            "pack must declare magnet_id and coil_id"
+        )
+    if all_records and all(explicit):
+
+        def keyed(records, role):
+            result = {}
+            for record in records:
+                key = (record.magnet_id, record.coil_id)
+                if key in result:
+                    raise ValueError(f"duplicate {role} identity {key}")
+                result[key] = record
+            return result
+
+        winding_by_id = keyed(winding_packs, "winding_pack")
+        casing_by_id = keyed(casings, "magnet_casing")
+        if casing_by_id and set(casing_by_id) != set(winding_by_id):
+            missing_casing = sorted(set(winding_by_id) - set(casing_by_id))
+            missing_winding = sorted(set(casing_by_id) - set(winding_by_id))
+            raise ValueError(
+                "explicit casing/winding identities disagree; "
+                f"missing casing={missing_casing}, missing winding={missing_winding}"
+            )
+        return tuple(
+            MagnetPairRecord(
+                magnet_id,
+                coil_id,
+                winding_by_id[(magnet_id, coil_id)],
+                casing_by_id.get((magnet_id, coil_id)),
+                "explicit_association_identity",
+            )
+            for magnet_id, coil_id in sorted(winding_by_id)
+        )
     winding = tuple(sorted(winding_packs, key=_record_spatial_key))
     casing = tuple(sorted(casings, key=_record_spatial_key))
     if casing and len(casing) != len(winding):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
@@ -186,3 +187,90 @@ def validate_qualification_bank(
         require_complete=True,
         capacity_plan=capacity_plan,
     )
+
+
+def validate_surface_bank_run_evidence(
+    evidence: Mapping[str, Any],
+    *,
+    require_complete: bool = True,
+) -> dict[str, Any]:
+    """Validate immutable run identity and aggregate writer accounting.
+
+    The OpenMC writer's terminal record counts remain authoritative.  Merely
+    observing a file smaller than its configured capacity is not sufficient
+    evidence of completeness.
+    """
+    required = {
+        "run_id",
+        "seed",
+        "source_histories",
+        "requested_surface_ids",
+        "max_particles_per_file",
+        "max_source_files",
+        "mpi_ranks",
+        "stored_record_count",
+        "selected_record_count",
+        "source_file_count",
+        "source_files",
+        "sampling_applied",
+        "terminal_writer_evidence",
+    }
+    missing = required - set(evidence)
+    if missing:
+        raise ValueError(
+            f"surface-bank run evidence is missing {sorted(missing)}"
+        )
+    run_id = str(evidence["run_id"]).strip()
+    if not run_id:
+        raise ValueError("run_id cannot be empty")
+    for name in ("seed", "source_histories", "mpi_ranks"):
+        value = evidence[name]
+        if isinstance(value, bool) or int(value) != value or int(value) <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+    requested = [int(value) for value in evidence["requested_surface_ids"]]
+    if not requested or len(requested) != len(set(requested)):
+        raise ValueError("requested_surface_ids must be nonempty and unique")
+    files = list(evidence["source_files"])
+    if len(files) != int(evidence["source_file_count"]):
+        raise ValueError("source file list disagrees with source_file_count")
+    paths = [str(Path(row["path"])) for row in files]
+    hashes = [str(row["sha256"]).lower() for row in files]
+    if len(paths) != len(set(paths)) or len(hashes) != len(set(hashes)):
+        raise ValueError("duplicate source-bank path or content hash detected")
+    if any(
+        len(value) != 64 or set(value) - set("0123456789abcdef")
+        for value in hashes
+    ):
+        raise ValueError("source-bank SHA-256 values are malformed")
+    terminal = evidence["terminal_writer_evidence"]
+    if not isinstance(terminal, Mapping) or not bool(
+        terminal.get("available")
+    ):
+        raise ValueError("terminal writer evidence is required")
+    terminal_count = terminal.get("aggregate_records_written")
+    if terminal_count is None or int(terminal_count) != int(
+        evidence["stored_record_count"]
+    ):
+        raise ValueError("terminal writer count disagrees with stored records")
+    accounting = validate_crossing_bank_accounting(
+        evidence, require_complete=require_complete
+    )
+    stored_by_rank = terminal.get("records_written_by_rank")
+    if stored_by_rank is not None:
+        if len(stored_by_rank) != int(evidence["mpi_ranks"]):
+            raise ValueError("rank-local writer accounting is incomplete")
+        if sum(int(value) for value in stored_by_rank) != int(
+            evidence["stored_record_count"]
+        ):
+            raise ValueError(
+                "rank-local writer counts do not sum to aggregate"
+            )
+    return {
+        **accounting,
+        "run_id": run_id,
+        "seed": int(evidence["seed"]),
+        "source_histories": int(evidence["source_histories"]),
+        "requested_surface_ids": sorted(requested),
+        "source_file_sha256": hashes,
+        "terminal_writer_evidence_valid": True,
+    }

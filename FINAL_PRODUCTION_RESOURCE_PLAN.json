@@ -1,0 +1,38 @@
+{
+  "schema": "parastell.final_production_resource_plan/v1.0.0",
+  "generated_at": "2026-08-26T13:42:53-04:00",
+  "status": "BLOCKED_NO_PRODUCTION_RESOURCE_REQUEST",
+  "history_count": null,
+  "selected_source_mesh": null,
+  "mpi_openmp_layout": null,
+  "requested_nodes": null,
+  "requested_cores": null,
+  "requested_memory": null,
+  "requested_walltime": null,
+  "surface_bank_storage": null,
+  "checkpoint_storage": null,
+  "scheduler_submission": false,
+  "policy_envelope": {
+    "single_node_64_core_allowed": false,
+    "multi_node_64_core_policy_example": "2 nodes x 32 physical cores",
+    "multi_node_64_core_scientifically_ready": false,
+    "maximum_observed_cpu_node_physical_cores": 192,
+    "maximum_allowed_cores_on_that_node": 48
+  },
+  "known_file_sizes_bytes": {
+    "geometry_h5m": 14343172,
+    "medium_statepoint": 1997899832,
+    "source_mesh_11x81x61": 15946816,
+    "representative_outer_handoff": 6906189,
+    "representative_winding_handoff": 5723882
+  },
+  "reference_only": {
+    "bateman_8_thread_500k_wall_seconds": 515.0,
+    "bateman_8_thread_histories_per_second": 970.8737864077669,
+    "bateman_constant_rate_250M_hours": 71.52777777777777,
+    "ideal_64_core_hours_not_a_prediction": 8.940972222222221,
+    "alliance_measured_scaling_fit": null,
+    "peak_memory": null
+  },
+  "reason": "A resource request would be scientifically premature because geometry, strict external envelopes, source convergence, field statistics, and Alliance scaling gates have not all passed."
+}

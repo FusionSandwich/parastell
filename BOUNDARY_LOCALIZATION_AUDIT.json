@@ -1,0 +1,221 @@
+{
+  "interfaces": {
+    "outer_casing_external": {
+      "bank_completeness": {
+        "cap_reached": false,
+        "classification": "COMPLETE_CROSSING_BANK",
+        "configured_capacity": 800000,
+        "max_particles_per_file": 100000,
+        "max_source_files": 8,
+        "mpi_ranks": 1,
+        "sampling_applied": false,
+        "selected_record_count": 52,
+        "source_file_count": 1,
+        "stored_record_count": 1571
+      },
+      "canonical_weight_normalization": "raw OpenMC record weight divided only by exact source histories",
+      "canonical_weight_policy_pass": true,
+      "coupling_interface": "outer_casing_external",
+      "declared_envelope_matches_required_interface": false,
+      "declared_envelope_surface_ids": [
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        97,
+        102,
+        103
+      ],
+      "expected_envelope_surface_ids": [
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        97
+      ],
+      "extra_declared_surface_ids": [
+        102,
+        103
+      ],
+      "handoff_path": "/artifacts/medium_500k_outer_coil0005.h5",
+      "handoff_sha256": "f134833cb1e0bed8daaabc6298c7b5ee5670a0a5811908865276b0c05544ee4e",
+      "localization": {
+        "coupling_interface": "outer_casing_external",
+        "failure_counts": {
+          "barycentric": 0,
+          "foreign_surface": 0,
+          "frame": 0,
+          "missing_facet": 0,
+          "mu": 0,
+          "near_grazing": 0,
+          "normal": 0,
+          "reconstruction": 0,
+          "sense": 0,
+          "unit_vector": 0
+        },
+        "frame_status": "PASS_RIGHT_HANDED_CENTRELINE_FRAME",
+        "maximum_normal_error": 1.9229626863835638e-16,
+        "maximum_reconstruction_error_cm": 3.024609420349515e-13,
+        "pass": true,
+        "record_count": 52,
+        "sample_failures": [],
+        "status": "PASS",
+        "tolerances": {
+          "barycentric": 1e-07,
+          "crossing_sense_abs_mu": 1e-12,
+          "near_grazing_abs_mu": 0.1,
+          "normal": 1e-08,
+          "reconstruction_cm": 1e-06
+        }
+      },
+      "manifest_normalization": {
+        "area_basis": "surface integrated; patch area stored separately",
+        "basis": "per source history",
+        "energy_bin_width": "not divided; group-integrated partial current",
+        "particles_per_source_history": 1.0,
+        "physical_scaling_contract": "multiply per-source quantities by physical_source_rate_per_s",
+        "physical_source_rate_per_s": 2.693734274881251e+20,
+        "quantity": "partial crossing current",
+        "solid_angle_measure": "not divided; angular-bin solid angle in metadata",
+        "time_basis": "none for per-source values"
+      },
+      "missing_declared_surface_ids": [],
+      "pass": false,
+      "same_run_bank_tally_integrity_pass": true,
+      "source_histories": 500000,
+      "status": "FAIL"
+    },
+    "winding_pack": {
+      "bank_completeness": {
+        "cap_reached": false,
+        "classification": "COMPLETE_CROSSING_BANK",
+        "configured_capacity": 800000,
+        "max_particles_per_file": 100000,
+        "max_source_files": 8,
+        "mpi_ranks": 1,
+        "sampling_applied": false,
+        "selected_record_count": 53,
+        "source_file_count": 1,
+        "stored_record_count": 1571
+      },
+      "canonical_weight_normalization": "raw OpenMC record weight divided only by exact source histories",
+      "canonical_weight_policy_pass": true,
+      "coupling_interface": "winding_pack",
+      "declared_envelope_matches_required_interface": true,
+      "declared_envelope_surface_ids": [
+        93,
+        94,
+        95,
+        96,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103
+      ],
+      "expected_envelope_surface_ids": [
+        93,
+        94,
+        95,
+        96,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103
+      ],
+      "extra_declared_surface_ids": [],
+      "handoff_path": "/artifacts/medium_500k_winding_coil0005.h5",
+      "handoff_sha256": "ce24be8e622f473f01429dc8deeb76170cd844a72cf7ee165249bdb78a012e52",
+      "localization": {
+        "coupling_interface": "winding_pack",
+        "failure_counts": {
+          "barycentric": 0,
+          "foreign_surface": 0,
+          "frame": 0,
+          "missing_facet": 0,
+          "mu": 0,
+          "near_grazing": 0,
+          "normal": 0,
+          "reconstruction": 0,
+          "sense": 0,
+          "unit_vector": 0
+        },
+        "frame_status": "PASS_RIGHT_HANDED_CENTRELINE_FRAME",
+        "maximum_normal_error": 1.9229626863835638e-16,
+        "maximum_reconstruction_error_cm": 2.7565029002503855e-13,
+        "pass": true,
+        "record_count": 53,
+        "sample_failures": [],
+        "status": "PASS",
+        "tolerances": {
+          "barycentric": 1e-07,
+          "crossing_sense_abs_mu": 1e-12,
+          "near_grazing_abs_mu": 0.1,
+          "normal": 1e-08,
+          "reconstruction_cm": 1e-06
+        }
+      },
+      "manifest_normalization": {
+        "area_basis": "surface integrated; patch area stored separately",
+        "basis": "per source history",
+        "energy_bin_width": "not divided; group-integrated partial current",
+        "particles_per_source_history": 1.0,
+        "physical_scaling_contract": "multiply per-source quantities by physical_source_rate_per_s",
+        "physical_source_rate_per_s": 2.693734274881251e+20,
+        "quantity": "partial crossing current",
+        "solid_angle_measure": "not divided; angular-bin solid angle in metadata",
+        "time_basis": "none for per-source values"
+      },
+      "missing_declared_surface_ids": [],
+      "pass": true,
+      "same_run_bank_tally_integrity_pass": true,
+      "source_histories": 500000,
+      "status": "PASS"
+    }
+  },
+  "photon_calibration_bank_audit": {
+    "classification": "COMPLETE_CROSSING_BANK",
+    "replica_count": 3,
+    "histories_per_replica": 100000,
+    "exports_per_replica": 36,
+    "all_exports_uncapped": true,
+    "sampling_applied": false,
+    "replicas": [
+      {
+        "replica": 1,
+        "seed": 190734863,
+        "raw_bank_sha256": "a67f06968748a6154baed436457a18c185aa8e6867d2471d6e688373d68578e0",
+        "raw_bank_size_bytes": 24224
+      },
+      {
+        "replica": 2,
+        "seed": 514229,
+        "raw_bank_sha256": "b7398b416d40c4338a6a98d99cca1093115d2b07d96bdc8a0319faf0a5157988",
+        "raw_bank_size_bytes": 29264
+      },
+      {
+        "replica": 3,
+        "seed": 832040,
+        "raw_bank_sha256": "0251e34961e7efb2f81070fad6cb929f964efad1f16b70dc1f470a19bb37aeba",
+        "raw_bank_size_bytes": 27080
+      }
+    ],
+    "evidence_source": "authoritative Prompt-1B photon-calibration export receipts"
+  },
+  "pass": false,
+  "schema": "parastell.boundary_localization_audit/v1",
+  "status": "FAIL"
+}

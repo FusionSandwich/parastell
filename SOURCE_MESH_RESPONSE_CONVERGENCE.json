@@ -1,0 +1,1324 @@
+{
+  "candidates": [
+    {
+      "dt_energy_moments": {
+        "mean_eV": 14076417.482205406,
+        "mean_squared_eV2": 198186062116577.38
+      },
+      "integrated_source_rate_per_s": 2.414553994787296e+20,
+      "missing_observations": [],
+      "response_report": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/3x9x9/RESPONSE_REPORT.json",
+        "schema": "parastell.source_mesh_response_report/v1.0.0",
+        "sha256": "11348183173dd74de0ade365de83863e86e2f59d69b17a93615efc8c0818fbee",
+        "size_bytes": 98420
+      },
+      "shape": [
+        3,
+        9,
+        9
+      ],
+      "source_manifest": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/3x9x9/SOURCE_MANIFEST.json",
+        "schema": "parastell.magnet_source_stage/v1.0.0",
+        "sha256": "ff16d9fb446fc6ef87c5d0ceff34cfe966e806e48cb67d57a9b9f6093ec4f578",
+        "size_bytes": 1975
+      },
+      "source_mesh_sha256": "424f961aaacab01daf80a7dad57303360262abf081dc298201aeff3a0e655b1c",
+      "spatial_moments": {
+        "mean_x2_cm2": 679335.0751055656,
+        "mean_x_cm": 718.8611713345847,
+        "mean_y2_cm2": 638854.3402279546,
+        "mean_y_cm": 689.7894987265056,
+        "mean_z2_cm2": 16534.296260748575,
+        "mean_z_cm": 0.6725959838840948
+      },
+      "whole_magnet_responses": {
+        "computational_cost": {
+          "units": "s",
+          "value": 447.0
+        },
+        "whole_magnet.heating": {
+          "units": "W",
+          "value": 460525.1740948668
+        },
+        "whole_magnet.hotspot_location": {
+          "bin_id": "example-stellarator-sector-00-90deg-coil-0013-bin-00001329",
+          "coordinate_frame": "global_cartesian_cm",
+          "magnet_id": "example-stellarator-sector-00-90deg-coil-0013",
+          "units": "cm",
+          "value": [
+            588.126476272108,
+            1266.937691084119,
+            3.045793251811375
+          ]
+        },
+        "whole_magnet.incoming_neutron_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 1.4502934835976668e+18
+        },
+        "whole_magnet.incoming_photon_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 2.4526368311579683e+17
+        },
+        "whole_magnet.neutron_flux": {
+          "units": "1/cm2/s",
+          "value": 660991942246.0684
+        },
+        "whole_magnet.photon_flux": {
+          "units": "1/cm2/s",
+          "value": 133745467507.88835
+        }
+      }
+    },
+    {
+      "dt_energy_moments": {
+        "mean_eV": 14080103.600649677,
+        "mean_squared_eV2": 198297850971997.0
+      },
+      "integrated_source_rate_per_s": 2.611825456123305e+20,
+      "missing_observations": [],
+      "response_report": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/5x21x17/RESPONSE_REPORT.json",
+        "schema": "parastell.source_mesh_response_report/v1.0.0",
+        "sha256": "26f82e3b1607c6354a504f3fe6af752f3d01a8ae229d72b5a815675ec08537b7",
+        "size_bytes": 92142
+      },
+      "shape": [
+        5,
+        21,
+        17
+      ],
+      "source_manifest": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/5x21x17/SOURCE_MANIFEST.json",
+        "schema": "parastell.magnet_source_stage/v1.0.0",
+        "sha256": "6e6f229dc9e09050cb5edc7988c942fb3152520c1d9a9c7ad803a734dcc5e88f",
+        "size_bytes": 1982
+      },
+      "source_mesh_sha256": "5b73aaec5f8c9b1a59ace7df29179b567f1d03ad9994f0ecd5084e8743e94dd4",
+      "spatial_moments": {
+        "mean_x2_cm2": 666104.4412269662,
+        "mean_x_cm": 708.9421549766881,
+        "mean_y2_cm2": 663348.3499952221,
+        "mean_y_cm": 706.9639103156381,
+        "mean_z2_cm2": 18553.090723465895,
+        "mean_z_cm": 0.43795661433712835
+      },
+      "whole_magnet_responses": {
+        "computational_cost": {
+          "units": "s",
+          "value": 393.0
+        },
+        "whole_magnet.heating": {
+          "units": "W",
+          "value": 55136.997005915604
+        },
+        "whole_magnet.hotspot_location": {
+          "bin_id": "example-stellarator-sector-00-90deg-coil-0011-bin-00001045",
+          "coordinate_frame": "global_cartesian_cm",
+          "magnet_id": "example-stellarator-sector-00-90deg-coil-0011",
+          "units": "cm",
+          "value": [
+            411.6345153019012,
+            1076.7559039767243,
+            -86.06775318108558
+          ]
+        },
+        "whole_magnet.incoming_neutron_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 2.7072944528611312e+17
+        },
+        "whole_magnet.incoming_photon_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 3.022141330914856e+16
+        },
+        "whole_magnet.neutron_flux": {
+          "units": "1/cm2/s",
+          "value": 103480483522.68938
+        },
+        "whole_magnet.photon_flux": {
+          "units": "1/cm2/s",
+          "value": 14564348090.574593
+        }
+      }
+    },
+    {
+      "dt_energy_moments": {
+        "mean_eV": 14080879.896513395,
+        "mean_squared_eV2": 198321551948019.78
+      },
+      "integrated_source_rate_per_s": 2.6580908175390756e+20,
+      "missing_observations": [],
+      "response_report": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/7x41x31/RESPONSE_REPORT.json",
+        "schema": "parastell.source_mesh_response_report/v1.0.0",
+        "sha256": "b6e661fdcf6afb10bd91f31de891fa8793ace61f55d24b9248de096c41184bd1",
+        "size_bytes": 93802
+      },
+      "shape": [
+        7,
+        41,
+        31
+      ],
+      "source_manifest": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/7x41x31/SOURCE_MANIFEST.json",
+        "schema": "parastell.magnet_source_stage/v1.0.0",
+        "sha256": "2bc34881337a45f5e863c8f79fa9bff82e7c41d8de8921b6e970faafaf2715f6",
+        "size_bytes": 2027
+      },
+      "source_mesh_sha256": "9036908239f4dc2f27038e6188d9deed5867b81b5bee58b0b339e761a16c15d2",
+      "spatial_moments": {
+        "mean_x2_cm2": 665485.568400986,
+        "mean_x_cm": 708.9077057230434,
+        "mean_y2_cm2": 664993.6461880116,
+        "mean_y_cm": 708.5323226829375,
+        "mean_z2_cm2": 18995.068860764804,
+        "mean_z_cm": 0.049181556927164645
+      },
+      "whole_magnet_responses": {
+        "computational_cost": {
+          "units": "s",
+          "value": 433.0
+        },
+        "whole_magnet.heating": {
+          "units": "W",
+          "value": 66718.68173942302
+        },
+        "whole_magnet.hotspot_location": {
+          "bin_id": "example-stellarator-sector-00-90deg-coil-0005-bin-00001006",
+          "coordinate_frame": "global_cartesian_cm",
+          "magnet_id": "example-stellarator-sector-00-90deg-coil-0005",
+          "units": "cm",
+          "value": [
+            1130.5896597108976,
+            332.04110187652213,
+            42.62764454391018
+          ]
+        },
+        "whole_magnet.incoming_neutron_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 2.5139872324733414e+17
+        },
+        "whole_magnet.incoming_photon_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 2.764414450240614e+16
+        },
+        "whole_magnet.neutron_flux": {
+          "units": "1/cm2/s",
+          "value": 105354994719.07121
+        },
+        "whole_magnet.photon_flux": {
+          "units": "1/cm2/s",
+          "value": 19852182300.050636
+        }
+      }
+    },
+    {
+      "dt_energy_moments": {
+        "mean_eV": 14081329.311159043,
+        "mean_squared_eV2": 198335305455923.94
+      },
+      "integrated_source_rate_per_s": 2.693734274881251e+20,
+      "missing_observations": [],
+      "response_report": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/11x81x61/RESPONSE_REPORT.json",
+        "schema": "parastell.source_mesh_response_report/v1.0.0",
+        "sha256": "3155c51ae2d12d84b40cce403657e59b6310de69d922601c1e15d16e042d773e",
+        "size_bytes": 95642
+      },
+      "shape": [
+        11,
+        81,
+        61
+      ],
+      "source_manifest": {
+        "path": "/home/apollon/josma/runs/parastell-medium-qualification/campaign/magnet-medium-openmc-qualification/source_mesh_convergence_eins_e63d8f9_500k/11x81x61/SOURCE_MANIFEST.json",
+        "schema": "parastell.magnet_source_stage/v1.0.0",
+        "sha256": "75e6b3b393292bc93ff303bcfcde509842940a9bcbcd00eb4d1d921cfb99edc0",
+        "size_bytes": 2023
+      },
+      "source_mesh_sha256": "dc8c597afabed83b83b648dac6fa13aa1a53428db44715009f064c8b27fca2e2",
+      "spatial_moments": {
+        "mean_x2_cm2": 665662.5220713805,
+        "mean_x_cm": 709.0214925344559,
+        "mean_y2_cm2": 665600.2643083287,
+        "mean_y_cm": 708.9723981289549,
+        "mean_z2_cm2": 19068.2675353484,
+        "mean_z_cm": 0.007456471090704826
+      },
+      "whole_magnet_responses": {
+        "computational_cost": {
+          "units": "s",
+          "value": 465.0
+        },
+        "whole_magnet.heating": {
+          "units": "W",
+          "value": 85194.00209671096
+        },
+        "whole_magnet.hotspot_location": {
+          "bin_id": "example-stellarator-sector-00-90deg-coil-0011-bin-00001046",
+          "coordinate_frame": "global_cartesian_cm",
+          "magnet_id": "example-stellarator-sector-00-90deg-coil-0011",
+          "units": "cm",
+          "value": [
+            324.3356996820373,
+            1054.0265009431719,
+            -60.53766419439434
+          ]
+        },
+        "whole_magnet.incoming_neutron_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 2.7282126104959498e+17
+        },
+        "whole_magnet.incoming_photon_current": {
+          "crossing_selection": "inward_only",
+          "direction": "incoming",
+          "estimator": "direction_resolved_surface_current",
+          "units": "particles/s",
+          "value": 3.1247317588622944e+16
+        },
+        "whole_magnet.neutron_flux": {
+          "units": "1/cm2/s",
+          "value": 116148056483.91414
+        },
+        "whole_magnet.photon_flux": {
+          "units": "1/cm2/s",
+          "value": 22042224398.314293
+        }
+      }
+    }
+  ],
+  "claim_scope": "Convergence applies only to the explicit finest-pair thresholds and the recorded source and configured whole-magnet metrics. It does not establish transport statistical qualification.",
+  "comparisons": [
+    {
+      "coarse_shape": [
+        3,
+        9,
+        9
+      ],
+      "fine_shape": [
+        5,
+        21,
+        17
+      ],
+      "metrics": {
+        "dt_energy.mean_eV": {
+          "absolute_change": 3686.1184442713857,
+          "coarse_value": 14076417.482205406,
+          "fine_value": 14080103.600649677,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0002617962586654052,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.0002617962586654052,
+              "passes": true,
+              "threshold": 0.001
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "dt_energy.mean_squared_eV2": {
+          "absolute_change": 111788855419.625,
+          "coarse_value": 198186062116577.38,
+          "fine_value": 198297850971997.0,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0005637421428001834,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.0005637421428001834,
+              "passes": true,
+              "threshold": 0.002
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "integrated_source_rate_per_s": {
+          "absolute_change": 1.9727146133600895e+19,
+          "coarse_value": 2.414553994787296e+20,
+          "fine_value": 2.611825456123305e+20,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.07553010897934051,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.07553010897934051,
+              "passes": false,
+              "threshold": 0.02
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_x2_cm2": {
+          "absolute_change": 13230.633878599387,
+          "coarse_value": 679335.0751055656,
+          "fine_value": 666104.4412269662,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.019475858620347855,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.019475858620347855,
+              "passes": true,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_x_cm": {
+          "absolute_change": 9.919016357896567,
+          "coarse_value": 718.8611713345847,
+          "fine_value": 708.9421549766881,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.013798236368062072,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 9.919016357896567,
+              "passes": false,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_y2_cm2": {
+          "absolute_change": 24494.009767267504,
+          "coarse_value": 638854.3402279546,
+          "fine_value": 663348.3499952221,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.036924806954662555,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.036924806954662555,
+              "passes": false,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_y_cm": {
+          "absolute_change": 17.174411589132546,
+          "coarse_value": 689.7894987265056,
+          "fine_value": 706.9639103156381,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.024293194233160627,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 17.174411589132546,
+              "passes": false,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_z2_cm2": {
+          "absolute_change": 2018.7944627173201,
+          "coarse_value": 16534.296260748575,
+          "fine_value": 18553.090723465895,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.10881176041272492,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.10881176041272492,
+              "passes": false,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_z_cm": {
+          "absolute_change": 0.23463936954696646,
+          "coarse_value": 0.6725959838840948,
+          "fine_value": 0.43795661433712835,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.34885633451448134,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 0.23463936954696646,
+              "passes": true,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.computational_cost": {
+          "absolute_change": 54.0,
+          "coarse_value": 447.0,
+          "fine_value": 393.0,
+          "passes": true,
+          "qualification_role": "selection_only",
+          "relative_change": 0.12080536912751678,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.12080536912751678,
+              "passes": true,
+              "threshold": 1.0
+            }
+          ],
+          "threshold_logic": "selection_only_not_a_convergence_bound"
+        },
+        "whole_magnet_response.whole_magnet.heating": {
+          "absolute_change": 405388.17708895117,
+          "coarse_value": 460525.1740948668,
+          "fine_value": 55136.997005915604,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.8802736525440028,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.8802736525440028,
+              "passes": false,
+              "threshold": 0.1
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.hotspot_location": {
+          "absolute_change": 274.3351027344468,
+          "coarse_bin_id": "example-stellarator-sector-00-90deg-coil-0013-bin-00001329",
+          "coarse_magnet_id": "example-stellarator-sector-00-90deg-coil-0013",
+          "coarse_value": [
+            588.126476272108,
+            1266.937691084119,
+            3.045793251811375
+          ],
+          "fine_bin_id": "example-stellarator-sector-00-90deg-coil-0011-bin-00001045",
+          "fine_magnet_id": "example-stellarator-sector-00-90deg-coil-0011",
+          "fine_value": [
+            411.6345153019012,
+            1076.7559039767243,
+            -86.06775318108558
+          ],
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.19640342554801363,
+          "same_magnet": false,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 274.3351027344468,
+              "passes": false,
+              "threshold": 20.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.incoming_neutron_current": {
+          "absolute_change": 1.1795640383115538e+18,
+          "coarse_value": 1.4502934835976668e+18,
+          "fine_value": 2.7072944528611312e+17,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.813327820645978,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.813327820645978,
+              "passes": false,
+              "threshold": 0.15
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.incoming_photon_current": {
+          "absolute_change": 2.1504226980664826e+17,
+          "coarse_value": 2.4526368311579683e+17,
+          "fine_value": 3.022141330914856e+16,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.8767799091768508,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.8767799091768508,
+              "passes": false,
+              "threshold": 0.3
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.neutron_flux": {
+          "absolute_change": 557511458723.379,
+          "coarse_value": 660991942246.0684,
+          "fine_value": 103480483522.68938,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.8434466792877083,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.8434466792877083,
+              "passes": false,
+              "threshold": 0.05
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.photon_flux": {
+          "absolute_change": 119181119417.31375,
+          "coarse_value": 133745467507.88835,
+          "fine_value": 14564348090.574593,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.8911039875821168,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.8911039875821168,
+              "passes": false,
+              "threshold": 0.1
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        }
+      }
+    },
+    {
+      "coarse_shape": [
+        5,
+        21,
+        17
+      ],
+      "fine_shape": [
+        7,
+        41,
+        31
+      ],
+      "metrics": {
+        "dt_energy.mean_eV": {
+          "absolute_change": 776.2958637177944,
+          "coarse_value": 14080103.600649677,
+          "fine_value": 14080879.896513395,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 5.513120411672677e-05,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 5.513120411672677e-05,
+              "passes": true,
+              "threshold": 0.001
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "dt_energy.mean_squared_eV2": {
+          "absolute_change": 23700976022.78125,
+          "coarse_value": 198297850971997.0,
+          "fine_value": 198321551948019.78,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.00011950781843918453,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.00011950781843918453,
+              "passes": true,
+              "threshold": 0.002
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "integrated_source_rate_per_s": {
+          "absolute_change": 4.62653614157706e+18,
+          "coarse_value": 2.611825456123305e+20,
+          "fine_value": 2.6580908175390756e+20,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.01740548558781155,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.01740548558781155,
+              "passes": true,
+              "threshold": 0.02
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_x2_cm2": {
+          "absolute_change": 618.8728259801865,
+          "coarse_value": 666104.4412269662,
+          "fine_value": 665485.568400986,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.000929092778364037,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.000929092778364037,
+              "passes": true,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_x_cm": {
+          "absolute_change": 0.03444925364476603,
+          "coarse_value": 708.9421549766881,
+          "fine_value": 708.9077057230434,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 4.8592474580523166e-05,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 0.03444925364476603,
+              "passes": true,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_y2_cm2": {
+          "absolute_change": 1645.2961927895667,
+          "coarse_value": 663348.3499952221,
+          "fine_value": 664993.6461880116,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0024741532527731806,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.0024741532527731806,
+              "passes": true,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_y_cm": {
+          "absolute_change": 1.568412367299402,
+          "coarse_value": 706.9639103156381,
+          "fine_value": 708.5323226829375,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0022136073642490036,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 1.568412367299402,
+              "passes": true,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_z2_cm2": {
+          "absolute_change": 441.97813729890913,
+          "coarse_value": 18553.090723465895,
+          "fine_value": 18995.068860764804,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.023268046067041928,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.023268046067041928,
+              "passes": true,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_z_cm": {
+          "absolute_change": 0.3887750574099637,
+          "coarse_value": 0.43795661433712835,
+          "fine_value": 0.049181556927164645,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.8877022168015349,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 0.3887750574099637,
+              "passes": true,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.computational_cost": {
+          "absolute_change": 40.0,
+          "coarse_value": 393.0,
+          "fine_value": 433.0,
+          "passes": true,
+          "qualification_role": "selection_only",
+          "relative_change": 0.09237875288683603,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.09237875288683603,
+              "passes": true,
+              "threshold": 1.0
+            }
+          ],
+          "threshold_logic": "selection_only_not_a_convergence_bound"
+        },
+        "whole_magnet_response.whole_magnet.heating": {
+          "absolute_change": 11581.684733507413,
+          "coarse_value": 55136.997005915604,
+          "fine_value": 66718.68173942302,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.17358983168673697,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.17358983168673697,
+              "passes": false,
+              "threshold": 0.1
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.hotspot_location": {
+          "absolute_change": 1043.1007341263348,
+          "coarse_bin_id": "example-stellarator-sector-00-90deg-coil-0011-bin-00001045",
+          "coarse_magnet_id": "example-stellarator-sector-00-90deg-coil-0011",
+          "coarse_value": [
+            411.6345153019012,
+            1076.7559039767243,
+            -86.06775318108558
+          ],
+          "fine_bin_id": "example-stellarator-sector-00-90deg-coil-0005-bin-00001006",
+          "fine_magnet_id": "example-stellarator-sector-00-90deg-coil-0005",
+          "fine_value": [
+            1130.5896597108976,
+            332.04110187652213,
+            42.62764454391018
+          ],
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.8846505928260148,
+          "same_magnet": false,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 1043.1007341263348,
+              "passes": false,
+              "threshold": 20.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.incoming_neutron_current": {
+          "absolute_change": 1.9330722038778976e+16,
+          "coarse_value": 2.7072944528611312e+17,
+          "fine_value": 2.5139872324733414e+17,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.07140236267373806,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.07140236267373806,
+              "passes": true,
+              "threshold": 0.15
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.incoming_photon_current": {
+          "absolute_change": 2577268806742420.0,
+          "coarse_value": 3.022141330914856e+16,
+          "fine_value": 2.764414450240614e+16,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.08527955924424735,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.08527955924424735,
+              "passes": true,
+              "threshold": 0.3
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.neutron_flux": {
+          "absolute_change": 1874511196.381836,
+          "coarse_value": 103480483522.68938,
+          "fine_value": 105354994719.07121,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.017792333447315095,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.017792333447315095,
+              "passes": true,
+              "threshold": 0.05
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.photon_flux": {
+          "absolute_change": 5287834209.476044,
+          "coarse_value": 14564348090.574593,
+          "fine_value": 19852182300.050636,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.26636034918249546,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.26636034918249546,
+              "passes": false,
+              "threshold": 0.1
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        }
+      }
+    },
+    {
+      "coarse_shape": [
+        7,
+        41,
+        31
+      ],
+      "fine_shape": [
+        11,
+        81,
+        61
+      ],
+      "metrics": {
+        "dt_energy.mean_eV": {
+          "absolute_change": 449.4146456476301,
+          "coarse_value": 14080879.896513395,
+          "fine_value": 14081329.311159043,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 3.191564061295563e-05,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 3.191564061295563e-05,
+              "passes": true,
+              "threshold": 0.001
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "dt_energy.mean_squared_eV2": {
+          "absolute_change": 13753507904.15625,
+          "coarse_value": 198321551948019.78,
+          "fine_value": 198335305455923.94,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 6.934472847655807e-05,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 6.934472847655807e-05,
+              "passes": true,
+              "threshold": 0.002
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "integrated_source_rate_per_s": {
+          "absolute_change": 3.5643457342175314e+18,
+          "coarse_value": 2.6580908175390756e+20,
+          "fine_value": 2.693734274881251e+20,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.013231987161668573,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.013231987161668573,
+              "passes": true,
+              "threshold": 0.02
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_x2_cm2": {
+          "absolute_change": 176.95367039449047,
+          "coarse_value": 665485.568400986,
+          "fine_value": 665662.5220713805,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0002658309045908932,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.0002658309045908932,
+              "passes": true,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_x_cm": {
+          "absolute_change": 0.113786811412524,
+          "coarse_value": 708.9077057230434,
+          "fine_value": 709.0214925344559,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0001604842908298642,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 0.113786811412524,
+              "passes": true,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_y2_cm2": {
+          "absolute_change": 606.6181203171145,
+          "coarse_value": 664993.6461880116,
+          "fine_value": 665600.2643083287,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0009113850352020118,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.0009113850352020118,
+              "passes": true,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_y_cm": {
+          "absolute_change": 0.4400754460173175,
+          "coarse_value": 708.5323226829375,
+          "fine_value": 708.9723981289549,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.0006207229606945464,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 0.4400754460173175,
+              "passes": true,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_z2_cm2": {
+          "absolute_change": 73.19867458359658,
+          "coarse_value": 18995.068860764804,
+          "fine_value": 19068.2675353484,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.00383876901495651,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.00383876901495651,
+              "passes": true,
+              "threshold": 0.03
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "spatial.mean_z_cm": {
+          "absolute_change": 0.04172508583645982,
+          "coarse_value": 0.049181556927164645,
+          "fine_value": 0.007456471090704826,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.8483888767135316,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 0.04172508583645982,
+              "passes": true,
+              "threshold": 2.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.computational_cost": {
+          "absolute_change": 32.0,
+          "coarse_value": 433.0,
+          "fine_value": 465.0,
+          "passes": true,
+          "qualification_role": "selection_only",
+          "relative_change": 0.06881720430107527,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.06881720430107527,
+              "passes": true,
+              "threshold": 1.0
+            }
+          ],
+          "threshold_logic": "selection_only_not_a_convergence_bound"
+        },
+        "whole_magnet_response.whole_magnet.heating": {
+          "absolute_change": 18475.320357287943,
+          "coarse_value": 66718.68173942302,
+          "fine_value": 85194.00209671096,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.2168617496841507,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.2168617496841507,
+              "passes": false,
+              "threshold": 0.1
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.hotspot_location": {
+          "absolute_change": 1087.1759036396631,
+          "coarse_bin_id": "example-stellarator-sector-00-90deg-coil-0005-bin-00001006",
+          "coarse_magnet_id": "example-stellarator-sector-00-90deg-coil-0005",
+          "coarse_value": [
+            1130.5896597108976,
+            332.04110187652213,
+            42.62764454391018
+          ],
+          "fine_bin_id": "example-stellarator-sector-00-90deg-coil-0011-bin-00001046",
+          "fine_magnet_id": "example-stellarator-sector-00-90deg-coil-0011",
+          "fine_value": [
+            324.3356996820373,
+            1054.0265009431719,
+            -60.53766419439434
+          ],
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.9220306114217554,
+          "same_magnet": false,
+          "threshold_checks": [
+            {
+              "kind": "absolute",
+              "observed": 1087.1759036396631,
+              "passes": false,
+              "threshold": 20.0
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.incoming_neutron_current": {
+          "absolute_change": 2.142253780226083e+16,
+          "coarse_value": 2.5139872324733414e+17,
+          "fine_value": 2.7282126104959498e+17,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.07852224463681562,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.07852224463681562,
+              "passes": true,
+              "threshold": 0.15
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.incoming_photon_current": {
+          "absolute_change": 3603173086216804.0,
+          "coarse_value": 2.764414450240614e+16,
+          "fine_value": 3.1247317588622944e+16,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.11531143676565404,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.11531143676565404,
+              "passes": true,
+              "threshold": 0.3
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.neutron_flux": {
+          "absolute_change": 10793061764.842926,
+          "coarse_value": 105354994719.07121,
+          "fine_value": 116148056483.91414,
+          "passes": false,
+          "qualification_role": "convergence",
+          "relative_change": 0.09292503113332512,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.09292503113332512,
+              "passes": false,
+              "threshold": 0.05
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        },
+        "whole_magnet_response.whole_magnet.photon_flux": {
+          "absolute_change": 2190042098.2636566,
+          "coarse_value": 19852182300.050636,
+          "fine_value": 22042224398.314293,
+          "passes": true,
+          "qualification_role": "convergence",
+          "relative_change": 0.09935667374982095,
+          "threshold_checks": [
+            {
+              "kind": "relative",
+              "observed": 0.09935667374982095,
+              "passes": true,
+              "threshold": 0.1
+            }
+          ],
+          "threshold_logic": "any_configured_bound"
+        }
+      }
+    }
+  ],
+  "created_utc": "2026-08-26T04:04:14.060985+00:00",
+  "default_selection": {
+    "conservative_fallback_shape": [
+      11,
+      81,
+      61
+    ],
+    "selected_shape": null,
+    "selection_basis": "A default is selected only after the complete finest pair passes all explicit thresholds; when cost is available, the lower-cost member of that qualified pair is selected.",
+    "status": "NO_DEFAULT_NOT_CONVERGED"
+  },
+  "evidence_sha256": "70e5497735b7b434caeb7d6c21872d10ddf327597e4129656d7598ca3ed872d6",
+  "missing_evidence": [],
+  "overall_status": "NOT_CONVERGED",
+  "qualification_metric_count": 16,
+  "qualification_pair": [
+    [
+      7,
+      41,
+      31
+    ],
+    [
+      11,
+      81,
+      61
+    ]
+  ],
+  "required_candidate_shapes": [
+    [
+      3,
+      9,
+      9
+    ],
+    [
+      5,
+      21,
+      17
+    ],
+    [
+      7,
+      41,
+      31
+    ],
+    [
+      11,
+      81,
+      61
+    ]
+  ],
+  "required_response_metric_ids": [
+    "whole_magnet.incoming_neutron_current",
+    "whole_magnet.incoming_photon_current",
+    "whole_magnet.neutron_flux",
+    "whole_magnet.photon_flux",
+    "whole_magnet.heating",
+    "whole_magnet.hotspot_location",
+    "computational_cost"
+  ],
+  "response_metric_tolerances": {
+    "computational_cost": {
+      "maximum_relative_change": 1.0,
+      "qualification_role": "selection_only"
+    },
+    "whole_magnet.heating": {
+      "maximum_relative_change": 0.1
+    },
+    "whole_magnet.hotspot_location": {
+      "maximum_absolute_change": 20.0
+    },
+    "whole_magnet.incoming_neutron_current": {
+      "maximum_relative_change": 0.15
+    },
+    "whole_magnet.incoming_photon_current": {
+      "maximum_relative_change": 0.3
+    },
+    "whole_magnet.neutron_flux": {
+      "maximum_relative_change": 0.05
+    },
+    "whole_magnet.photon_flux": {
+      "maximum_relative_change": 0.1
+    }
+  },
+  "schema": "parastell.source_mesh_convergence/v1.0.0",
+  "source_metric_tolerances": {
+    "dt_energy.mean_eV": {
+      "maximum_relative_change": 0.001
+    },
+    "dt_energy.mean_squared_eV2": {
+      "maximum_relative_change": 0.002
+    },
+    "integrated_source_rate_per_s": {
+      "maximum_relative_change": 0.02
+    },
+    "spatial.mean_x2_cm2": {
+      "maximum_relative_change": 0.03
+    },
+    "spatial.mean_x_cm": {
+      "maximum_absolute_change": 2.0
+    },
+    "spatial.mean_y2_cm2": {
+      "maximum_relative_change": 0.03
+    },
+    "spatial.mean_y_cm": {
+      "maximum_absolute_change": 2.0
+    },
+    "spatial.mean_z2_cm2": {
+      "maximum_relative_change": 0.03
+    },
+    "spatial.mean_z_cm": {
+      "maximum_absolute_change": 2.0
+    }
+  }
+}

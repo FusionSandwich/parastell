@@ -621,6 +621,8 @@ def build_correlated_bank(
     source_record_index: Sequence[int] | None = None,
     facet_mapping: Mapping[str, Sequence[Any]] | None = None,
     centreline_frame: Any | None = None,
+    crossing_sense_tolerance: float = 1.0e-12,
+    near_grazing_mu_cutoff: float = 0.1,
 ) -> CorrelatedBoundaryBank:
     positions = np.asarray(position_global_cm, dtype=float)
     directions = np.asarray(direction_global, dtype=float)
@@ -628,6 +630,20 @@ def build_correlated_bank(
     weights = np.asarray(raw_weight, dtype=float)
     particles = np.asarray(particle, dtype=object).astype(str)
     surfaces = np.asarray(surface_id, dtype=int)
+    sense_tolerance = float(crossing_sense_tolerance)
+    grazing_cutoff = float(near_grazing_mu_cutoff)
+    if not np.isfinite(sense_tolerance) or sense_tolerance < 0.0:
+        raise ValueError(
+            "crossing_sense_tolerance must be finite and nonnegative"
+        )
+    if (
+        not np.isfinite(grazing_cutoff)
+        or grazing_cutoff < sense_tolerance
+        or grazing_cutoff > 1.0
+    ):
+        raise ValueError(
+            "near_grazing_mu_cutoff must lie between the sense tolerance and one"
+        )
     n = len(energies)
     if positions.shape != (n, 3) or directions.shape != (n, 3):
         raise ValueError(
@@ -712,11 +728,11 @@ def build_correlated_bank(
         roles[mask] = face.role
         mu_here = local_direction[mask, 2]
         sense[mask] = np.where(
-            mu_here > 1e-12,
+            mu_here > sense_tolerance,
             "outgoing",
-            np.where(mu_here < -1e-12, "incoming", "grazing"),
+            np.where(mu_here < -sense_tolerance, "incoming", "grazing"),
         )
-        grazing[mask] = np.abs(mu_here) <= 0.1
+        grazing[mask] = np.abs(mu_here) <= grazing_cutoff
         iu = (
             np.searchsorted(
                 face.u_edges_cm, local_position[mask, 0], side="right"
@@ -932,6 +948,12 @@ def build_correlated_bank(
             },
             "canonical_record_policy": (
                 "raw source-bank transport contributions; no tally conditioning"
+            ),
+            "crossing_sense_tolerance_abs_mu": sense_tolerance,
+            "near_grazing_mu_cutoff": grazing_cutoff,
+            "grazing_field_semantics": (
+                "near-grazing analysis band; crossing_sense uses the smaller "
+                "numerical sense tolerance"
             ),
             "surface_ids": list(envelope.surface_ids),
             "surface_patch_counts": {

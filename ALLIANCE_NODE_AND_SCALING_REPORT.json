@@ -1,0 +1,137 @@
+{
+  "schema": "parastell.alliance_node_and_scaling_report/v1.0.0",
+  "generated_at": "2026-08-26T13:42:53-04:00",
+  "policy": {
+    "basis": "physical cores, not Slurm logical CPUs",
+    "maximum_fraction_per_node": 0.25,
+    "single_node_physical_cores_required_for_64": 256
+  },
+  "live_scheduler_evidence": {
+    "scope": "Compact read-only inventory through existing authenticated sessions; no job was submitted.",
+    "nibi": {
+      "scheduler_version": "24.11.7",
+      "classes": [
+        {
+          "feature": "granite",
+          "physical_cores": 192,
+          "slurm_cpus": 192,
+          "threads_per_core": 1,
+          "memory_mb": [766000, 6144000],
+          "policy_core_limit": 48,
+          "role": "CPU"
+        },
+        {
+          "feature": "rome,a100",
+          "physical_cores": 128,
+          "slurm_cpus": 256,
+          "threads_per_core": 2,
+          "memory_mb": 2048000,
+          "policy_core_limit": 32,
+          "role": "GPU; not an appropriate CPU-only OpenMC target"
+        },
+        {
+          "feature": "sapphire,h100",
+          "physical_cores": 112,
+          "slurm_cpus": 112,
+          "threads_per_core": 1,
+          "memory_mb": 2048000,
+          "policy_core_limit": 28,
+          "role": "GPU; not an appropriate CPU-only OpenMC target"
+        },
+        {
+          "feature": "mi300a",
+          "physical_cores": 96,
+          "slurm_cpus": 96,
+          "threads_per_core": 2,
+          "memory_mb": 507000,
+          "policy_core_limit": 24,
+          "role": "GPU/APU; not an appropriate CPU-only OpenMC target"
+        }
+      ]
+    },
+    "trillium": {
+      "scheduler_version": "25.11.5",
+      "classes": [
+        {
+          "partition": "compute",
+          "physical_cores": 192,
+          "slurm_cpus": 192,
+          "threads_per_core": 1,
+          "memory_mb": 767000,
+          "policy_core_limit": 48,
+          "role": "CPU"
+        },
+        {
+          "partition": "compute_neptune/compute_s4h",
+          "physical_cores": 80,
+          "slurm_cpus": 160,
+          "threads_per_core": 2,
+          "memory_mb": 509000,
+          "policy_core_limit": 20,
+          "role": "CPU"
+        }
+      ]
+    },
+    "unavailable_existing_sessions": [
+      "narval: persistent broker socket closed",
+      "rorqual: persistent broker socket closed"
+    ],
+    "new_logins_started": 0
+  },
+  "policy_conclusion": {
+    "ALLIANCE_64_CORE_POLICY_ALLOWED": "ALLOWED_MULTI_NODE_ONLY",
+    "single_node_64_core": false,
+    "policy_compliant_example": "2 nodes x 32 physical cores",
+    "conditions": [
+      "The exact Alliance OpenMC/DAGMC build must pass MPI validation.",
+      "The account association, allocation headroom, and live queue must be checked immediately before submission.",
+      "No node may exceed 25% of its physical cores."
+    ]
+  },
+  "benchmark_ladder": {
+    "model": "exact production model",
+    "status": "NOT_RUN_FAILED_SCIENTIFIC_AND_BUILD_GATES",
+    "measurements": [
+      {"cores": 8, "status": "NOT_RUN_ON_ALLIANCE"},
+      {"cores": 16, "status": "NOT_RUN_ON_ALLIANCE"},
+      {"cores": 32, "status": "NOT_RUN_ON_ALLIANCE"},
+      {"cores": 64, "status": "NOT_RUN_ON_ALLIANCE"}
+    ],
+    "blockers": [
+      "Seven unintended non-adjacent DAGMC volume overlaps remain.",
+      "Sixteen of eighteen strict external-only casing envelopes are open.",
+      "Source-mesh response convergence was not reached.",
+      "The exact MPI-enabled Alliance OpenMC/DAGMC build has not been validated."
+    ],
+    "ALLIANCE_64_CORE_SCALING_PASS": "NOT_RUN_FAILED_PREREQUISITE_GATES"
+  },
+  "bounded_reference_observation": {
+    "system": "Polytechnique Bateman, not Alliance",
+    "cores_or_threads": 8,
+    "histories": 500000,
+    "wall_seconds": 515.0,
+    "histories_per_second": 970.8737864077669,
+    "lost_particles": 0,
+    "dagmc_navigation_errors": 0,
+    "interpretation": "Reference only; it is not a substitute for the Alliance scaling ladder."
+  },
+  "projections": {
+    "measured_alliance_scaling_fit": null,
+    "estimated_250M_wall_time": "NOT_AVAILABLE_NO_ALLIANCE_SCALING_FIT",
+    "bateman_8_thread_constant_rate_reference_hours": 71.52777777777777,
+    "ideal_64_core_reference_hours_not_a_prediction": 8.940972222222221,
+    "theoretical_minimum_cores_for_10_hours_under_ideal_scaling": 58,
+    "evidence_based_cores_for_10_hours": "UNKNOWN_UNTIL_SCALING_LADDER",
+    "unselected_2_064B_8_thread_reference_hours": 590.5333333333333
+  },
+  "resource_evidence": {
+    "geometry_h5m_bytes": 14343172,
+    "medium_statepoint_bytes": 1997899832,
+    "source_mesh_11x81x61_bytes": 15946816,
+    "representative_outer_handoff_bytes": 6906189,
+    "representative_winding_handoff_bytes": 5723882,
+    "peak_memory": "NOT_RECORDED_BY_PROMPT_1B_RECEIPT",
+    "production_storage": "BLOCKED_UNTIL_HISTORY_COUNT_AND_BANK_CAPACITY_ARE_SELECTED"
+  },
+  "submission_performed": false
+}
