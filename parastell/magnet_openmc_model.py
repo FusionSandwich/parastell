@@ -48,7 +48,9 @@ def _material_binding(
     try:
         material_name = str(material_manifest["material_tags"][tag])
     except KeyError as exc:
-        raise ValueError(f"DAGMC material tag {tag!r} is not configured") from exc
+        raise ValueError(
+            f"DAGMC material tag {tag!r} is not configured"
+        ) from exc
     try:
         material_id = int(material_ids_by_tag[tag])
     except KeyError as exc:

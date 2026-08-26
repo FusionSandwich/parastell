@@ -18,7 +18,9 @@ def _tetrahedron_triangles():
     )
 
 
-def test_binary_stl_is_deterministic_under_triangle_and_start_reordering(tmp_path):
+def test_binary_stl_is_deterministic_under_triangle_and_start_reordering(
+    tmp_path,
+):
     first = _tetrahedron_triangles()
     second = first[::-1].copy()
     second[::2] = np.roll(second[::2], 1, axis=1)
@@ -28,7 +30,10 @@ def test_binary_stl_is_deterministic_under_triangle_and_start_reordering(tmp_pat
     second_manifest = write_binary_stl(two, second)
     assert one.read_bytes() == two.read_bytes()
     assert first_manifest["sha256"] == second_manifest["sha256"]
-    assert first_manifest["sha256"] == hashlib.sha256(one.read_bytes()).hexdigest()
+    assert (
+        first_manifest["sha256"]
+        == hashlib.sha256(one.read_bytes()).hexdigest()
+    )
     assert first_manifest["triangle_count"] == 4
     assert first_manifest["size_bytes"] == 84 + 50 * 4
     assert struct.unpack("<I", one.read_bytes()[80:84]) == (4,)

@@ -960,7 +960,11 @@ def validate_magnet_damage_gas(path: str | Path) -> dict[str, Any]:
         return {
             "schema": SCHEMA,
             "magnets": len(
-                set(reference_magnets if reference_magnets is not None else magnets)
+                set(
+                    reference_magnets
+                    if reference_magnets is not None
+                    else magnets
+                )
             ),
             "damage_energy_eV_per_source": damage_total,
             "gas_atoms_per_source": gas_totals,

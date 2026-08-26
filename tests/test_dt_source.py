@@ -84,7 +84,9 @@ def test_source_convergence_observables_fail_closed_on_invalid_arrays(
         source_convergence_observables(source)
 
 
-def test_mesh_source_reuses_identical_temperature_spectra(monkeypatch, tmp_path):
+def test_mesh_source_reuses_identical_temperature_spectra(
+    monkeypatch, tmp_path
+):
     calls = []
 
     def spectrum(*, ion_temp, reactants):

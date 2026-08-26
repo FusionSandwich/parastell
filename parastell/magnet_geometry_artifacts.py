@@ -24,7 +24,9 @@ def _canonical_oriented_triangles(triangles_cm: Any) -> np.ndarray:
         or len(triangles) == 0
         or not np.all(np.isfinite(triangles))
     ):
-        raise ValueError("triangles_cm must be a nonempty finite (N, 3, 3) array")
+        raise ValueError(
+            "triangles_cm must be a nonempty finite (N, 3, 3) array"
+        )
     canonical = []
     for triangle in triangles:
         starts = [tuple(triangle[index]) for index in range(3)]
@@ -83,7 +85,9 @@ def write_binary_stl(path: str | Path, triangles_cm: Any) -> dict[str, Any]:
     }
 
 
-def export_dagmc_envelope_stl(path: str | Path, envelope: Any) -> dict[str, Any]:
+def export_dagmc_envelope_stl(
+    path: str | Path, envelope: Any
+) -> dict[str, Any]:
     """Export all outward-oriented faceted surfaces in one DAGMC envelope."""
     surfaces = sorted(
         tuple(envelope.faceted_surfaces), key=lambda value: value.surface_id

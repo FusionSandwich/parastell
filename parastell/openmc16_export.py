@@ -162,15 +162,11 @@ def _directional_current_for_envelope(
         )
     output = {}
     for surface_id in sorted(envelope_surface_ids):
-        normal_sign = envelope.envelope.surface(
-            surface_id
-        ).openmc_normal_sign
+        normal_sign = envelope.envelope.surface(surface_id).openmc_normal_sign
         senses = {"incoming": (0.0, 0.0), "outgoing": (0.0, 0.0)}
         for native_sense in (-1, 1):
             sense = (
-                "outgoing"
-                if normal_sign * native_sense > 0
-                else "incoming"
+                "outgoing" if normal_sign * native_sense > 0 else "incoming"
             )
             senses[sense] = tuple(native_current[surface_id][native_sense])
         output[surface_id] = senses
