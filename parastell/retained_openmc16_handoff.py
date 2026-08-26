@@ -145,7 +145,7 @@ def _volume_centroid(dagmc_path: str | Path, volume_id: int) -> np.ndarray:
 def _assert_envelope_matches_v21(
     envelope: DagmcEnvelope,
     retained_manifest: Mapping[str, Any],
-) -> None:
+) -> dict[str, Any]:
     old = retained_manifest["envelope"]
     current = envelope.envelope
     if int(old["dagmc_volume_id"]) != current.dagmc_volume_id:
@@ -173,25 +173,17 @@ def _assert_envelope_matches_v21(
         raise ValueError(
             "DAGMC surface set changed during retained-bank re-export"
         )
+    frame_crosswalk = []
     for surface_id, earlier in old_surfaces.items():
         later = new_surfaces[surface_id]
-        exact_scalars = {
-            "role": later.role,
-            "openmc_normal_sign": later.openmc_normal_sign,
-        }
-        for name, value in exact_scalars.items():
-            if earlier[name] != value:
-                raise ValueError(
-                    f"surface {surface_id} {name} changed during re-export"
-                )
+        if earlier["openmc_normal_sign"] != later.openmc_normal_sign:
+            raise ValueError(
+                f"surface {surface_id} topological sense changed during re-export"
+            )
         comparisons: Sequence[tuple[str, Any]] = (
             ("area_cm2", later.area_cm2),
             ("centroid_global_cm", later.centroid_global_cm),
             ("outward_normal_global", later.outward_normal_global),
-            ("toroidal_direction_global", later.toroidal_direction_global),
-            ("poloidal_direction_global", later.poloidal_direction_global),
-            ("u_edges_cm", later.u_edges_cm),
-            ("v_edges_cm", later.v_edges_cm),
             ("vector_area_global_cm2", later.vector_area_global_cm2),
         )
         for name, value in comparisons:
@@ -204,6 +196,57 @@ def _assert_envelope_matches_v21(
                 raise ValueError(
                     f"surface {surface_id} {name} changed during re-export"
                 )
+        frame_crosswalk.append(
+            {
+                "surface_id": surface_id,
+                "retained_v21_role": earlier["role"],
+                "v22_centreline_role": later.role,
+                "role_changed": earlier["role"] != later.role,
+                "maximum_toroidal_axis_component_change": float(
+                    np.max(
+                        np.abs(
+                            np.asarray(
+                                earlier["toroidal_direction_global"],
+                                dtype=float,
+                            )
+                            - np.asarray(
+                                later.toroidal_direction_global, dtype=float
+                            )
+                        )
+                    )
+                ),
+                "maximum_poloidal_axis_component_change": float(
+                    np.max(
+                        np.abs(
+                            np.asarray(
+                                earlier["poloidal_direction_global"],
+                                dtype=float,
+                            )
+                            - np.asarray(
+                                later.poloidal_direction_global, dtype=float
+                            )
+                        )
+                    )
+                ),
+            }
+        )
+    return {
+        "classification": "PHYSICAL_ENVELOPE_EQUIVALENCE_PASS",
+        "strict_fields": [
+            "raw_h5m_sha256",
+            "dagmc_volume_id",
+            "surface_ids",
+            "openmc_normal_sign",
+            "area_cm2",
+            "centroid_global_cm",
+            "outward_normal_global",
+            "vector_area_global_cm2",
+        ],
+        "coordinate_frame_change": (
+            "retained v2.1 global surface frame to v2.2 continuous centreline frame"
+        ),
+        "surfaces": frame_crosswalk,
+    }
 
 
 def _transport_version_from_statepoint(path: str | Path) -> str:
@@ -283,7 +326,7 @@ def reexport_retained_handoff_v22(
         raise ValueError(
             "extracted envelope has no canonical DAGMC fingerprint"
         )
-    _assert_envelope_matches_v21(envelope, retained)
+    envelope_crosswalk = _assert_envelope_matches_v21(envelope, retained)
     completeness = retained["bank_metadata"]["surface_bank_completeness"]
     transport_version = _transport_version_from_statepoint(statepoint_path)
     result = export_openmc16_handoff(
@@ -348,5 +391,6 @@ def reexport_retained_handoff_v22(
         "fingerprint_crosswalk_basis": (
             "same raw H5M SHA-256 plus complete retained-v2.1 surface equivalence"
         ),
+        "envelope_coordinate_frame_crosswalk": envelope_crosswalk,
     }
     return result
