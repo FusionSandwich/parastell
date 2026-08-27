@@ -118,12 +118,8 @@ def array_to_symmetric_matrix(values: np.ndarray) -> np.ndarray:
         toroidal_id = point_id // N_UNIQUE_POLOIDAL
         poloidal_id = point_id % N_UNIQUE_POLOIDAL
         matrix[toroidal_id, poloidal_id] = values[canonical_id]
-    matrix[0, N_SYMMETRIC_PROFILE:] = np.flip(
-        matrix[0, : N_POLOIDAL // 2]
-    )
-    matrix[-1, N_SYMMETRIC_PROFILE:] = np.flip(
-        matrix[-1, : N_POLOIDAL // 2]
-    )
+    matrix[0, N_SYMMETRIC_PROFILE:] = np.flip(matrix[0, : N_POLOIDAL // 2])
+    matrix[-1, N_SYMMETRIC_PROFILE:] = np.flip(matrix[-1, : N_POLOIDAL // 2])
     matrix[:, -1] = matrix[:, 0]
     return matrix
 
@@ -138,7 +134,9 @@ def summarize(values: np.ndarray) -> dict[str, Any]:
     }
 
 
-def make_radial_build(input_root: Path) -> tuple[OrderedDict, OrderedDict, dict]:
+def make_radial_build(
+    input_root: Path,
+) -> tuple[OrderedDict, OrderedDict, dict]:
     blanket_boundary = np.load(input_root / "blanket_boundary.npy")
     magnet_boundary = np.load(input_root / "magnet_boundary.npy")
     nwl = np.load(input_root / "nwl.npy")
@@ -183,7 +181,9 @@ def make_radial_build(input_root: Path) -> tuple[OrderedDict, OrderedDict, dict]
         "strict_radial_order_at_all_canonical_controls": bool(
             np.all(np.diff(cumulative, axis=0) > 0.0)
         ),
-        "thickness_cm": {name: summarize(values) for name, values in arrays.items()},
+        "thickness_cm": {
+            name: summarize(values) for name, values in arrays.items()
+        },
         "nwl_mw_per_m2": summarize(nwl),
         "nwl_normalized": summarize(nwl_normalized),
         "blanket_boundary_cm": summarize(blanket_boundary),
@@ -192,12 +192,10 @@ def make_radial_build(input_root: Path) -> tuple[OrderedDict, OrderedDict, dict]
             np.count_nonzero(breeder < breeder_requested)
         ),
         "outer_blanket_residual_cm": summarize(
-            blanket_boundary
-            - sum(arrays[name] for name in RADIAL_NAMES[:6])
+            blanket_boundary - sum(arrays[name] for name in RADIAL_NAMES[:6])
         ),
         "magnet_boundary_residual_cm": summarize(
-            magnet_boundary
-            - sum(arrays[name] for name in RADIAL_NAMES[:7])
+            magnet_boundary - sum(arrays[name] for name in RADIAL_NAMES[:7])
         ),
     }
     return radial_build, arrays, diagnostics
@@ -305,7 +303,9 @@ def audit_existing_31x61(args: argparse.Namespace) -> None:
     )
     started = time.time()
     components = load_step_components(source_root, names)
-    metrics = {name: shape_metrics(shape) for name, shape in components.items()}
+    metrics = {
+        name: shape_metrics(shape) for name, shape in components.items()
+    }
     pairwise = complete_pairwise_audit(
         components, intersection_volume, tolerance_cm3=args.tolerance_cm3
     )
@@ -340,7 +340,9 @@ def audit_existing_31x61(args: argparse.Namespace) -> None:
     if not nonzero:
         raise RuntimeError("31x61 rejection was not reproduced")
     write_json_create_only(output, payload)
-    print(json.dumps({"output": str(output), "nonzero_pairs": nonzero}, indent=2))
+    print(
+        json.dumps({"output": str(output), "nonzero_pairs": nonzero}, indent=2)
+    )
 
 
 def expanded_surface_diagnostics(stellarator: Any) -> dict[str, Any]:
@@ -361,8 +363,12 @@ def expanded_surface_diagnostics(stellarator: Any) -> dict[str, Any]:
                 "inner": inner_name,
                 "outer": outer_name,
                 "all_sample_min_cm": float(distances.min()),
-                "off_control_sample_min_cm": float(distances[~control_mask].min()),
-                "off_control_sample_count": int(np.count_nonzero(~control_mask)),
+                "off_control_sample_min_cm": float(
+                    distances[~control_mask].min()
+                ),
+                "off_control_sample_count": int(
+                    np.count_nonzero(~control_mask)
+                ),
             }
         )
 
@@ -382,9 +388,13 @@ def expanded_surface_diagnostics(stellarator: Any) -> dict[str, Any]:
         seam_rows.append(
             {
                 "surface": name,
-                "start_profile_stellarator_symmetry_max_cm": float(start_residual),
+                "start_profile_stellarator_symmetry_max_cm": float(
+                    start_residual
+                ),
                 "end_profile_stellarator_symmetry_max_cm": float(end_residual),
-                "start_toroidal_plane_max_abs_y_cm": float(np.abs(start[:, 1]).max()),
+                "start_toroidal_plane_max_abs_y_cm": float(
+                    np.abs(start[:, 1]).max()
+                ),
                 "end_toroidal_plane_max_abs_x_minus_y_cm": float(
                     np.abs(end[:, 0] - end[:, 1]).max()
                 ),
@@ -394,13 +404,20 @@ def expanded_surface_diagnostics(stellarator: Any) -> dict[str, Any]:
     samples = []
     for surface_name in (names[0], names[1], names[-2], names[-1]):
         loci = surfaces[surface_name]
-        for toroidal_index, poloidal_index in ((0, 0), (30, 30), (60, 60), (60, 120)):
+        for toroidal_index, poloidal_index in (
+            (0, 0),
+            (30, 30),
+            (60, 60),
+            (60, 120),
+        ):
             samples.append(
                 {
                     "surface": surface_name,
                     "toroidal_index": toroidal_index,
                     "poloidal_index": poloidal_index,
-                    "coordinate_cm": loci[toroidal_index, poloidal_index].tolist(),
+                    "coordinate_cm": loci[
+                        toroidal_index, poloidal_index
+                    ].tolist(),
                 }
             )
     return {
@@ -435,7 +452,9 @@ def build_45(args: argparse.Namespace) -> None:
     if args.construct_only:
         input_after = verify_source_set(input_root)
         if input_before != input_after:
-            raise RuntimeError("authoritative source set changed during construction")
+            raise RuntimeError(
+                "authoritative source set changed during construction"
+            )
         construction_payload = {
             "schema": "wistell_d.geometry_construction/v1.0.0",
             "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
@@ -460,7 +479,9 @@ def build_45(args: argparse.Namespace) -> None:
                 "global_explicit_coils": False,
             },
             "thickness_validation": thickness,
-            "expanded_surface_validation": expanded_surface_diagnostics(stellarator),
+            "expanded_surface_validation": expanded_surface_diagnostics(
+                stellarator
+            ),
             "components": {
                 name: shape_metrics(shape)
                 for name, shape in stellarator.invessel_build.Components.items()
@@ -630,8 +651,626 @@ def parse_coils(path: Path) -> list[np.ndarray]:
             curves.append(np.asarray(current, dtype=float))
             current = []
     if current or not curves:
-        raise ValueError("coil file contains an incomplete or empty filament set")
+        raise ValueError(
+            "coil file contains an incomplete or empty filament set"
+        )
     return curves
+
+
+def _normalize(vectors: np.ndarray) -> np.ndarray:
+    vectors = np.asarray(vectors, dtype=float)
+    lengths = np.linalg.norm(vectors, axis=-1, keepdims=True)
+    if np.any(lengths <= 0.0) or not np.isfinite(lengths).all():
+        raise ValueError("cannot normalize a zero or nonfinite vector")
+    return vectors / lengths
+
+
+def magnet_envelope_loci(input_root: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Recreate only the accepted 61x121 interface point clouds, not CAD."""
+    _, ps = load_geometry_only_parastell()
+    import parastell.invessel_build as ivb
+
+    radial_build, _, _ = make_radial_build(input_root)
+    stellarator = ps.Stellarator(str(input_root / "wout_wistell-d.nc"))
+    radial = ivb.RadialBuild(
+        np.linspace(0.0, 45.0, N_TOROIDAL),
+        np.linspace(0.0, 360.0, N_POLOIDAL),
+        1.0,
+        radial_build,
+        split_chamber=False,
+        logger=stellarator._logger,
+    )
+    build = ivb.InVesselBuild(
+        stellarator._ref_surf,
+        radial,
+        logger=stellarator._logger,
+        num_ribs=SOURCE_CAD_GRID[0],
+        num_rib_pts=SOURCE_CAD_GRID[1],
+    )
+    build.populate_surfaces()
+    build.calculate_loci()
+    inner = build.Surfaces["vacuum_gap"].get_loci()
+    outer = build.Surfaces["magnet_envelope"].get_loci()
+    if inner.shape != (*SOURCE_CAD_GRID, 3) or outer.shape != inner.shape:
+        raise RuntimeError("unexpected magnet-envelope surface grid")
+    return inner, outer
+
+
+def triangulate_envelope_boundary(
+    loci: np.ndarray,
+    expected_normal: np.ndarray,
+    *,
+    boundary_role_code: int,
+) -> dict[str, np.ndarray]:
+    vertices = []
+    centroids = []
+    normals = []
+    areas = []
+    toroidal_cells = []
+    poloidal_cells = []
+    triangle_ids = []
+    for toroidal_cell in range(SOURCE_CAD_GRID[0] - 1):
+        for poloidal_cell in range(SOURCE_CAD_GRID[1] - 1):
+            corners = (
+                loci[toroidal_cell, poloidal_cell],
+                loci[toroidal_cell + 1, poloidal_cell],
+                loci[toroidal_cell + 1, poloidal_cell + 1],
+                loci[toroidal_cell, poloidal_cell + 1],
+            )
+            expected = _normalize(
+                np.mean(
+                    (
+                        expected_normal[toroidal_cell, poloidal_cell],
+                        expected_normal[toroidal_cell + 1, poloidal_cell],
+                        expected_normal[toroidal_cell + 1, poloidal_cell + 1],
+                        expected_normal[toroidal_cell, poloidal_cell + 1],
+                    ),
+                    axis=0,
+                )
+            )
+            for triangle_id, indices in enumerate(((0, 1, 2), (0, 2, 3))):
+                triangle = np.asarray([corners[index] for index in indices])
+                cross = np.cross(
+                    triangle[1] - triangle[0], triangle[2] - triangle[0]
+                )
+                if float(np.dot(cross, expected)) < 0.0:
+                    triangle[[1, 2]] = triangle[[2, 1]]
+                    cross = -cross
+                area = 0.5 * float(np.linalg.norm(cross))
+                if area <= 0.0 or not math.isfinite(area):
+                    raise RuntimeError("degenerate magnet-envelope facet")
+                vertices.append(triangle)
+                centroids.append(triangle.mean(axis=0))
+                normals.append(cross / np.linalg.norm(cross))
+                areas.append(area)
+                toroidal_cells.append(toroidal_cell)
+                poloidal_cells.append(poloidal_cell)
+                triangle_ids.append(triangle_id)
+    count = len(areas)
+    return {
+        "vertices_cm": np.asarray(vertices),
+        "centroids_cm": np.asarray(centroids),
+        "outward_normals": np.asarray(normals),
+        "areas_cm2": np.asarray(areas),
+        "boundary_role_code": np.full(
+            count, boundary_role_code, dtype=np.uint8
+        ),
+        "toroidal_cell": np.asarray(toroidal_cells, dtype=np.uint16),
+        "poloidal_cell": np.asarray(poloidal_cells, dtype=np.uint16),
+        "triangle_in_cell": np.asarray(triangle_ids, dtype=np.uint8),
+    }
+
+
+def concatenate_facet_tables(
+    tables: tuple[dict[str, np.ndarray], ...],
+) -> dict[str, np.ndarray]:
+    keys = tuple(tables[0])
+    if any(tuple(table) != keys for table in tables):
+        raise ValueError("facet tables have incompatible columns")
+    return {
+        key: np.concatenate([table[key] for table in tables]) for key in keys
+    }
+
+
+def transform_facet_table(
+    table: Mapping[str, np.ndarray], linear: np.ndarray
+) -> dict[str, np.ndarray]:
+    transformed = {
+        key: np.asarray(value).copy() for key, value in table.items()
+    }
+    for key in ("vertices_cm", "centroids_cm", "outward_normals"):
+        transformed[key] = np.asarray(table[key]) @ linear.T
+    return transformed
+
+
+def symmetry_cut_facets(
+    inner: np.ndarray,
+    outer: np.ndarray,
+    *,
+    toroidal_index: int,
+    outward: np.ndarray,
+) -> dict[str, np.ndarray]:
+    vertices = []
+    normals = []
+    areas = []
+    poloidal_cells = []
+    triangle_ids = []
+    outward = _normalize(outward)
+    for poloidal_cell in range(SOURCE_CAD_GRID[1] - 1):
+        corners = (
+            inner[toroidal_index, poloidal_cell],
+            inner[toroidal_index, poloidal_cell + 1],
+            outer[toroidal_index, poloidal_cell + 1],
+            outer[toroidal_index, poloidal_cell],
+        )
+        for triangle_id, indices in enumerate(((0, 1, 2), (0, 2, 3))):
+            triangle = np.asarray([corners[index] for index in indices])
+            cross = np.cross(
+                triangle[1] - triangle[0], triangle[2] - triangle[0]
+            )
+            if float(np.dot(cross, outward)) < 0.0:
+                triangle[[1, 2]] = triangle[[2, 1]]
+                cross = -cross
+            vertices.append(triangle)
+            normals.append(cross / np.linalg.norm(cross))
+            areas.append(0.5 * np.linalg.norm(cross))
+            poloidal_cells.append(poloidal_cell)
+            triangle_ids.append(triangle_id)
+    vertices_array = np.asarray(vertices)
+    return {
+        "vertices_cm": vertices_array,
+        "centroids_cm": vertices_array.mean(axis=1),
+        "outward_normals": np.asarray(normals),
+        "areas_cm2": np.asarray(areas),
+        "poloidal_cell": np.asarray(poloidal_cells, dtype=np.uint16),
+        "triangle_in_cell": np.asarray(triangle_ids, dtype=np.uint8),
+    }
+
+
+def control_grid_aliases(canonical_id: int) -> list[tuple[int, int]]:
+    point_id = canonical_id
+    if point_id >= N_SYMMETRIC_PROFILE:
+        point_id += N_UNIQUE_POLOIDAL - N_SYMMETRIC_PROFILE
+    toroidal_control = point_id // N_UNIQUE_POLOIDAL
+    poloidal_control = point_id % N_UNIQUE_POLOIDAL
+    aliases = [(toroidal_control, poloidal_control)]
+    if toroidal_control in (0, N_TOROIDAL - 1) and 0 < poloidal_control < 15:
+        aliases.append(
+            (toroidal_control, N_UNIQUE_POLOIDAL - poloidal_control)
+        )
+    return aliases
+
+
+def patch_cells(
+    toroidal_control: int, poloidal_control: int
+) -> list[tuple[int, int]]:
+    expanded_toroidal = 4 * toroidal_control
+    expanded_poloidal = 4 * poloidal_control
+    cells = []
+    for toroidal_cell in range(SOURCE_CAD_GRID[0] - 1):
+        nearest_toroidal = min(
+            range(N_TOROIDAL),
+            key=lambda index: abs((toroidal_cell + 0.5) - 4 * index),
+        )
+        if nearest_toroidal != toroidal_control:
+            continue
+        for poloidal_cell in range(SOURCE_CAD_GRID[1] - 1):
+            delta = abs((poloidal_cell + 0.5) - expanded_poloidal)
+            periodic_delta = min(delta, SOURCE_CAD_GRID[1] - 1 - delta)
+            nearest_poloidal = min(
+                range(N_UNIQUE_POLOIDAL),
+                key=lambda index: min(
+                    abs((poloidal_cell + 0.5) - 4 * index),
+                    SOURCE_CAD_GRID[1]
+                    - 1
+                    - abs((poloidal_cell + 0.5) - 4 * index),
+                ),
+            )
+            if nearest_poloidal == poloidal_control and periodic_delta <= 2.0:
+                cells.append((toroidal_cell, poloidal_cell))
+    if not cells:
+        raise RuntimeError("canonical control patch has no source-CAD cells")
+    return cells
+
+
+def local_engineering_frame(
+    inner: np.ndarray, outer: np.ndarray, row: int, column: int
+) -> dict[str, Any]:
+    outward = _normalize(outer[row, column] - inner[row, column])
+    if row == 0:
+        toroidal = outer[row + 1, column] - outer[row, column]
+    elif row == SOURCE_CAD_GRID[0] - 1:
+        toroidal = outer[row, column] - outer[row - 1, column]
+    else:
+        toroidal = outer[row + 1, column] - outer[row - 1, column]
+    toroidal = toroidal - float(np.dot(toroidal, outward)) * outward
+    toroidal = _normalize(toroidal)
+    poloidal = _normalize(np.cross(outward, toroidal))
+    matrix = np.column_stack((toroidal, poloidal, outward))
+    return {
+        "origin_cm": (
+            0.5 * (inner[row, column] + outer[row, column])
+        ).tolist(),
+        "toroidal_unit": toroidal.tolist(),
+        "poloidal_unit": poloidal.tolist(),
+        "radially_outward_unit": outward.tolist(),
+        "basis_columns_determinant": float(np.linalg.det(matrix)),
+    }
+
+
+def cad_face_inventory(
+    step_path: Path,
+    inner: np.ndarray,
+    outer: np.ndarray,
+    *,
+    extent_degrees: float,
+) -> list[dict[str, Any]]:
+    shape = cq.importers.importStep(str(step_path)).val()
+    inner_tree = cKDTree(inner.reshape(-1, 3))
+    outer_tree = cKDTree(outer.reshape(-1, 3))
+    rows = []
+    for index, face in enumerate(shape.Faces()):
+        center_vector = face.Center()
+        center = np.array([center_vector.x, center_vector.y, center_vector.z])
+        vertices = np.array([[v.X, v.Y, v.Z] for v in face.Vertices()])
+        phi_zero_residual = float(np.abs(vertices[:, 1]).max())
+        end_radians = math.radians(extent_degrees)
+        end_normal = np.array(
+            [-math.sin(end_radians), math.cos(end_radians), 0.0]
+        )
+        phi_end_residual = float(np.abs(vertices @ end_normal).max())
+        cut_role = None
+        if phi_zero_residual <= 1.0e-5:
+            cut_role = "PURE_SYMMETRY_CUT_PHI_0"
+        elif phi_end_residual <= 1.0e-5:
+            cut_role = f"PURE_SYMMETRY_CUT_PHI_{extent_degrees:g}"
+        if cut_role is None:
+            inner_distance, inner_index = inner_tree.query(center)
+            outer_distance, outer_index = outer_tree.query(center)
+            if inner_distance < outer_distance:
+                role = "MAGNET_ENVELOPE_INNER_PHYSICAL_BOUNDARY"
+                radial = (
+                    outer.reshape(-1, 3)[inner_index]
+                    - inner.reshape(-1, 3)[inner_index]
+                )
+                expected = -_normalize(radial)
+            else:
+                role = "MAGNET_ENVELOPE_OUTER_PHYSICAL_BOUNDARY"
+                radial = (
+                    outer.reshape(-1, 3)[outer_index]
+                    - inner.reshape(-1, 3)[outer_index]
+                )
+                expected = _normalize(radial)
+            try:
+                raw_vector = face.normalAt()
+                raw = _normalize(
+                    np.array([raw_vector.x, raw_vector.y, raw_vector.z])
+                )
+                outward_normal = (
+                    raw if float(np.dot(raw, expected)) >= 0.0 else -raw
+                )
+                normal_status = "CAD_NORMAL_ORIENTED_BY_ENVELOPE_RADIAL_SENSE"
+            except Exception as exc:
+                outward_normal = expected
+                normal_status = f"RADIAL_SENSE_FALLBACK:{type(exc).__name__}"
+        else:
+            role = cut_role
+            outward_normal = None
+            normal_status = "EXCLUDED_PURE_SYMMETRY_CUT"
+        rows.append(
+            {
+                "cad_face_id": index,
+                "geometry_type": face.geomType(),
+                "area_cm2": float(face.Area()),
+                "center_cm": center.tolist(),
+                "vertex_count": len(vertices),
+                "role": role,
+                "included_in_m2": cut_role is None,
+                "outward_normal_at_center": (
+                    None if outward_normal is None else outward_normal.tolist()
+                ),
+                "normal_status": normal_status,
+                "symmetry_plane_residual_cm": {
+                    "phi_0": phi_zero_residual,
+                    f"phi_{extent_degrees:g}": phi_end_residual,
+                },
+            }
+        )
+    return rows
+
+
+def build_m2_contract(args: argparse.Namespace) -> None:
+    input_root = Path(args.input_root).resolve()
+    source_root = Path(args.source_root).resolve()
+    derived_root = Path(args.derived_root).resolve()
+    transform_path = Path(args.transform_receipt).resolve()
+    output_root = Path(args.output_root).resolve()
+    if output_root.exists():
+        raise FileExistsError(f"create-only output root exists: {output_root}")
+    verify_source_set(input_root)
+    source_acceptance = source_root / "SOURCE_CAD_61X121_ACCEPTANCE.json"
+    derived_acceptance = derived_root / "SOURCE_CAD_90D_ACCEPTANCE.json"
+    for path in (source_acceptance, derived_acceptance, transform_path):
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    source_manifest = json.loads(source_acceptance.read_text(encoding="utf-8"))
+    derived_manifest = json.loads(
+        derived_acceptance.read_text(encoding="utf-8")
+    )
+    if (
+        source_manifest.get("classification")
+        != "WISTELL_D_45D_61X121_SOURCE_CAD_PASS"
+    ):
+        raise ValueError("source CAD is not accepted")
+    if (
+        derived_manifest.get("classification")
+        != "WISTELL_D_90D_TRANSPORT_SOURCE_CAD_PASS"
+    ):
+        raise ValueError("derived CAD is not accepted")
+    transform_receipt = json.loads(transform_path.read_text(encoding="utf-8"))
+    if (
+        transform_receipt.get("classification")
+        != "WISTELL_D_EXACT_HALF_PERIOD_TRANSFORM_PASS"
+    ):
+        raise ValueError("transform receipt is not accepted")
+    linear = np.asarray(
+        transform_receipt["transforms"]["half_period_mate"]["matrix"],
+        dtype=float,
+    )[:3, :3]
+
+    output_root.mkdir(parents=True)
+    inner, outer = magnet_envelope_loci(input_root)
+    radial = _normalize(outer - inner)
+    inner_table = triangulate_envelope_boundary(
+        inner, -radial, boundary_role_code=0
+    )
+    outer_table = triangulate_envelope_boundary(
+        outer, radial, boundary_role_code=1
+    )
+    facets_45 = concatenate_facet_tables((inner_table, outer_table))
+    facets_45["facet_id"] = np.arange(
+        len(facets_45["areas_cm2"]), dtype=np.uint32
+    )
+    facets_45["symmetry_instance_code"] = np.zeros(
+        len(facets_45["areas_cm2"]), dtype=np.uint8
+    )
+    facets_45["parent_45d_facet_id"] = facets_45["facet_id"].copy()
+    facets_mate = transform_facet_table(facets_45, linear)
+    facets_mate["symmetry_instance_code"] = np.ones(
+        len(facets_mate["areas_cm2"]), dtype=np.uint8
+    )
+    facets_90 = concatenate_facet_tables((facets_45, facets_mate))
+    facets_90["facet_id"] = np.arange(
+        len(facets_90["areas_cm2"]), dtype=np.uint32
+    )
+
+    start_cut = symmetry_cut_facets(
+        inner, outer, toroidal_index=0, outward=np.array([0.0, -1.0, 0.0])
+    )
+    seam_angle = math.radians(45.0)
+    end_cut = symmetry_cut_facets(
+        inner,
+        outer,
+        toroidal_index=SOURCE_CAD_GRID[0] - 1,
+        outward=np.array([-math.sin(seam_angle), math.cos(seam_angle), 0.0]),
+    )
+    mate_start_cut = transform_facet_table(start_cut, linear)
+
+    facets_45_path = output_root / "M2_PHYSICAL_FACETS_45D.npz"
+    facets_90_path = output_root / "M2_PHYSICAL_FACETS_90D.npz"
+    cuts_path = output_root / "M2_EXCLUDED_SYMMETRY_CUT_FACETS.npz"
+    np.savez_compressed(facets_45_path, **facets_45)
+    np.savez_compressed(facets_90_path, **facets_90)
+    np.savez_compressed(
+        cuts_path,
+        canonical_phi0_vertices_cm=start_cut["vertices_cm"],
+        canonical_phi0_areas_cm2=start_cut["areas_cm2"],
+        canonical_phi45_internal_seam_vertices_cm=end_cut["vertices_cm"],
+        canonical_phi45_internal_seam_areas_cm2=end_cut["areas_cm2"],
+        derived_phi90_vertices_cm=mate_start_cut["vertices_cm"],
+        derived_phi90_areas_cm2=mate_start_cut["areas_cm2"],
+    )
+
+    inner_cell_area = inner_table["areas_cm2"].reshape(60, 120, 2).sum(axis=2)
+    outer_cell_area = outer_table["areas_cm2"].reshape(60, 120, 2).sum(axis=2)
+    nwl = np.load(input_root / "nwl.npy")
+    normalized_nwl = (nwl - nwl.min()) / (nwl.max() - nwl.min())
+    mapping = []
+    for canonical_id in range(N_CONTROL_POINTS):
+        aliases = control_grid_aliases(canonical_id)
+        for instance_id, instance_linear in (
+            ("canonical", np.eye(3)),
+            ("mate", linear),
+        ):
+            alias_rows = []
+            for alias_index, (toroidal_control, poloidal_control) in enumerate(
+                aliases
+            ):
+                row = 4 * toroidal_control
+                column = 4 * poloidal_control
+                cells = patch_cells(toroidal_control, poloidal_control)
+                inner_area = float(
+                    sum(inner_cell_area[cell] for cell in cells)
+                )
+                outer_area = float(
+                    sum(outer_cell_area[cell] for cell in cells)
+                )
+                frame = local_engineering_frame(inner, outer, row, column)
+                for key in (
+                    "origin_cm",
+                    "toroidal_unit",
+                    "poloidal_unit",
+                    "radially_outward_unit",
+                ):
+                    frame[key] = (
+                        np.asarray(frame[key]) @ instance_linear.T
+                    ).tolist()
+                alias_rows.append(
+                    {
+                        "alias_index": alias_index,
+                        "source_control_grid": [
+                            toroidal_control,
+                            poloidal_control,
+                        ],
+                        "source_cad_grid": [row, column],
+                        "toroidal_degrees_45d": 3.0 * toroidal_control,
+                        "poloidal_degrees": 12.0 * poloidal_control,
+                        "magnet_inner_coordinate_cm": (
+                            inner[row, column] @ instance_linear.T
+                        ).tolist(),
+                        "magnet_outer_coordinate_cm": (
+                            outer[row, column] @ instance_linear.T
+                        ).tolist(),
+                        "engineering_frame": frame,
+                        "inner_patch": {
+                            "patch_id": (
+                                f"M2:{instance_id}:inner:t{toroidal_control:02d}:"
+                                f"p{poloidal_control:02d}"
+                            ),
+                            "source_cad_cells": [list(cell) for cell in cells],
+                            "area_cm2": inner_area,
+                            "outward_sense": "toward_vacuum_gap",
+                        },
+                        "outer_patch": {
+                            "patch_id": (
+                                f"M2:{instance_id}:outer:t{toroidal_control:02d}:"
+                                f"p{poloidal_control:02d}"
+                            ),
+                            "source_cad_cells": [list(cell) for cell in cells],
+                            "area_cm2": outer_area,
+                            "outward_sense": "away_from_magnet_envelope",
+                        },
+                    }
+                )
+            mapping.append(
+                {
+                    "canonical_control_id": canonical_id,
+                    "nwl_mw_per_m2": float(nwl[canonical_id]),
+                    "nwl_normalized": float(normalized_nwl[canonical_id]),
+                    "symmetry_instance_id": instance_id,
+                    "transform_id": (
+                        "identity"
+                        if instance_id == "canonical"
+                        else "half_period_mate"
+                    ),
+                    "aliases": alias_rows,
+                }
+            )
+
+    mapping_path = output_root / "CANONICAL_452_M2_MAPPING.json"
+    write_json_create_only(
+        mapping_path,
+        {
+            "schema": "wistell_d.canonical_452_m2_mapping/v1.0.0",
+            "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+            "canonical_control_count": N_CONTROL_POINTS,
+            "symmetry_instance_count": 2,
+            "records": mapping,
+            "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        },
+    )
+
+    source_step = source_root / "magnet_envelope.step"
+    derived_step = derived_root / "magnet_envelope.step"
+    cad_faces_45 = cad_face_inventory(
+        source_step, inner, outer, extent_degrees=45.0
+    )
+    mate_inner = inner @ linear.T
+    mate_outer = outer @ linear.T
+    full_inner = np.concatenate((inner, mate_inner), axis=0)
+    full_outer = np.concatenate((outer, mate_outer), axis=0)
+    cad_faces_90 = cad_face_inventory(
+        derived_step, full_inner, full_outer, extent_degrees=90.0
+    )
+    artifact_files = {
+        "physical_facets_45d": facets_45_path,
+        "physical_facets_90d": facets_90_path,
+        "excluded_symmetry_cut_facets": cuts_path,
+        "canonical_452_mapping": mapping_path,
+        "source_acceptance": source_acceptance,
+        "derived_acceptance": derived_acceptance,
+        "transform_receipt": transform_path,
+        "source_magnet_step": source_step,
+        "derived_magnet_step": derived_step,
+    }
+    payload = {
+        "schema": "wistell_d.m2_geometry_handshake/v1.0.0",
+        "generated_utc": utc_now(),
+        "classification": "M2_GEOMETRY_INVENTORY_PASS",
+        "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+        "representation": {
+            "kind": "continuous_homogenized_30_cm_magnet_envelope",
+            "exact_coil_or_tape_surfaces": False,
+            "logical_patches_are_not_physical_coils": True,
+        },
+        "boundary_roles": {
+            "M1": "MAGNET_ENVELOPE_INNER_ENTRY",
+            "M2": "MAGNET_ENVELOPE_COMPLETE_PHYSICAL_BOUNDARY",
+            "M2_included": [
+                "MAGNET_ENVELOPE_INNER_PHYSICAL_BOUNDARY",
+                "MAGNET_ENVELOPE_OUTER_PHYSICAL_BOUNDARY",
+            ],
+            "M2_excluded": ["PURE_SECTOR_OR_FIELD_PERIOD_SYMMETRY_CUT"],
+        },
+        "parametric_facet_inventory": {
+            "45d": {
+                "facet_count": int(len(facets_45["areas_cm2"])),
+                "area_cm2": float(facets_45["areas_cm2"].sum()),
+                "inner_area_cm2": float(inner_table["areas_cm2"].sum()),
+                "outer_area_cm2": float(outer_table["areas_cm2"].sum()),
+            },
+            "90d": {
+                "facet_count": int(len(facets_90["areas_cm2"])),
+                "area_cm2": float(facets_90["areas_cm2"].sum()),
+                "area_scale_from_45d": float(
+                    facets_90["areas_cm2"].sum() / facets_45["areas_cm2"].sum()
+                ),
+            },
+            "ancestry": (
+                "90D canonical facets retain parent_45d_facet_id; mate facets use "
+                "the exact half_period_mate transform"
+            ),
+            "normal_sense": (
+                "outward from homogenized magnet volume; inner normals point toward "
+                "vacuum_gap and outer normals point away from the envelope"
+            ),
+        },
+        "symmetry_cut_exclusions": {
+            "45d_phi0_facet_count": int(len(start_cut["areas_cm2"])),
+            "45d_phi45_facet_count": int(len(end_cut["areas_cm2"])),
+            "90d_phi0_facet_count": int(len(start_cut["areas_cm2"])),
+            "90d_phi90_facet_count": int(len(mate_start_cut["areas_cm2"])),
+            "internal_phi45_seam": "REMOVED_BY_SAME_MATERIAL_BREP_FUSE",
+            "included_in_m2": False,
+        },
+        "cad_surface_inventory": {"45d": cad_faces_45, "90d": cad_faces_90},
+        "canonical_mapping": {
+            "canonical_control_count": N_CONTROL_POINTS,
+            "record_count": len(mapping),
+            "instance_ids": ["canonical", "mate"],
+            "mapping_path": str(mapping_path),
+        },
+        "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        "artifacts": artifact_rows(output_root, artifact_files),
+    }
+    if not math.isclose(
+        payload["parametric_facet_inventory"]["90d"]["area_scale_from_45d"],
+        2.0,
+        abs_tol=1.0e-12,
+    ):
+        raise RuntimeError(
+            "90-degree M2 area does not equal two 45-degree instances"
+        )
+    write_json_create_only(output_root / "M2_GEOMETRY_HANDSHAKE.json", payload)
+    print(
+        json.dumps(
+            {
+                "classification": payload["classification"],
+                "output": str(output_root),
+            },
+            indent=2,
+        )
+    )
 
 
 def audit_symmetry(args: argparse.Namespace) -> None:
@@ -746,14 +1385,22 @@ def audit_symmetry(args: argparse.Namespace) -> None:
                     "canonical_count": int(len(np.load(input_root / name))),
                     "start_profile_symmetry_max": float(
                         np.abs(
-                            array_to_symmetric_matrix(np.load(input_root / name))[0]
-                            - array_to_symmetric_matrix(np.load(input_root / name))[0][::-1]
+                            array_to_symmetric_matrix(
+                                np.load(input_root / name)
+                            )[0]
+                            - array_to_symmetric_matrix(
+                                np.load(input_root / name)
+                            )[0][::-1]
                         ).max()
                     ),
                     "end_profile_symmetry_max": float(
                         np.abs(
-                            array_to_symmetric_matrix(np.load(input_root / name))[-1]
-                            - array_to_symmetric_matrix(np.load(input_root / name))[-1][::-1]
+                            array_to_symmetric_matrix(
+                                np.load(input_root / name)
+                            )[-1]
+                            - array_to_symmetric_matrix(
+                                np.load(input_root / name)
+                            )[-1][::-1]
                         ).max()
                     ),
                 }
@@ -777,10 +1424,17 @@ def audit_symmetry(args: argparse.Namespace) -> None:
         and max(closure.values()) < 1.0e-12
     )
     if not thresholds:
-        payload["classification"] = "WISTELL_D_EXACT_HALF_PERIOD_TRANSFORM_BLOCKED"
+        payload["classification"] = (
+            "WISTELL_D_EXACT_HALF_PERIOD_TRANSFORM_BLOCKED"
+        )
         raise RuntimeError(json.dumps(payload, indent=2))
     write_json_create_only(output, payload)
-    print(json.dumps({"output": str(output), "verification": payload["verification"]}, indent=2))
+    print(
+        json.dumps(
+            {"output": str(output), "verification": payload["verification"]},
+            indent=2,
+        )
+    )
 
 
 def derive_90(args: argparse.Namespace) -> None:
@@ -815,7 +1469,9 @@ def derive_90(args: argparse.Namespace) -> None:
         joined = source.fuse(mate).clean()
         source_metrics = shape_metrics(source)
         joined_metrics = shape_metrics(joined)
-        volume_scale = joined_metrics["volume_cm3"] / source_metrics["volume_cm3"]
+        volume_scale = (
+            joined_metrics["volume_cm3"] / source_metrics["volume_cm3"]
+        )
         row = {
             "component": name,
             "source_mate_intersection_volume_cm3": common_volume,
@@ -829,9 +1485,13 @@ def derive_90(args: argparse.Namespace) -> None:
             common_volume > args.tolerance_cm3
             or not joined_metrics["valid_brep"]
             or joined_metrics["solid_count"] != 1
-            or not math.isclose(volume_scale, 2.0, rel_tol=2.0e-8, abs_tol=1.0e-8)
+            or not math.isclose(
+                volume_scale, 2.0, rel_tol=2.0e-8, abs_tol=1.0e-8
+            )
         ):
-            raise RuntimeError(f"90-degree seam expansion failed for {name}: {row}")
+            raise RuntimeError(
+                f"90-degree seam expansion failed for {name}: {row}"
+            )
         expanded[name] = joined
         expansion_rows.append(row)
         cq.exporters.export(joined, str(output_root / f"{name}.step"))
@@ -843,7 +1503,9 @@ def derive_90(args: argparse.Namespace) -> None:
         expanded, intersection_volume, tolerance_cm3=args.tolerance_cm3
     )
     require_complete_pairwise_acceptance(pairwise)
-    components = {name: shape_metrics(shape) for name, shape in expanded.items()}
+    components = {
+        name: shape_metrics(shape) for name, shape in expanded.items()
+    }
     artifacts = artifact_rows(
         output_root,
         {
@@ -925,14 +1587,18 @@ def parse_args() -> argparse.Namespace:
     reject = subparsers.add_parser("audit-existing-31x61")
     reject.add_argument("--step-root", required=True)
     reject.add_argument("--output", required=True)
-    reject.add_argument("--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3)
+    reject.add_argument(
+        "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
+    )
     reject.set_defaults(function=audit_existing_31x61)
 
     build = subparsers.add_parser("build-45")
     build.add_argument("--input-root", required=True)
     build.add_argument("--output-root", required=True)
     build.add_argument("--construct-only", action="store_true")
-    build.add_argument("--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3)
+    build.add_argument(
+        "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
+    )
     build.set_defaults(function=build_45)
 
     symmetry = subparsers.add_parser("audit-symmetry")
@@ -944,8 +1610,18 @@ def parse_args() -> argparse.Namespace:
     expand.add_argument("--source-root", required=True)
     expand.add_argument("--transform-receipt", required=True)
     expand.add_argument("--output-root", required=True)
-    expand.add_argument("--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3)
+    expand.add_argument(
+        "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
+    )
     expand.set_defaults(function=derive_90)
+
+    m2 = subparsers.add_parser("build-m2-contract")
+    m2.add_argument("--input-root", required=True)
+    m2.add_argument("--source-root", required=True)
+    m2.add_argument("--derived-root", required=True)
+    m2.add_argument("--transform-receipt", required=True)
+    m2.add_argument("--output-root", required=True)
+    m2.set_defaults(function=build_m2_contract)
     return parser.parse_args()
 
 

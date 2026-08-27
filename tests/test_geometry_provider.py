@@ -19,6 +19,13 @@ from parastell.geometry_provider import (
     require_complete_pairwise_acceptance,
     validate_wistell_d_manifest,
 )
+from scripts.wistell_d_geometry_lane import (
+    concatenate_facet_tables,
+    control_grid_aliases,
+    patch_cells,
+    transform_facet_table,
+    triangulate_envelope_boundary,
+)
 
 
 def _accepted_manifest(tmp_path: Path) -> dict:
@@ -88,7 +95,9 @@ def test_wistell_transform_is_exact_involution_and_period_generator():
     assert np.allclose(mate.linear, expected_mate, atol=1e-15)
     assert np.isclose(mate.determinant, 1.0)
     assert np.allclose(mate.array @ mate.array, np.eye(4), atol=1e-15)
-    assert np.allclose(np.linalg.matrix_power(period.array, 4), np.eye(4), atol=1e-15)
+    assert np.allclose(
+        np.linalg.matrix_power(period.array, 4), np.eye(4), atol=1e-15
+    )
 
     points = np.array([[14.0, 2.0, 3.0], [8.0, 5.0, -4.0]])
     assert np.allclose(
@@ -139,6 +148,62 @@ def test_canonical_controls_are_not_renumbered_for_symmetry_instances():
         "canonical",
         "mate",
     }
+
+
+def test_canonical_aliases_cover_control_grid_and_patches_partition_cells():
+    aliases = {
+        alias
+        for canonical_id in range(452)
+        for alias in control_grid_aliases(canonical_id)
+    }
+    assert aliases == {
+        (toroidal, poloidal)
+        for toroidal in range(16)
+        for poloidal in range(30)
+    }
+    claimed = [
+        cell for alias in sorted(aliases) for cell in patch_cells(*alias)
+    ]
+    assert len(claimed) == 60 * 120
+    assert len(set(claimed)) == len(claimed)
+
+
+def test_m2_facet_transform_preserves_area_and_ancestry():
+    toroidal = np.linspace(0.0, 1.0, 61)[:, None]
+    poloidal = np.linspace(0.0, 2.0 * np.pi, 121)[None, :]
+    loci = np.stack(
+        (
+            np.broadcast_to(toroidal, (61, 121)),
+            np.broadcast_to(np.cos(poloidal), (61, 121)),
+            np.broadcast_to(np.sin(poloidal), (61, 121)),
+        ),
+        axis=2,
+    )
+    expected = np.stack(
+        (
+            np.zeros((61, 121)),
+            np.broadcast_to(np.cos(poloidal), (61, 121)),
+            np.broadcast_to(np.sin(poloidal), (61, 121)),
+        ),
+        axis=2,
+    )
+    canonical = triangulate_envelope_boundary(
+        loci, expected, boundary_role_code=1
+    )
+    canonical["facet_id"] = np.arange(
+        len(canonical["areas_cm2"]), dtype=np.uint32
+    )
+    canonical["parent_45d_facet_id"] = canonical["facet_id"].copy()
+    mate = transform_facet_table(
+        canonical,
+        np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]]),
+    )
+    expanded = concatenate_facet_tables((canonical, mate))
+    assert np.allclose(mate["areas_cm2"], canonical["areas_cm2"])
+    assert np.array_equal(mate["parent_45d_facet_id"], canonical["facet_id"])
+    assert np.isclose(
+        expanded["areas_cm2"].sum(), 2.0 * canonical["areas_cm2"].sum()
+    )
 
 
 def test_manifest_round_trip_is_stable(tmp_path):

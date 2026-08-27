@@ -13,7 +13,14 @@ import hashlib
 import json
 import math
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
+from typing import (
+    Any,
+    Callable,
+    Mapping,
+    Protocol,
+    Sequence,
+    runtime_checkable,
+)
 
 import numpy as np
 
@@ -117,7 +124,9 @@ class RigidTransform:
         if not np.allclose(linear.T @ linear, np.eye(3), atol=1e-12):
             raise ValueError("rigid transform linear part is not orthogonal")
         if not np.isclose(abs(np.linalg.det(linear)), 1.0, atol=1e-12):
-            raise ValueError("rigid transform determinant must have unit magnitude")
+            raise ValueError(
+                "rigid transform determinant must have unit magnitude"
+            )
 
     @property
     def array(self) -> np.ndarray:
@@ -180,7 +189,9 @@ class RigidTransform:
             "inverse_matrix": inverse.tolist(),
             "determinant": self.determinant,
             "orthogonality_inf_norm": float(
-                np.linalg.norm(self.linear.T @ self.linear - np.eye(3), ord=np.inf)
+                np.linalg.norm(
+                    self.linear.T @ self.linear - np.eye(3), ord=np.inf
+                )
             ),
             "inverse_closure_inf_norm": float(
                 np.linalg.norm(product - np.eye(4), ord=np.inf)
@@ -262,9 +273,13 @@ def complete_pairwise_audit(
                     )
                 )
                 if not math.isfinite(volume) or volume < 0.0:
-                    raise ValueError("intersection volume must be finite and nonnegative")
+                    raise ValueError(
+                        "intersection volume must be finite and nonnegative"
+                    )
                 error = None
-            except Exception as exc:  # fail closed and preserve the exact error
+            except (
+                Exception
+            ) as exc:  # fail closed and preserve the exact error
                 volume = None
                 error = f"{type(exc).__name__}: {exc}"
             pairs.append(
@@ -287,10 +302,13 @@ def complete_pairwise_audit(
         "expected_pair_count": expected,
         "evaluated_pair_count": len(pairs),
         "tolerance_cm3": tolerance_cm3,
-        "boolean_failure_count": sum(row["boolean_error"] is not None for row in pairs),
+        "boolean_failure_count": sum(
+            row["boolean_error"] is not None for row in pairs
+        ),
         "overlap_count": sum(row["overlap"] for row in pairs),
         "nonadjacent_overlap_count": sum(
-            row["overlap"] and not row["adjacent_in_radial_stack"] for row in pairs
+            row["overlap"] and not row["adjacent_in_radial_stack"]
+            for row in pairs
         ),
         "pairs": pairs,
     }
@@ -304,9 +322,13 @@ def require_complete_pairwise_acceptance(report: Mapping[str, Any]) -> None:
     if not isinstance(pairs, list) or expected <= 0 or evaluated != expected:
         raise GeometryProvenanceError("component-pair audit is incomplete")
     if len(pairs) != expected:
-        raise GeometryProvenanceError("component-pair rows do not match expected count")
+        raise GeometryProvenanceError(
+            "component-pair rows do not match expected count"
+        )
     if int(report.get("boolean_failure_count", -1)) != 0:
-        raise GeometryProvenanceError("component-pair Boolean audit contains failures")
+        raise GeometryProvenanceError(
+            "component-pair Boolean audit contains failures"
+        )
     overlaps = [row for row in pairs if row.get("overlap")]
     if overlaps:
         pair = overlaps[0]
@@ -332,13 +354,19 @@ def _all_strings(value: Any) -> list[str]:
 
 
 def validate_wistell_d_manifest(
-    manifest: Mapping[str, Any], *, required_extent_degrees: float | None = None
+    manifest: Mapping[str, Any],
+    *,
+    required_extent_degrees: float | None = None,
 ) -> None:
     """Validate a new-lane scientific WISTELL-D geometry manifest."""
     if manifest.get("schema") != WISTELL_D_ACCEPTANCE_SCHEMA:
-        raise GeometryProvenanceError("unsupported WISTELL-D acceptance schema")
+        raise GeometryProvenanceError(
+            "unsupported WISTELL-D acceptance schema"
+        )
     if manifest.get("geometry_input_mode") != WISTELL_D_GEOMETRY_INPUT_MODE:
-        raise GeometryProvenanceError("unqualified WISTELL-D geometry input mode")
+        raise GeometryProvenanceError(
+            "unqualified WISTELL-D geometry input mode"
+        )
 
     flattened = "\n".join(_all_strings(manifest)).lower()
     forbidden_markers = (
@@ -350,9 +378,13 @@ def validate_wistell_d_manifest(
         "fallback geometry",
     )
     if any(marker in flattened for marker in forbidden_markers):
-        raise GeometryProvenanceError("example-derived or fallback geometry marker")
+        raise GeometryProvenanceError(
+            "example-derived or fallback geometry marker"
+        )
     if any(digest in flattened for digest in KNOWN_EXAMPLE_SOURCE_HASHES):
-        raise GeometryProvenanceError("known generic-example source fingerprint")
+        raise GeometryProvenanceError(
+            "known generic-example source fingerprint"
+        )
 
     source = manifest.get("source")
     if not isinstance(source, Mapping):
@@ -375,7 +407,9 @@ def validate_wistell_d_manifest(
     if float(model.get("wall_s", math.nan)) != 1.0:
         raise GeometryProvenanceError("WISTELL-D geometry requires wall_s=1.0")
     if int(model.get("canonical_control_count", -1)) != 452:
-        raise GeometryProvenanceError("WISTELL-D canonical control count mismatch")
+        raise GeometryProvenanceError(
+            "WISTELL-D canonical control count mismatch"
+        )
     if model.get("source_cad_grid") != [61, 121]:
         raise GeometryProvenanceError("scientific source CAD must be 61x121")
     if model.get("magnet_representation") != (
@@ -399,16 +433,24 @@ def validate_wistell_d_manifest(
 
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, Mapping) or not artifacts:
-        raise GeometryProvenanceError("accepted geometry has no artifact inventory")
+        raise GeometryProvenanceError(
+            "accepted geometry has no artifact inventory"
+        )
     for role, row in artifacts.items():
         if not isinstance(row, Mapping):
             raise GeometryProvenanceError(f"invalid artifact row for {role}")
         path = row.get("path")
         digest = str(row.get("sha256", "")).lower()
         if not isinstance(path, str) or not Path(path).is_absolute():
-            raise GeometryProvenanceError(f"artifact {role} path is not absolute")
-        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
-            raise GeometryProvenanceError(f"artifact {role} has invalid SHA-256")
+            raise GeometryProvenanceError(
+                f"artifact {role} path is not absolute"
+            )
+        if len(digest) != 64 or any(
+            char not in "0123456789abcdef" for char in digest
+        ):
+            raise GeometryProvenanceError(
+                f"artifact {role} has invalid SHA-256"
+            )
 
 
 @runtime_checkable
@@ -448,18 +490,26 @@ class WistellDGeometryProvider:
 
     def __init__(self, manifest_path: str | Path):
         self.manifest_path = Path(manifest_path).resolve()
-        self._manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+        self._manifest = json.loads(
+            self.manifest_path.read_text(encoding="utf-8")
+        )
 
     def validate(self) -> None:
         validate_wistell_d_manifest(self._manifest)
         row = self._manifest["artifacts"].get("selected_h5m")
         if row is None:
-            raise GeometryProvenanceError("no explicitly selected DAGMC artifact")
+            raise GeometryProvenanceError(
+                "no explicitly selected DAGMC artifact"
+            )
         path = Path(row["path"]).resolve()
         if not path.is_file():
-            raise GeometryProvenanceError("selected DAGMC artifact does not exist")
+            raise GeometryProvenanceError(
+                "selected DAGMC artifact does not exist"
+            )
         if sha256_file(path) != row["sha256"]:
-            raise GeometryProvenanceError("selected DAGMC artifact hash mismatch")
+            raise GeometryProvenanceError(
+                "selected DAGMC artifact hash mismatch"
+            )
 
     def component_manifest(self) -> Mapping[str, Any]:
         return self._manifest["components"]
@@ -499,7 +549,9 @@ class WistellDGeometryProvider:
         There is intentionally no export, discovery, or example fallback path.
         """
         self.validate()
-        return Path(self._manifest["artifacts"]["selected_h5m"]["path"]).resolve()
+        return Path(
+            self._manifest["artifacts"]["selected_h5m"]["path"]
+        ).resolve()
 
 
 class ExistingGeometryProvider(WistellDGeometryProvider):
@@ -519,7 +571,9 @@ def canonical_patch_instances(
             "canonical_control_id": canonical_id,
             "symmetry_instance_id": instance_id,
             "transform_id": (
-                "identity" if instance_id == "canonical" else "half_period_mate"
+                "identity"
+                if instance_id == "canonical"
+                else "half_period_mate"
             ),
         }
         for instance_id in instance_ids
