@@ -1,0 +1,527 @@
+"""Fail-closed geometry-provider contracts for transport workflows.
+
+This module deliberately contains no CAD, DAGMC, OpenMC, or Paramak import.
+It validates immutable geometry receipts before a transport-facing caller may
+load an artifact.  In particular, the WISTELL-D provider never discovers a
+geometry by filename, recency, or fallback search.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+import math
+from pathlib import Path
+from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
+
+import numpy as np
+
+
+PROVIDER_VERSION = "1.0.0"
+PROVIDER_SCHEMA = "parastell.geometry_provider/v1.0.0"
+WISTELL_D_ACCEPTANCE_SCHEMA = "wistell_d.geometry_acceptance/v1.0.0"
+WISTELL_D_GEOMETRY_INPUT_MODE = "REBUILD_FROM_AUTHORITATIVE_WISTELL_D_INPUTS"
+
+WISTELL_D_SOURCE_HASHES = {
+    "wout_wistell-d.nc": (
+        "9231969001203a8133255ee0a275bf552b114cc12524dda0608ab2f12047f7ac"
+    ),
+    "coils.wistell-d": (
+        "7748369407d28a70f35b5c4a7c0ab860495a08fd0030002112ea933fe570159b"
+    ),
+    "nwl.npy": (
+        "56baa090d61b67273efba61213849b7516beabb2a57fc2ad4751a6f3a32b2db4"
+    ),
+    "blanket_boundary.npy": (
+        "fdb85b2c0c8cd72f5d000302e0b67349ebf72679f98f9c4d7739e5d8484cdde3"
+    ),
+    "magnet_boundary.npy": (
+        "3579e5d8fe97dd74c8700e5676964159f00f07989ca6436528f60462889f05bd"
+    ),
+    "source_mesh.h5m": (
+        "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322"
+    ),
+    "strengths.npy": (
+        "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df"
+    ),
+}
+
+# These hashes identify the generic ParaStell example input pair.  They may
+# remain as isolated software fixtures, but can never select scientific data.
+KNOWN_EXAMPLE_SOURCE_HASHES = frozenset(
+    {
+        "1cebb8d46e60d77df4a6904662a9c9f943137a9fb59f7290e5309af15fa04797",
+        "69f508b216f0b674368ca8731d390c9d514736ff092f0ebecd854e8772ae04ab",
+        "83902138eccefc266df638cf8662e00eb8a11cb7c66848d80c0d9e19805383e5",
+    }
+)
+
+EXPECTED_LAYER_ORDER = (
+    "chamber",
+    "first_wall",
+    "breeder",
+    "back_wall",
+    "high_temperature_shield",
+    "vacuum_vessel",
+    "low_temperature_shield",
+    "vacuum_gap",
+    "magnet_envelope",
+)
+
+
+class GeometryProvenanceError(ValueError):
+    """Raised when geometry provenance is incomplete or excluded."""
+
+
+def sha256_file(path: str | Path) -> str:
+    """Return a lowercase SHA-256 digest without mutating *path*."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def canonical_json_sha256(value: Mapping[str, Any] | Sequence[Any]) -> str:
+    """Hash a JSON-compatible value using deterministic compact encoding."""
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _homogeneous(linear: np.ndarray, translation: np.ndarray) -> np.ndarray:
+    matrix = np.eye(4)
+    matrix[:3, :3] = linear
+    matrix[:3, 3] = translation
+    return matrix
+
+
+@dataclass(frozen=True)
+class RigidTransform:
+    """Orthogonal homogeneous transform with polar/axial mapping helpers."""
+
+    transform_id: str
+    matrix: tuple[tuple[float, ...], ...]
+
+    def __post_init__(self) -> None:
+        matrix = np.asarray(self.matrix, dtype=float)
+        if matrix.shape != (4, 4):
+            raise ValueError("rigid transform matrix must be 4x4")
+        if not np.isfinite(matrix).all():
+            raise ValueError("rigid transform matrix must be finite")
+        if not np.allclose(matrix[3], (0.0, 0.0, 0.0, 1.0), atol=1e-14):
+            raise ValueError("invalid homogeneous transform final row")
+        linear = matrix[:3, :3]
+        if not np.allclose(linear.T @ linear, np.eye(3), atol=1e-12):
+            raise ValueError("rigid transform linear part is not orthogonal")
+        if not np.isclose(abs(np.linalg.det(linear)), 1.0, atol=1e-12):
+            raise ValueError("rigid transform determinant must have unit magnitude")
+
+    @property
+    def array(self) -> np.ndarray:
+        return np.asarray(self.matrix, dtype=float)
+
+    @property
+    def linear(self) -> np.ndarray:
+        return self.array[:3, :3]
+
+    @property
+    def translation(self) -> np.ndarray:
+        return self.array[:3, 3]
+
+    @property
+    def determinant(self) -> float:
+        return float(np.linalg.det(self.linear))
+
+    @property
+    def inverse(self) -> "RigidTransform":
+        linear = self.linear.T
+        translation = -linear @ self.translation
+        matrix = _homogeneous(linear, translation)
+        return RigidTransform(
+            transform_id=f"{self.transform_id}.inverse",
+            matrix=tuple(tuple(float(x) for x in row) for row in matrix),
+        )
+
+    def transform_points(self, points: Any) -> np.ndarray:
+        points = np.asarray(points, dtype=float)
+        if points.shape[-1:] != (3,):
+            raise ValueError("points must end in a three-coordinate axis")
+        return points @ self.linear.T + self.translation
+
+    def transform_directions(self, directions: Any) -> np.ndarray:
+        directions = np.asarray(directions, dtype=float)
+        if directions.shape[-1:] != (3,):
+            raise ValueError("directions must end in a three-coordinate axis")
+        return directions @ self.linear.T
+
+    def transform_axial_vectors(self, vectors: Any) -> np.ndarray:
+        return self.determinant * self.transform_directions(vectors)
+
+    def transform_tetrahedra(
+        self, tetrahedra: Any, *, positive_orientation: bool = True
+    ) -> np.ndarray:
+        transformed = self.transform_points(tetrahedra)
+        if transformed.shape[-2:] != (4, 3):
+            raise ValueError("tetrahedra must end in a (4, 3) vertex array")
+        if positive_orientation and self.determinant < 0.0:
+            transformed = transformed.copy()
+            transformed[..., [1, 2], :] = transformed[..., [2, 1], :]
+        return transformed
+
+    def receipt(self) -> dict[str, Any]:
+        inverse = self.inverse.array
+        product = self.array @ inverse
+        return {
+            "transform_id": self.transform_id,
+            "matrix": self.array.tolist(),
+            "inverse_matrix": inverse.tolist(),
+            "determinant": self.determinant,
+            "orthogonality_inf_norm": float(
+                np.linalg.norm(self.linear.T @ self.linear - np.eye(3), ord=np.inf)
+            ),
+            "inverse_closure_inf_norm": float(
+                np.linalg.norm(product - np.eye(4), ord=np.inf)
+            ),
+        }
+
+
+def derive_wistell_d_transforms(
+    *, nfp: int, lasym: bool, phase_origin_degrees: float = 0.0
+) -> dict[str, RigidTransform]:
+    """Derive period and half-period stellarator-symmetry generators.
+
+    The canonical half-period is ``[phase_origin, phase_origin + 180/nfp]``.
+    Its mate is obtained by a 180-degree rotation about the radial line at the
+    shared seam.  This is derived from live ``nfp``/``lasym`` evidence; callers
+    must not substitute a simple rotation by the half-period angle.
+    """
+    if nfp <= 0:
+        raise ValueError("nfp must be positive")
+    if not lasym:
+        raise GeometryProvenanceError(
+            "WISTELL-D half-period expansion requires live stellarator symmetry"
+        )
+
+    period_degrees = 360.0 / nfp
+    seam_degrees = phase_origin_degrees + period_degrees / 2.0
+    seam_radians = math.radians(seam_degrees)
+    axis = np.array(
+        [math.cos(seam_radians), math.sin(seam_radians), 0.0], dtype=float
+    )
+    half_linear = 2.0 * np.outer(axis, axis) - np.eye(3)
+
+    period_radians = math.radians(period_degrees)
+    c = math.cos(period_radians)
+    s = math.sin(period_radians)
+    period_linear = np.array(
+        [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=float
+    )
+
+    identity = np.eye(4)
+    half = _homogeneous(half_linear, np.zeros(3))
+    period = _homogeneous(period_linear, np.zeros(3))
+    return {
+        "identity": RigidTransform(
+            "identity", tuple(tuple(float(x) for x in row) for row in identity)
+        ),
+        "half_period_mate": RigidTransform(
+            "half_period_mate",
+            tuple(tuple(float(x) for x in row) for row in half),
+        ),
+        "field_period": RigidTransform(
+            "field_period",
+            tuple(tuple(float(x) for x in row) for row in period),
+        ),
+    }
+
+
+def complete_pairwise_audit(
+    components: Mapping[str, Any],
+    intersection_volume: Callable[[Any, Any], float],
+    *,
+    tolerance_cm3: float = 1.0e-5,
+) -> dict[str, Any]:
+    """Evaluate every unordered component pair and report positive overlaps."""
+    if tolerance_cm3 < 0.0 or not math.isfinite(tolerance_cm3):
+        raise ValueError("overlap tolerance must be finite and nonnegative")
+    names = tuple(components)
+    if len(names) < 2:
+        raise ValueError("at least two components are required")
+    pairs: list[dict[str, Any]] = []
+    for left_index, left_name in enumerate(names[:-1]):
+        for right_index, right_name in enumerate(
+            names[left_index + 1 :], start=left_index + 1
+        ):
+            try:
+                volume = float(
+                    intersection_volume(
+                        components[left_name], components[right_name]
+                    )
+                )
+                if not math.isfinite(volume) or volume < 0.0:
+                    raise ValueError("intersection volume must be finite and nonnegative")
+                error = None
+            except Exception as exc:  # fail closed and preserve the exact error
+                volume = None
+                error = f"{type(exc).__name__}: {exc}"
+            pairs.append(
+                {
+                    "left": left_name,
+                    "right": right_name,
+                    "left_index": left_index,
+                    "right_index": right_index,
+                    "adjacent_in_radial_stack": right_index == left_index + 1,
+                    "intersection_volume_cm3": volume,
+                    "boolean_error": error,
+                    "overlap": volume is not None and volume > tolerance_cm3,
+                }
+            )
+
+    expected = len(names) * (len(names) - 1) // 2
+    return {
+        "component_order": list(names),
+        "component_count": len(names),
+        "expected_pair_count": expected,
+        "evaluated_pair_count": len(pairs),
+        "tolerance_cm3": tolerance_cm3,
+        "boolean_failure_count": sum(row["boolean_error"] is not None for row in pairs),
+        "overlap_count": sum(row["overlap"] for row in pairs),
+        "nonadjacent_overlap_count": sum(
+            row["overlap"] and not row["adjacent_in_radial_stack"] for row in pairs
+        ),
+        "pairs": pairs,
+    }
+
+
+def require_complete_pairwise_acceptance(report: Mapping[str, Any]) -> None:
+    """Reject missing pairs, Boolean failures, and overlaps of any pair."""
+    expected = int(report.get("expected_pair_count", -1))
+    evaluated = int(report.get("evaluated_pair_count", -1))
+    pairs = report.get("pairs")
+    if not isinstance(pairs, list) or expected <= 0 or evaluated != expected:
+        raise GeometryProvenanceError("component-pair audit is incomplete")
+    if len(pairs) != expected:
+        raise GeometryProvenanceError("component-pair rows do not match expected count")
+    if int(report.get("boolean_failure_count", -1)) != 0:
+        raise GeometryProvenanceError("component-pair Boolean audit contains failures")
+    overlaps = [row for row in pairs if row.get("overlap")]
+    if overlaps:
+        pair = overlaps[0]
+        raise GeometryProvenanceError(
+            "positive component overlap: "
+            f"{pair.get('left')}-{pair.get('right')} = "
+            f"{pair.get('intersection_volume_cm3')} cm^3"
+        )
+
+
+def _all_strings(value: Any) -> list[str]:
+    if isinstance(value, Mapping):
+        strings: list[str] = []
+        for key, item in value.items():
+            strings.extend((str(key), *_all_strings(item)))
+        return strings
+    if isinstance(value, (list, tuple)):
+        strings = []
+        for item in value:
+            strings.extend(_all_strings(item))
+        return strings
+    return [str(value)]
+
+
+def validate_wistell_d_manifest(
+    manifest: Mapping[str, Any], *, required_extent_degrees: float | None = None
+) -> None:
+    """Validate a new-lane scientific WISTELL-D geometry manifest."""
+    if manifest.get("schema") != WISTELL_D_ACCEPTANCE_SCHEMA:
+        raise GeometryProvenanceError("unsupported WISTELL-D acceptance schema")
+    if manifest.get("geometry_input_mode") != WISTELL_D_GEOMETRY_INPUT_MODE:
+        raise GeometryProvenanceError("unqualified WISTELL-D geometry input mode")
+
+    flattened = "\n".join(_all_strings(manifest)).lower()
+    forbidden_markers = (
+        "examples/wout_vmec.nc",
+        "examples\\wout_vmec.nc",
+        "coils.example",
+        "parastell_multi_config_20260827_01",
+        "newest artifact",
+        "fallback geometry",
+    )
+    if any(marker in flattened for marker in forbidden_markers):
+        raise GeometryProvenanceError("example-derived or fallback geometry marker")
+    if any(digest in flattened for digest in KNOWN_EXAMPLE_SOURCE_HASHES):
+        raise GeometryProvenanceError("known generic-example source fingerprint")
+
+    source = manifest.get("source")
+    if not isinstance(source, Mapping):
+        raise GeometryProvenanceError("missing WISTELL-D source receipt")
+    if source.get("lineage_commit") != (
+        "398032b8c0b4e7c0459c602f2af1e73b3fca0b9a"
+    ):
+        raise GeometryProvenanceError("wrong WISTELL-D lineage commit")
+    source_hashes = source.get("hashes")
+    if not isinstance(source_hashes, Mapping):
+        raise GeometryProvenanceError("missing authoritative source hashes")
+    if dict(source_hashes) != WISTELL_D_SOURCE_HASHES:
+        raise GeometryProvenanceError("authoritative source hash set mismatch")
+
+    model = manifest.get("model")
+    if not isinstance(model, Mapping):
+        raise GeometryProvenanceError("missing WISTELL-D model receipt")
+    if model.get("device") != "WISTELL-D":
+        raise GeometryProvenanceError("geometry device is not WISTELL-D")
+    if float(model.get("wall_s", math.nan)) != 1.0:
+        raise GeometryProvenanceError("WISTELL-D geometry requires wall_s=1.0")
+    if int(model.get("canonical_control_count", -1)) != 452:
+        raise GeometryProvenanceError("WISTELL-D canonical control count mismatch")
+    if model.get("source_cad_grid") != [61, 121]:
+        raise GeometryProvenanceError("scientific source CAD must be 61x121")
+    if model.get("magnet_representation") != (
+        "continuous_30_cm_magnet_envelope"
+    ):
+        raise GeometryProvenanceError("wrong WISTELL-D magnet representation")
+    if model.get("global_explicit_coils") is not False:
+        raise GeometryProvenanceError("global explicit coils are excluded")
+    extent = float(model.get("toroidal_extent_degrees", math.nan))
+    if extent not in (45.0, 90.0):
+        raise GeometryProvenanceError("unsupported WISTELL-D model extent")
+    if required_extent_degrees is not None and not math.isclose(
+        extent, required_extent_degrees, abs_tol=1e-12
+    ):
+        raise GeometryProvenanceError("geometry extent does not match request")
+
+    pairwise = manifest.get("complete_pairwise_audit")
+    if not isinstance(pairwise, Mapping):
+        raise GeometryProvenanceError("missing complete component-pair audit")
+    require_complete_pairwise_acceptance(pairwise)
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, Mapping) or not artifacts:
+        raise GeometryProvenanceError("accepted geometry has no artifact inventory")
+    for role, row in artifacts.items():
+        if not isinstance(row, Mapping):
+            raise GeometryProvenanceError(f"invalid artifact row for {role}")
+        path = row.get("path")
+        digest = str(row.get("sha256", "")).lower()
+        if not isinstance(path, str) or not Path(path).is_absolute():
+            raise GeometryProvenanceError(f"artifact {role} path is not absolute")
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            raise GeometryProvenanceError(f"artifact {role} has invalid SHA-256")
+
+
+@runtime_checkable
+class GeometryProvider(Protocol):
+    """Minimum transport-facing geometry provider contract."""
+
+    def validate(self) -> None: ...
+
+    def component_manifest(self) -> Mapping[str, Any]: ...
+
+    def material_manifest(self) -> Mapping[str, Any]: ...
+
+    def source_domain(self) -> Mapping[str, Any]: ...
+
+    def physical_boundary_roles(self) -> Mapping[str, Any]: ...
+
+    def global_transforms(self) -> Mapping[str, Any]: ...
+
+    def canonical_patch_map(self) -> Sequence[Mapping[str, Any]]: ...
+
+    def local_frames(self) -> Mapping[str, Any]: ...
+
+    def geometry_fingerprint(self) -> str: ...
+
+    def export_or_load_dagmc(self) -> Path: ...
+
+
+@runtime_checkable
+class ParamakGeometryAdapter(Protocol):
+    """Optional adapter protocol; ParaStell never imports Paramak."""
+
+    def to_geometry_provider(self) -> GeometryProvider: ...
+
+
+class WistellDGeometryProvider:
+    """Read-only provider for a strictly accepted lane-owned WISTELL-D model."""
+
+    def __init__(self, manifest_path: str | Path):
+        self.manifest_path = Path(manifest_path).resolve()
+        self._manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+
+    def validate(self) -> None:
+        validate_wistell_d_manifest(self._manifest)
+        row = self._manifest["artifacts"].get("selected_h5m")
+        if row is None:
+            raise GeometryProvenanceError("no explicitly selected DAGMC artifact")
+        path = Path(row["path"]).resolve()
+        if not path.is_file():
+            raise GeometryProvenanceError("selected DAGMC artifact does not exist")
+        if sha256_file(path) != row["sha256"]:
+            raise GeometryProvenanceError("selected DAGMC artifact hash mismatch")
+
+    def component_manifest(self) -> Mapping[str, Any]:
+        return self._manifest["components"]
+
+    def material_manifest(self) -> Mapping[str, Any]:
+        return self._manifest["materials"]
+
+    def source_domain(self) -> Mapping[str, Any]:
+        return self._manifest["source_domain"]
+
+    def physical_boundary_roles(self) -> Mapping[str, Any]:
+        return self._manifest["physical_boundaries"]
+
+    def global_transforms(self) -> Mapping[str, Any]:
+        return self._manifest["transforms"]
+
+    def canonical_patch_map(self) -> Sequence[Mapping[str, Any]]:
+        return self._manifest["canonical_patch_map"]
+
+    def local_frames(self) -> Mapping[str, Any]:
+        return self._manifest.get("local_frames", {})
+
+    def geometry_fingerprint(self) -> str:
+        identity = {
+            "provider_schema": PROVIDER_SCHEMA,
+            "provider_version": PROVIDER_VERSION,
+            "source": self._manifest["source"],
+            "model": self._manifest["model"],
+            "artifacts": self._manifest["artifacts"],
+            "transforms": self._manifest["transforms"],
+        }
+        return canonical_json_sha256(identity)
+
+    def export_or_load_dagmc(self) -> Path:
+        """Return only the explicitly selected, hash-verified H5M.
+
+        There is intentionally no export, discovery, or example fallback path.
+        """
+        self.validate()
+        return Path(self._manifest["artifacts"]["selected_h5m"]["path"]).resolve()
+
+
+class ExistingGeometryProvider(WistellDGeometryProvider):
+    """Read-only existing STEP/DAGMC provider using the same strict receipt."""
+
+
+def canonical_patch_instances(
+    *, canonical_count: int = 452, instance_ids: Sequence[str] = ("canonical",)
+) -> list[dict[str, Any]]:
+    """Create stable canonical-control and symmetry-instance identities."""
+    if canonical_count <= 0:
+        raise ValueError("canonical control count must be positive")
+    if not instance_ids or len(set(instance_ids)) != len(instance_ids):
+        raise ValueError("symmetry instance IDs must be nonempty and unique")
+    return [
+        {
+            "canonical_control_id": canonical_id,
+            "symmetry_instance_id": instance_id,
+            "transform_id": (
+                "identity" if instance_id == "canonical" else "half_period_mate"
+            ),
+        }
+        for instance_id in instance_ids
+        for canonical_id in range(canonical_count)
+    ]
