@@ -1,0 +1,197 @@
+{
+  "blocking_reason": "four true nonadjacent vacuum-vessel/magnet overlaps",
+  "canonical_geometry_fingerprint": "1c4a6c1fdb37f7bb9d7ef59ab99913884bde6df7b55977a53a68f2a037552bd1",
+  "geometry_gate_pass": false,
+  "native_check_watertight": {
+    "pass": true,
+    "surface_count": 142,
+    "unmatched_edge_count": 0,
+    "unsealed_surface_count": 0,
+    "unsealed_volume_count": 0,
+    "volume_count": 24
+  },
+  "native_overlap_check": {
+    "locations": [
+      {
+        "classification": "TRUE_UNINTENDED_NONADJACENT_VOLUME_OVERLAP",
+        "components": [
+          {
+            "component_name": "",
+            "magnet_id": null,
+            "material_tag": "vac_vessel",
+            "volume_id": 6
+          },
+          {
+            "component_name": "",
+            "magnet_id": "magnet-0005",
+            "material_tag": "magnets",
+            "volume_id": 12
+          }
+        ],
+        "location_cm": [
+          1160.39,
+          380.476,
+          128.459
+        ],
+        "shared_topological_surface_ids": [],
+        "volume_ids": [
+          6,
+          12
+        ]
+      },
+      {
+        "classification": "TRUE_UNINTENDED_NONADJACENT_VOLUME_OVERLAP",
+        "components": [
+          {
+            "component_name": "",
+            "magnet_id": null,
+            "material_tag": "vac_vessel",
+            "volume_id": 6
+          },
+          {
+            "component_name": "",
+            "magnet_id": "magnet-0006",
+            "material_tag": "magnets",
+            "volume_id": 13
+          }
+        ],
+        "location_cm": [
+          1095.15,
+          498.581,
+          92.5898
+        ],
+        "shared_topological_surface_ids": [],
+        "volume_ids": [
+          6,
+          13
+        ]
+      },
+      {
+        "classification": "TRUE_UNINTENDED_NONADJACENT_VOLUME_OVERLAP",
+        "components": [
+          {
+            "component_name": "",
+            "magnet_id": null,
+            "material_tag": "vac_vessel",
+            "volume_id": 6
+          },
+          {
+            "component_name": "",
+            "magnet_id": "magnet-0011",
+            "material_tag": "magnets",
+            "volume_id": 18
+          }
+        ],
+        "location_cm": [
+          476.445,
+          1095.28,
+          -86.2664
+        ],
+        "shared_topological_surface_ids": [],
+        "volume_ids": [
+          6,
+          18
+        ]
+      },
+      {
+        "classification": "TRUE_UNINTENDED_NONADJACENT_VOLUME_OVERLAP",
+        "components": [
+          {
+            "component_name": "",
+            "magnet_id": null,
+            "material_tag": "vac_vessel",
+            "volume_id": 6
+          },
+          {
+            "component_name": "",
+            "magnet_id": "magnet-0012",
+            "material_tag": "magnets",
+            "volume_id": 19
+          }
+        ],
+        "location_cm": [
+          364.23,
+          1158.37,
+          -121.329
+        ],
+        "shared_topological_surface_ids": [],
+        "volume_ids": [
+          6,
+          19
+        ]
+      }
+    ],
+    "non_exhaustive": true,
+    "overlap_location_count": 4,
+    "pass": false,
+    "precision": {
+      "points_per_edge": 2,
+      "threads": 4
+    },
+    "unintended_overlap_count": 4
+  },
+  "openmc_geometry_debug": {
+    "attempts": [
+      {
+        "attempt": 1,
+        "exit_code": 255,
+        "h5m_transport_started": false,
+        "outcome": "MODEL_CONFIGURATION_ID_COLLISION",
+        "reason": "external CSG cell ID 1 conflicted with DAGMC cell ID 1",
+        "threads": 4
+      },
+      {
+        "attempt": 2,
+        "batch_reached": 1,
+        "exit_code": 139,
+        "histories_requested": 4000,
+        "outcome": "OVERLAPPING_CELLS_THEN_SEGMENTATION_FAULT",
+        "reported_cell_ids": [
+          2,
+          3
+        ],
+        "reported_universe_id": 1,
+        "threads": 4
+      },
+      {
+        "attempt": 3,
+        "batch_reached": 1,
+        "exit_code": 255,
+        "histories_requested": 4000,
+        "outcome": "OVERLAPPING_CELLS",
+        "reported_cell_ids": [
+          2,
+          3
+        ],
+        "reported_universe_id": 1,
+        "threads": 1
+      }
+    ],
+    "bounded_configuration": {
+      "batches": 2,
+      "external_csg_vacuum_boundary_cm": 2500.0,
+      "h5m_mutated": false,
+      "openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
+      "openmc_version": "0.16.0",
+      "particles_per_batch": 2000,
+      "seed": 20260826
+    },
+    "h5m_sha256_after": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+    "navigation_error_count": "NOT_PROVEN",
+    "pass": false,
+    "status": "BLOCKED_OPENMC_GEOMETRY_DEBUG_OVERLAPPING_CELLS",
+    "zero_lost_particles": "NOT_PROVEN"
+  },
+  "pydagmc_reload": {
+    "pass": true,
+    "surfaces": 142,
+    "volumes": 24
+  },
+  "pymoab_reload": {
+    "pass": true,
+    "triangles": 188444,
+    "vertices": 93703
+  },
+  "raw_h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+  "schema": "parastell.geometry_debug_report/v1.0.0"
+}

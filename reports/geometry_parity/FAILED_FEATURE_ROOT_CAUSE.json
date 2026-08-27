@@ -1,0 +1,129 @@
+{
+  "schema": "parastell.failed_feature_root_cause/v1.0.0",
+  "failed_geometry": {
+    "branch_sha": "df53ed28edc8d8123b6e42a9e4e5c4e970e69dc8",
+    "h5m_sha256": "7c710fe3dd261ce7f46e5d08b4f9d2924513994ccb6229468933d0b91b2cd7cb",
+    "config_sha256": "1b66f490baf029cdf27c879e619e2ca0673debe60244e853ecaa1bfc75d2ed37",
+    "faceting_cm": {
+      "minimum": 5.0,
+      "maximum": 10.0
+    },
+    "backend": "hybrid pydagmc invessel plus cad_to_dagmc magnets",
+    "post_export_mutation": "one-sided senses rewritten; interstitial volume 43 and graveyard volume 44 added"
+  },
+  "r1_geometry": {
+    "h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+    "faceting_cm": {
+      "minimum": 5.0,
+      "maximum": 20.0
+    },
+    "backend": "untouched public cad_to_dagmc example",
+    "post_export_mutation": "none",
+    "native_unintended_overlap_count": 4
+  },
+  "overlap_pairs": [
+    {
+      "failed_volume_ids": [5, 17],
+      "failed_components": ["shield", "coil-0005 casing"],
+      "failed_location_cm": [1165.96, 341.146, 104.741],
+      "r1_components_exist": true,
+      "r1_correspondence": "shield volume 5 and homogenized magnet-0005 volume 12",
+      "r1_native_overlap_witness": null,
+      "penetration": "NOT_QUANTIFIED",
+      "cause_classification": "ADDITIONAL_HYBRID_OR_FACETING_WITNESS_NOT_PROVEN_SPLIT_CREATED"
+    },
+    {
+      "failed_volume_ids": [6, 17],
+      "failed_components": ["vacuum vessel", "coil-0005 casing"],
+      "failed_location_cm": [1145.84, 362.887, 100.333],
+      "r1_components_exist": true,
+      "r1_correspondence": "vacuum-vessel volume 6 and homogenized magnet-0005 volume 12",
+      "r1_native_overlap_witness": [1160.39, 380.476, 128.459],
+      "penetration": "NOT_QUANTIFIED",
+      "cause_classification": "UNDERLYING_R1_REACTOR_MAGNET_OVERLAP_PERSISTS"
+    },
+    {
+      "failed_volume_ids": [6, 18],
+      "failed_components": ["vacuum vessel", "coil-0005 winding pack"],
+      "failed_location_cm": [1151.02, 333.69, 92.709],
+      "r1_components_exist": true,
+      "r1_correspondence": "same homogenized R1 magnet-0005 volume 12 as preceding casing row",
+      "r1_native_overlap_witness": [1160.39, 380.476, 128.459],
+      "penetration": "REACHES_INNER_SPLIT_SOLID_BUT_DEPTH_NOT_QUANTIFIED",
+      "cause_classification": "SPLIT_FRAGMENTS_ONE_R1_INTERSECTION_INTO_CASING_AND_WINDING_IDENTITIES"
+    },
+    {
+      "failed_volume_ids": [6, 19],
+      "failed_components": ["vacuum vessel", "coil-0006 casing"],
+      "failed_location_cm": [1088.88, 498.513, 92.6229],
+      "r1_components_exist": true,
+      "r1_correspondence": "vacuum-vessel volume 6 and homogenized magnet-0006 volume 13",
+      "r1_native_overlap_witness": [1095.15, 498.581, 92.5898],
+      "penetration": "NOT_QUANTIFIED",
+      "cause_classification": "UNDERLYING_R1_REACTOR_MAGNET_OVERLAP_PERSISTS"
+    },
+    {
+      "failed_volume_ids": [6, 29],
+      "failed_components": ["vacuum vessel", "coil-0011 casing"],
+      "failed_location_cm": [438.026, 1095.55, -75.3721],
+      "r1_components_exist": true,
+      "r1_correspondence": "vacuum-vessel volume 6 and homogenized magnet-0011 volume 18",
+      "r1_native_overlap_witness": [476.445, 1095.28, -86.2664],
+      "penetration": "NOT_QUANTIFIED",
+      "cause_classification": "UNDERLYING_R1_REACTOR_MAGNET_OVERLAP_PERSISTS"
+    },
+    {
+      "failed_volume_ids": [6, 31],
+      "failed_components": ["vacuum vessel", "coil-0012 casing"],
+      "failed_location_cm": [304.98, 1157.46, -84.0225],
+      "r1_components_exist": true,
+      "r1_correspondence": "vacuum-vessel volume 6 and homogenized magnet-0012 volume 19",
+      "r1_native_overlap_witness": [364.23, 1158.37, -121.329],
+      "penetration": "NOT_QUANTIFIED",
+      "cause_classification": "UNDERLYING_R1_REACTOR_MAGNET_OVERLAP_PERSISTS"
+    },
+    {
+      "failed_volume_ids": [6, 32],
+      "failed_components": ["vacuum vessel", "coil-0012 winding pack"],
+      "failed_location_cm": [333.69, 1151.02, -92.709],
+      "r1_components_exist": true,
+      "r1_correspondence": "same homogenized R1 magnet-0012 volume 19 as preceding casing row",
+      "r1_native_overlap_witness": [364.23, 1158.37, -121.329],
+      "penetration": "REACHES_INNER_SPLIT_SOLID_BUT_DEPTH_NOT_QUANTIFIED",
+      "cause_classification": "SPLIT_FRAGMENTS_ONE_R1_INTERSECTION_INTO_CASING_AND_WINDING_IDENTITIES"
+    }
+  ],
+  "audited_hypotheses": {
+    "case_thickness_split": "5 cm split changes topology and duplicates semantic witnesses but does not enlarge the intended outer magnet union",
+    "outer_dimension_interpretation": "failed model preserves R1 40 x 50 cm outer magnet dimensions",
+    "shield_drift": "failed artifact uses 50 cm; historical 39 cm workaround not used; 38.5 cm unproven",
+    "interstitial_graveyard_insertion": "not causal for the seven physical-volume pairs",
+    "post_export_mutation": "real but not causal for pairs below volumes 43 and 44",
+    "component_order_surface_sense": "complete-volume senses and watertightness pass; not primary cause",
+    "duplicated_solids": "no duplicated magnet solids found",
+    "faceting": "R1 5-20 cm versus failed 5-10 cm; matched-faceting attribution remains NOT_RUN",
+    "wrong_exterior_volume_treatment": "caused invalid coupling-interface selection, not the four persistent R1 physical overlaps"
+  },
+  "validation_defect": {
+    "description": "the failed branch CAD Boolean overlap audit covered only 36 split magnet solids, not the six PyDAGMC in-vessel volumes",
+    "evidence": {
+      "solid_count": 36,
+      "pair_count": 630,
+      "combination_check": "630 = C(36,2)"
+    }
+  },
+  "casing_topology_conclusion": {
+    "classification": "E_COMBINATION_B_C_D",
+    "B": "16 clipped magnets have valid open casing sleeves with exposed winding ends",
+    "C": "outer-interface declaration mislabeled winding-only surfaces 102 and 103 as casing",
+    "D": "the global casing/winding split is unnecessary for exact R1 parity",
+    "not_A": "all complete casing volumes are watertight; only the selected external-only subsets are open",
+    "strict_closed_casing_only_count": 2,
+    "magnet_count": 18,
+    "direct_winding_to_vacuum_face_count": 28
+  },
+  "root_cause": "R1 already contains four reactor/magnet overlaps; the failed hybrid split retained them, fragmented two into winding/casing findings, added one shield witness, and used an incomplete pre-export overlap audit that never compared reactor solids to magnets",
+  "parity_repair": "reuse the accepted R1 H5M byte-for-byte and do not split or mutate its magnet solids",
+  "production_status": "NON_PRODUCTION"
+}
+

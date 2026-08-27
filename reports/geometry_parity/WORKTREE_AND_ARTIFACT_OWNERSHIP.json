@@ -1,0 +1,51 @@
+{
+  "schema": "parastell.geometry_parity.ownership/v1.0.0",
+  "recorded_at": "2026-08-26T16:53:08-04:00",
+  "repository": "FusionSandwich/parastell",
+  "reference_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+  "failed_evidence_sha": "df53ed28edc8d8123b6e42a9e4e5c4e970e69dc8",
+  "worktrees": {
+    "r1_reference": {
+      "path": "D:\\parastell-worktrees\\main-reference-parastell",
+      "mode": "detached_read_only",
+      "owner": "root",
+      "writers": []
+    },
+    "feature": {
+      "path": "D:\\parastell-worktrees\\magnet-radiation-geometry-parity",
+      "branch": "magnet-radiation-geometry-parity-20260826",
+      "owner": "root",
+      "writers": ["root"]
+    },
+    "failed_evidence": {
+      "path": "D:\\parastell-worktrees\\magnet-surface-field-visual-production-gate",
+      "mode": "read_only",
+      "owner": "external_prior_task",
+      "writers": []
+    }
+  },
+  "artifact_roots": {
+    "r1_attempt": {
+      "path": "D:\\parastell-artifacts\\geometry-parity-20260826\\r1_public_main\\20260826T165308-0400",
+      "mode": "create_only",
+      "writer": "root"
+    },
+    "failed_evidence": {
+      "path": "D:\\parastell-artifacts\\prompt-a-surface-field-visual-production-gate-20260826",
+      "mode": "read_only",
+      "writer": null
+    },
+    "nuclear_data": {
+      "path": "D:\\parastell-artifacts\\openmc-data\\nndc_hdf5",
+      "mode": "read_only_mount",
+      "writer": null
+    }
+  },
+  "subagents": {
+    "r2_inventory": "read_only_local_search",
+    "failed_diagnosis": "read_only_evidence_audit",
+    "r1_contract": "read_only_source_audit"
+  },
+  "prohibited_shared_writes": true
+}
+

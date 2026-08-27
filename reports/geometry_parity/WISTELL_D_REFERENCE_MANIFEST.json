@@ -1,0 +1,75 @@
+{
+  "schema": "parastell.wistell_d_reference/v1.0.0",
+  "identity_classification": "SEPARATE_WISTELL_D_ASSETS_FOUND",
+  "status": "SOURCE_ASSETS_FOUND_NO_VALIDATED_LOCAL_H5M",
+  "primary_repository": {
+    "path": "D:\\Beyound DPA Repos\\BlanketNeutronics",
+    "branch": "t1e_main",
+    "sha": "bc4ab3d0f27369d4eda908a3fc187a10b6c7fedb",
+    "worktree_clean": true
+  },
+  "duplicate_repository": {
+    "path": "D:\\Beyound DPA Repos\\blanket",
+    "branch": "Edgar",
+    "sha": "bc4ab3d0f27369d4eda908a3fc187a10b6c7fedb",
+    "worktree_clean": true
+  },
+  "inputs": [
+    {
+      "role": "vmec_equilibrium",
+      "path": "plasma_configurations/plasma_wistelld.nc",
+      "size_bytes": 4626928,
+      "sha256": "9231969001203a8133255ee0a275bf552b114cc12524dda0608ab2f12047f7ac",
+      "git_blob": "66de66c9b04230b4409f7f68f03975738e8bf35f"
+    },
+    {
+      "role": "coil_filaments",
+      "path": "plasma_configurations/coils_wistelld.txt",
+      "size_bytes": 1737790,
+      "sha256": "7748369407d28a70f35b5c4a7c0ab860495a08fd0030002112ea933fe570159b",
+      "git_blob": "20f7ff5757dbccff9c231dc13abd0b4096f32129"
+    },
+    {
+      "role": "radial_distance_data",
+      "path": "neutronics_wistelld_DCLL_1/radial_distances.csv",
+      "size_bytes": 134016,
+      "sha256": "0e3c7d3fb6cd914abe04f1293ffb06e19db5a63289ca05c05d2aed70d9a9081c",
+      "git_blob": "d4ef1534ca0811f5f51570584a8c7a2159ed93bb"
+    }
+  ],
+  "workflow": {
+    "path": "neutronics_wistelld_DCLL_1/geometry.py",
+    "toroidal_extent_deg": 90.0,
+    "wall_s": 1.2,
+    "radial_samples": {
+      "toroidal": 80,
+      "poloidal": 90
+    },
+    "source_mesh_samples": {
+      "s": 11,
+      "poloidal": 81,
+      "toroidal": 61
+    },
+    "source_mesh_toroidal_extent_deg": 90.0,
+    "geometry_backend": "Cubit legacy workflow",
+    "skip_imprinting": true,
+    "magnets": "not built as original filament solids; historical README says no magnets and describes later radial layers",
+    "graveyard": false
+  },
+  "prior_artifacts": {
+    "dagmc_h5m_found": false,
+    "source_mesh_h5m_found": false,
+    "validation_receipt_found": false
+  },
+  "r1_identity_proven": false,
+  "reason_not_r1": [
+    "different VMEC and coil inputs",
+    "different radial build",
+    "different sampling grids",
+    "legacy Cubit workflow",
+    "historical workflow explicitly states no original magnet solids"
+  ],
+  "regeneration_status": "NOT_RUN_INCOMPLETE_HISTORICAL_VALIDATION_METADATA",
+  "r1_lane_blocked": false
+}
+

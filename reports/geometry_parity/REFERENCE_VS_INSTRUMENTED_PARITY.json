@@ -1,0 +1,20 @@
+{
+  "classification": "BYTE_IDENTICAL_REUSE",
+  "extra_physical_h5m_volumes": 0,
+  "h5m_mutation_performed": false,
+  "instrumented": {
+    "canonical_fingerprint": "1c4a6c1fdb37f7bb9d7ef59ab99913884bde6df7b55977a53a68f2a037552bd1",
+    "raw_h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+    "surface_count": 142,
+    "volume_count": 24
+  },
+  "pass": true,
+  "reference": {
+    "canonical_fingerprint": "1c4a6c1fdb37f7bb9d7ef59ab99913884bde6df7b55977a53a68f2a037552bd1",
+    "raw_h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+    "surface_count": 142,
+    "volume_count": 24
+  },
+  "same_path": true,
+  "schema": "parastell.reference_geometry_parity/v1.0.0"
+}

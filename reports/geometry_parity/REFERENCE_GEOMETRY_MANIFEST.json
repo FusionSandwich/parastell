@@ -1,0 +1,170 @@
+{
+  "canonical_geometry_fingerprint": "1c4a6c1fdb37f7bb9d7ef59ab99913884bde6df7b55977a53a68f2a037552bd1",
+  "canonicalization": {
+    "coordinate_quantum_cm": 1e-06,
+    "version": 1
+  },
+  "case_thickness_cm": 0.0,
+  "coordinate_units": "cm",
+  "created_at": "2026-08-26T21:25:41.841188+00:00",
+  "environment": {
+    "cad_to_dagmc": "0.11.5",
+    "cadquery": "2.7.0",
+    "container_image": "parastell-openmc:0.16.0",
+    "full_manifest": "/artifact/environment_manifest.txt",
+    "gmsh": "container executable; exact version recorded in environment_manifest.txt",
+    "openmc": "0.16.0",
+    "parastell": "0.1.0 at exact mounted source SHA",
+    "pydagmc": "0.0.1",
+    "pymoab": "5.5.1",
+    "python": "3.12.13"
+  },
+  "example_script": {
+    "artifact_path": "/artifact/parastell_cad_to_dagmc_example.py",
+    "git_blob": "bcb5fc41cb1e09a88e4b6f02b2e485d1286d2f89",
+    "path": "examples/parastell_cad_to_dagmc_example.py",
+    "physics_dictionary_modified": false,
+    "sha256_git_normalized_content": "0eb83ae88304739151eb7674e42fc663e1319ee31d595c850fe388da768ef007",
+    "sha256_worktree_bytes": "edcacc6ab470a16ec5f83a1b38c1ea5b5830e76e0b40904b65d75783dbc822ea"
+  },
+  "faceting_settings": {
+    "backend": "cad_to_dagmc",
+    "max_mesh_size_cm": 20.0,
+    "mesh_algorithm": 1,
+    "min_mesh_size_cm": 5.0
+  },
+  "field_period_semantics": "direct 90-degree sector; no symmetry expansion applied",
+  "fork_main_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+  "inputs": [
+    {
+      "git_blob": "95a75490479d38d04712eb39ab856757b2211403",
+      "path": "/artifact/wout_vmec.nc",
+      "role": "vmec_equilibrium",
+      "sha256": "1cebb8d46e60d77df4a6904662a9c9f943137a9fb59f7290e5309af15fa04797"
+    },
+    {
+      "git_blob": "d8e0d526abd9479a307218ca9b3fa4887a2161bd",
+      "path": "/artifact/coils.example",
+      "role": "coil_filaments",
+      "sha256_git_normalized_content": "de96b6009356c0d7b2abd9fd0507589651a7c04447011e0c4d3ed0d2f5756737",
+      "sha256_worktree_bytes": "69f508b216f0b674368ca8731d390c9d514736ff092f0ebecd854e8772ae04ab"
+    },
+    {
+      "definition": {
+        "back_wall_cm": 5.0,
+        "breeder": "exact embedded 9x9 matrix",
+        "first_wall_cm": 5.0,
+        "shield_cm": 50.0,
+        "vacuum_vessel_cm": 10.0
+      },
+      "path": "embedded in examples/parastell_cad_to_dagmc_example.py",
+      "role": "radial_build"
+    }
+  ],
+  "magnet_ids": [
+    "magnet-0000",
+    "magnet-0001",
+    "magnet-0002",
+    "magnet-0003",
+    "magnet-0004",
+    "magnet-0005",
+    "magnet-0006",
+    "magnet-0007",
+    "magnet-0008",
+    "magnet-0009",
+    "magnet-0010",
+    "magnet-0011",
+    "magnet-0012",
+    "magnet-0013",
+    "magnet-0014",
+    "magnet-0015",
+    "magnet-0016",
+    "magnet-0017"
+  ],
+  "magnet_outer_dimensions_cm": {
+    "thickness": 50.0,
+    "width": 40.0
+  },
+  "magnet_representation": "one_homogenized_solid_each",
+  "magnet_transform": "none; native coordinates preserved",
+  "magnet_volume_ids": [
+    7,
+    10,
+    9,
+    8,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    23,
+    22,
+    21,
+    24
+  ],
+  "material_component_tags": [
+    "Vacuum",
+    "back_wall",
+    "breeder",
+    "first_wall",
+    "magnets",
+    "shield",
+    "vac_vessel"
+  ],
+  "modeled_toroidal_extent_deg": 90.0,
+  "parastell_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+  "ports_present": false,
+  "r1_identity": "current_public_parastell_cad_to_dagmc_example",
+  "raw_h5m_path": "/artifact/dagmc.h5m",
+  "raw_h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+  "reference_identity_classification": "SEPARATE_WISTELL_D_ASSETS_FOUND",
+  "schema": "parastell.reference_geometry/v1.0.0",
+  "source_mesh": {
+    "coordinate_ranges": {
+      "cfs": [
+        0.0,
+        1.0
+      ],
+      "poloidal_deg": [
+        0.0,
+        360.0
+      ],
+      "toroidal_deg": [
+        0.0,
+        90.0
+      ]
+    },
+    "coordinate_samples": {
+      "cfs": 11,
+      "poloidal": 61,
+      "toroidal": 61
+    },
+    "path": "/artifact/source_mesh.h5m",
+    "physical_source_model": "ParaStell default D-T profiles",
+    "sha256": "300922f116cb8463a84f2f1b8c80eb359e89d70d3427e536a9bd4e500fb2bb3d",
+    "tetrahedron_count": 172800,
+    "vertex_count": 36661
+  },
+  "surface_inventory": {
+    "count": 142
+  },
+  "upstream_main_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+  "volume_inventory": {
+    "count": 24,
+    "material_counts": {
+      "Vacuum": 1,
+      "back_wall": 1,
+      "breeder": 1,
+      "first_wall": 1,
+      "magnets": 18,
+      "shield": 1,
+      "vac_vessel": 1
+    },
+    "volumes_without_material": []
+  }
+}

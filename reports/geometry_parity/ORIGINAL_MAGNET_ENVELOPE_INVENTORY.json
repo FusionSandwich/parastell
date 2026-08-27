@@ -1,0 +1,657 @@
+{
+  "accepted_material_tags": [
+    "magnets"
+  ],
+  "all_envelopes_close": true,
+  "magnet_count": 18,
+  "magnets": [
+    {
+      "bounding_box_cm": {
+        "lower": [
+          547.8847269185535,
+          -1.865174681370263e-14,
+          15.358131765759378
+        ],
+        "upper": [
+          795.5743120557499,
+          26.95846479174278,
+          118.76780138098786
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0000",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        19,
+        20,
+        21,
+        22
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 4,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 7.239432320170468e-17,
+      "volume_cm3": 144481.1651334325,
+      "volume_id": 7
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          1031.2961612114239,
+          -8.526512829121202e-14,
+          22.750607900126642
+        ],
+        "upper": [
+          1504.8641293534072,
+          313.62243799281396,
+          711.8374037367585
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0001",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.8778572393930904e-16,
+      "volume_cm3": 2231182.344818545,
+      "volume_id": 10
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          748.6987196262553,
+          0.0,
+          29.351738622346538
+        ],
+        "upper": [
+          1071.2078486977148,
+          233.57639633679383,
+          619.6331771653383
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0002",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        29,
+        30,
+        31,
+        32,
+        33,
+        34
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 2.509515591972594e-16,
+      "volume_cm3": 1497303.6273024145,
+      "volume_id": 9
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          554.9437102453605,
+          -4.263256414560601e-14,
+          19.5560634793667
+        ],
+        "upper": [
+          971.5848102262762,
+          206.31534438075653,
+          418.03392952554657
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0003",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        23,
+        24,
+        25,
+        26,
+        27,
+        28
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 4.396686340817775e-17,
+      "volume_cm3": 1250855.9584495947,
+      "volume_id": 8
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          1084.1966486602219,
+          -6.483702463810914e-14,
+          -669.1806098102493
+        ],
+        "upper": [
+          1801.0312020027802,
+          458.6507595322986,
+          554.992791532215
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0004",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 10,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.0388437471825543e-16,
+      "volume_cm3": 4900735.542959825,
+      "volume_id": 11
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          783.2872642173238,
+          -1.7408297026122455e-13,
+          -691.2703258183122
+        ],
+        "upper": [
+          1690.807462151363,
+          624.635784587208,
+          381.2745729143555
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0005",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 10,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.64191563178175e-16,
+      "volume_cm3": 5539488.701132226,
+      "volume_id": 12
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          552.8181261874342,
+          -6.750155989720952e-14,
+          -633.7245180654261
+        ],
+        "upper": [
+          1514.233938505613,
+          803.2679237853997,
+          288.04786237613723
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0006",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 10,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.5975543754209e-16,
+      "volume_cm3": 5721778.856836875,
+      "volume_id": 13
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          404.6303761575705,
+          -2.398081733190338e-14,
+          -547.669915621676
+        ],
+        "upper": [
+          1334.7614654456536,
+          942.0193340570153,
+          238.5554805632296
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0007",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        71,
+        72,
+        73,
+        74,
+        75,
+        76
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.575081904734605e-16,
+      "volume_cm3": 6477892.06813471,
+      "volume_id": 14
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          261.32064600573096,
+          119.98271913973898,
+          -375.62226263956984
+        ],
+        "upper": [
+          1269.2046961488877,
+          1193.0452052886567,
+          263.54626219012385
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0008",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        77,
+        78,
+        79,
+        80
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 4,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 2.895858824412706e-16,
+      "volume_cm3": 6861663.938303356,
+      "volume_id": 15
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          119.98271913973883,
+          261.32064600573113,
+          -263.5462621901239
+        ],
+        "upper": [
+          1193.0452052886567,
+          1269.2046961488877,
+          375.62226263956984
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0009",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        81,
+        82,
+        83,
+        84
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 4,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 2.3157800122319783e-16,
+      "volume_cm3": 6861663.938303319,
+      "volume_id": 16
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          4.39648317751562e-14,
+          404.6303761575705,
+          -238.55548056322962
+        ],
+        "upper": [
+          942.0193340570152,
+          1334.7614654456536,
+          547.6699156216757
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0010",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        85,
+        86,
+        87,
+        88,
+        89,
+        90
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.8733771147973138e-16,
+      "volume_cm3": 6477892.068134974,
+      "volume_id": 17
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          -6.283862319378386e-14,
+          552.8181261874342,
+          -288.0478623761372
+        ],
+        "upper": [
+          803.2679237853993,
+          1514.233938505613,
+          633.7245180654261
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0011",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 10,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.167381360148642e-16,
+      "volume_cm3": 5721778.856836843,
+      "volume_id": 18
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          -1.7763568394002505e-15,
+          783.2872642173243,
+          -381.2745729143555
+        ],
+        "upper": [
+          624.6357845872078,
+          1690.8074621513633,
+          691.2703258183122
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0012",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 10,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 6.91563961096214e-17,
+      "volume_cm3": 5539488.701132293,
+      "volume_id": 19
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          2.453592884421596e-14,
+          1084.1966486602219,
+          -554.9927915322149
+        ],
+        "upper": [
+          458.65075953229825,
+          1801.0312020027802,
+          669.1806098102487
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0013",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 10,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.1820927408460675e-16,
+      "volume_cm3": 4900735.5429601045,
+      "volume_id": 20
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          -1.865174681370263e-14,
+          554.9437102453604,
+          -418.03392952554657
+        ],
+        "upper": [
+          206.3153443807565,
+          971.5848102262761,
+          -19.556063479366696
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0014",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        133,
+        134,
+        135,
+        136,
+        137,
+        138
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 2.228776947096714e-16,
+      "volume_cm3": 1250862.2719549537,
+      "volume_id": 23
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          5.5067062021407764e-14,
+          748.6987196262551,
+          -619.6331771653383
+        ],
+        "upper": [
+          233.57639633679398,
+          1071.2078486977148,
+          -29.35173862234659
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0015",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        127,
+        128,
+        129,
+        130,
+        131,
+        132
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.2596877804325242e-16,
+      "volume_cm3": 1497320.481534866,
+      "volume_id": 22
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          6.5503158452884236e-15,
+          1031.2961612114239,
+          -711.8374037367585
+        ],
+        "upper": [
+          313.62243799281396,
+          1504.8641293534065,
+          -22.750607900126788
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0016",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        121,
+        122,
+        123,
+        124,
+        125,
+        126
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 6,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 2.310063951761455e-16,
+      "volume_cm3": 2231182.344818587,
+      "volume_id": 21
+    },
+    {
+      "bounding_box_cm": {
+        "lower": [
+          5.0182080713057076e-14,
+          547.8847269185535,
+          -118.76780138098783
+        ],
+        "upper": [
+          26.958464791742816,
+          795.5743120557499,
+          -15.358131765759374
+        ]
+      },
+      "casing_winding_split": false,
+      "closed": true,
+      "component_name": "",
+      "edge_closure_pass": true,
+      "edge_multiplicity_error_count": 0,
+      "magnet_id": "magnet-0017",
+      "material_tag": "magnets",
+      "outer_envelope_surface_ids": [
+        139,
+        140,
+        141,
+        142
+      ],
+      "physical_role": "original_homogenized_magnet_solid",
+      "surface_count": 4,
+      "vector_area_closure_pass": true,
+      "vector_area_closure_relative": 1.6164803141104823e-16,
+      "volume_cm3": 144481.1651334319,
+      "volume_id": 24
+    }
+  ],
+  "raw_h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+  "schema": "parastell.original_magnet_envelopes/v1.0.0"
+}
