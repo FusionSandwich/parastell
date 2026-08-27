@@ -432,6 +432,54 @@ def build_45(args: argparse.Namespace) -> None:
         num_ribs=SOURCE_CAD_GRID[0],
         num_rib_pts=SOURCE_CAD_GRID[1],
     )
+    if args.construct_only:
+        input_after = verify_source_set(input_root)
+        if input_before != input_after:
+            raise RuntimeError("authoritative source set changed during construction")
+        construction_payload = {
+            "schema": "wistell_d.geometry_construction/v1.0.0",
+            "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+            "generated_utc": utc_now(),
+            "classification": "WISTELL_D_45D_61X121_CONSTRUCTION_PASS",
+            "source": {
+                "lineage_root": str(input_root),
+                "lineage_commit": LINEAGE_COMMIT,
+                "hashes": dict(WISTELL_D_SOURCE_HASHES),
+                "files": input_after,
+                "immutability_check": "PASS",
+                "parastell_module": str(Path(parastell.__file__).resolve()),
+            },
+            "model": {
+                "device": "WISTELL-D",
+                "toroidal_extent_degrees": 45.0,
+                "wall_s": 1.0,
+                "canonical_control_count": N_CONTROL_POINTS,
+                "control_grid": [16, 31],
+                "source_cad_grid": list(SOURCE_CAD_GRID),
+                "magnet_representation": "continuous_30_cm_magnet_envelope",
+                "global_explicit_coils": False,
+            },
+            "thickness_validation": thickness,
+            "expanded_surface_validation": expanded_surface_diagnostics(stellarator),
+            "components": {
+                name: shape_metrics(shape)
+                for name, shape in stellarator.invessel_build.Components.items()
+            },
+            "elapsed_seconds": time.time() - started,
+        }
+        construction_path = output_root / "CONSTRUCTION_RECEIPT.json"
+        write_json_create_only(construction_path, construction_payload)
+        print(
+            json.dumps(
+                {
+                    "classification": construction_payload["classification"],
+                    "output": str(construction_path),
+                    "elapsed_seconds": construction_payload["elapsed_seconds"],
+                },
+                indent=2,
+            )
+        )
+        return
     stellarator.export_invessel_build_step(export_dir=str(output_root))
     components = OrderedDict(stellarator.invessel_build.Components)
     combined = cq.Compound.makeCompound(list(components.values()))
@@ -883,6 +931,7 @@ def parse_args() -> argparse.Namespace:
     build = subparsers.add_parser("build-45")
     build.add_argument("--input-root", required=True)
     build.add_argument("--output-root", required=True)
+    build.add_argument("--construct-only", action="store_true")
     build.add_argument("--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3)
     build.set_defaults(function=build_45)
 
