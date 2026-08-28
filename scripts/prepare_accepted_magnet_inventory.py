@@ -49,14 +49,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("dagmc_h5m", type=Path)
     parser.add_argument("surface_manifest", type=Path)
-    parser.add_argument("source_cad", type=Path)
+    parser.add_argument("source_geometry", type=Path)
+    parser.add_argument(
+        "--source-geometry-kind",
+        choices=("source_cad", "parametric_reference_manifest"),
+        default="source_cad",
+    )
     parser.add_argument("geometry_gate", type=Path)
     parser.add_argument("output_directory", type=Path)
     args = parser.parse_args()
 
     dagmc = args.dagmc_h5m.resolve(strict=True)
     surface_manifest_path = args.surface_manifest.resolve(strict=True)
-    source_cad = args.source_cad.resolve(strict=True)
+    source_geometry = args.source_geometry.resolve(strict=True)
     gate_path = args.geometry_gate.resolve(strict=True)
     output = args.output_directory.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -79,6 +84,13 @@ def main() -> None:
     magnets = surface_manifest.get("magnets")
     if not isinstance(magnets, list) or not magnets:
         raise ValueError("surface manifest has no magnets")
+    material_tag = str(
+        surface_manifest.get("selected_material_group", "")
+    ).strip()
+    if not material_tag.startswith("mat:") or len(material_tag) <= 4:
+        raise ValueError(
+            "surface manifest has no selected magnet material group"
+        )
 
     requests = []
     components = []
@@ -100,15 +112,16 @@ def main() -> None:
         components.append(
             {
                 "magnet_id": magnet_id,
-                "component_id": f"{magnet_id}-homogenized-winding-pack",
+                "component_id": f"{magnet_id}-homogenized-magnet",
                 "dagmc_volume_id": volume_id,
-                "material_tag": "mat:winding_pack",
+                "material_tag": material_tag,
                 "surface_ids": sorted(
                     int(value) for value in row["dagmc_surface_ids"]
                 ),
-                "source_cad": {
-                    "path": str(source_cad),
-                    "sha256": _sha256(source_cad),
+                "source_geometry": {
+                    "kind": args.source_geometry_kind,
+                    "path": str(source_geometry),
+                    "sha256": _sha256(source_geometry),
                 },
             }
         )
@@ -155,7 +168,7 @@ def main() -> None:
             "geometry_gate_status": "PASS",
             "dagmc_sha256": dagmc_hash,
             "canonical_geometry_fingerprint": next(iter(fingerprints)),
-            "magnet_material_tags": ["mat:winding_pack"],
+            "magnet_material_tags": [material_tag],
             "components": components,
             "evidence": {
                 "native_geometry_gate_path": str(gate_path),

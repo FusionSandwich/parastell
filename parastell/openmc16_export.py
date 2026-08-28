@@ -348,7 +348,6 @@ def _verify_accepted_magnet_inventory(
             "dagmc_volume_id",
             "material_tag",
             "surface_ids",
-            "source_cad",
         }
         component_missing = component_required - set(component)
         if component_missing:
@@ -371,15 +370,33 @@ def _verify_accepted_magnet_inventory(
             )
         semantic_ids.add(magnet_id)
         component_ids.add(component_id)
-        source_cad = component["source_cad"]
-        if not isinstance(source_cad, Mapping):
-            raise ValueError("magnet inventory source_cad must be a mapping")
+        has_source_cad = "source_cad" in component
+        has_source_geometry = "source_geometry" in component
+        if has_source_cad == has_source_geometry:
+            raise ValueError(
+                "magnet inventory component must declare exactly one of "
+                "source_cad or source_geometry"
+            )
+        source_geometry = component[
+            "source_cad" if has_source_cad else "source_geometry"
+        ]
+        if not isinstance(source_geometry, Mapping):
+            raise ValueError("magnet source geometry must be a mapping")
+        source_kind = str(
+            source_geometry.get("kind", "source_cad" if has_source_cad else "")
+        ).strip()
+        if source_kind not in {
+            "source_cad",
+            "parametric_reference_manifest",
+        }:
+            raise ValueError("unsupported magnet source geometry kind")
         source_path = _resolved_file(
-            source_cad.get("path", ""), "magnet source CAD"
+            source_geometry.get("path", ""), "magnet source geometry"
         )
-        source_hash = str(source_cad.get("sha256", "")).lower()
+        source_hash = str(source_geometry.get("sha256", "")).lower()
         if not _valid_sha256(source_hash) or _hash(source_path) != source_hash:
-            raise ValueError("magnet inventory source CAD hash mismatch")
+            label = "source CAD" if has_source_cad else "source geometry"
+            raise ValueError(f"magnet inventory {label} hash mismatch")
         component_by_id[volume_id] = {
             "magnet_id": magnet_id,
             "component_id": component_id,
@@ -388,7 +405,8 @@ def _verify_accepted_magnet_inventory(
             "surface_ids": sorted(
                 int(value) for value in component["surface_ids"]
             ),
-            "source_cad": {
+            "source_geometry": {
+                "kind": source_kind,
                 "path": str(source_path),
                 "sha256": source_hash,
             },
