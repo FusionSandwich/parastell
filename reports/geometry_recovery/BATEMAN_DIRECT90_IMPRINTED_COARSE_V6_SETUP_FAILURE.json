@@ -1,0 +1,17 @@
+{
+  "schema": "wistell_d.direct90_bateman_attempt/v1.0.0",
+  "attempt_id": "prompt7r-direct90-imprinted-coarse-v6-20260828T164000Z",
+  "status": "TERMINAL_SETUP_ONLY_CONFLICT_DISCOVERED_BEFORE_LAUNCH",
+  "selectable": false,
+  "remote_root": "/home/apollon/josma/codex-runs/prompt7r-direct90-imprinted-coarse-v6-20260828T164000Z",
+  "failure": "Preflight printed the still-live v5 exporter but did not fail the compound setup command before creating the v6 root. V6 was never submitted to core-budget and is quarantined as setup-only evidence.",
+  "wrapper_sha256": "0d1242910da24e81c9e0609e3896a74e919709c3567c42ba2b880f786847a175",
+  "input_archive_sha256": "8aa294fb5b7ec45322a003c99371f2ab500d6526ad396980c436c78c6ad4f7d4",
+  "source_manifest_sha256": "b6e723cdb9ac95d789a838abbf44590d210c4fdbe718c3b459777d38768e0499",
+  "lease_created": false,
+  "geometry_work_started": false,
+  "dagmc_h5m_created": false,
+  "openmc_started": false,
+  "automatic_successor_launched": false,
+  "corrective_action": "Use a fresh v7-or-later root and make process absence an asserted precondition before root creation."
+}

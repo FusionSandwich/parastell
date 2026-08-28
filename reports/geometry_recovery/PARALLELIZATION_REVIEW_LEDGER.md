@@ -249,3 +249,10 @@
 - Safe parallel work completed: OpenMC 0.16.0 parsed the exact 3,820-nuclide depletion chain and 728-library transport catalog in Docker with zero histories and zero depletion steps. Independent source-construction review passed the 90° topology/order/rate gates while retaining containment as pending.
 - Remote setup state: a four-core guarded CAD-stack import preflight passed and reaped. The subsequent v5 geometry wrapper never spawned its exporter because its lease-poll implementation hung despite a separately visible exact lease. Root terminated the exact process group, confirmed result/H5M/terminal receipt absent, and reaped the lease. V5 is permanently nonselectable.
 - Successor control: lease discovery is moved ahead of NFS-heavy hashing, binds the actual guard parent PID in addition to SID/start time/core count, and is capped by both elapsed time and a finite poll count. A fresh v6-or-later root still requires independent review and a new live resource check; no automatic successor is allowed.
+
+## 2026-08-28 12:50 EDT — V5 monitoring correction and v6 quarantine
+
+- Correction: v5 did start its exporter in a new session. Monitoring only the guard session hid that child and led root to terminate first the guard and then the orphaned exporter. The exporter reached about 21 GiB RSS during CAD loading but produced no result files or H5M. V5 remains nonselectable for an owner-monitoring error, not a lease-discovery failure.
+- V6 was staged after its preflight printed the v5 exporter instead of asserting process absence. It was never submitted or leased, but its root is permanently setup-only/nonselectable.
+- Serial/root-owned: any v7 successor must assert exact process absence before creating its root and monitor both guard/wrapper and exporter sessions. The reviewed wrapper now has an internal 22,000-second total-attempt timeout, so owner monitoring must not terminate a healthy sleeping wrapper.
+- Shared resources: both v5 process groups are terminal, the ledger is zero, no H5M exists, and no OpenMC ran.

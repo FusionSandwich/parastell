@@ -1,7 +1,7 @@
 {
   "schema": "wistell_d.direct90_bateman_attempt/v1.0.0",
   "attempt_id": "prompt7r-direct90-imprinted-coarse-v5-20260828T162500Z",
-  "status": "TERMINAL_FAIL_CLOSED_LEASE_POLL_SETUP_HANG",
+  "status": "TERMINAL_FAIL_CLOSED_OWNER_MONITORING_MISCLASSIFICATION",
   "selectable": false,
   "remote_root": "/home/apollon/josma/codex-runs/prompt7r-direct90-imprinted-coarse-v5-20260828T162500Z",
   "lease": "d5ed3fd079cf45c9b8cdf94f0b47515f",
@@ -13,14 +13,17 @@
   "exporter_sha256": "d4b4f5cfbdaafca0e3344b6106a26f09ca99607d5fe1120698e2dea4d17157bd",
   "wrapper_sha256": "e626503cb89366127ee1f5cc8f42ececaa6f1b8787c075c61816ca8090ddb015",
   "input_archive_sha256": "8aa294fb5b7ec45322a003c99371f2ab500d6526ad396980c436c78c6ad4f7d4",
-  "failure": "The wrapper remained in lease polling although an independent exact call found the live lease. It was terminated before exporter launch and replaced with a parent-PID-bound, finite-poll handshake.",
+  "exporter_pid": 1213734,
+  "exporter_session_id": 1213734,
+  "failure": "The wrapper successfully discovered its lease and started the exporter in a new session. Owner monitoring incorrectly inspected only the guard session, misclassified the wrapper wait as lease polling, terminated the guard, then discovered and terminated the orphaned exporter. The exporter reached approximately 21 GiB RSS while loading CAD but wrote no result files.",
   "coarse_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "wrapper_terminal_receipt_present": false,
-  "geometry_work_started": false,
+  "geometry_work_started": true,
+  "geometry_output_file_count": 0,
   "dagmc_h5m_created": false,
   "openmc_started": false,
   "automatic_successor_launched": false,
-  "process_group_terminated_by_owner": true,
+  "process_groups_terminated_by_owner": [1213585, 1213734],
   "processes_reaped": true,
   "post_terminal_core_budget": {
     "total_threads": 256,
@@ -30,5 +33,5 @@
     "observed_unreserved_threads": 1,
     "available_threads": 63
   },
-  "corrective_action": "Any successor must use a fresh create-only root and wrapper SHA 0d1242910da24e81c9e0609e3896a74e919709c3567c42ba2b880f786847a175 or a later independently reviewed hash."
+  "corrective_action": "Any successor must use a fresh create-only root and wrapper SHA 0d1242910da24e81c9e0609e3896a74e919709c3567c42ba2b880f786847a175 or later. Monitoring must inspect both the guard/wrapper session and exporter PID discovered by command matching or terminal receipt; a sleeping wrapper may be waiting on its new-session exporter and must not be called a lease hang."
 }
