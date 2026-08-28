@@ -51,6 +51,17 @@ def test_phase_space_validation_preserves_all_required_correlations():
     assert summary["local_coordinates_present"] is True
 
 
+def test_phase_space_validation_accepts_root_auditor_column_names():
+    records = _records()
+    records["openmc_weight"] = records.pop("weight")
+    records["particle_pdg"] = records.pop("particle")
+
+    values = validate_figure_inputs(records)
+
+    assert values.weight.tolist() == [1.0, 2.0, 3.0]
+    assert values.particle.tolist() == [2112, 2112, 22]
+
+
 def test_phase_space_validation_rejects_mu_inconsistent_with_normal_sense():
     records = copy.deepcopy(_records())
     records["mu"][0] = 1.0

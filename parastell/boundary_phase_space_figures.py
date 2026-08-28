@@ -49,6 +49,18 @@ def _array(
     return values
 
 
+def _array_alias(
+    records: Mapping[str, Any],
+    names: tuple[str, ...],
+    *,
+    shape_tail: tuple[int, ...] = (),
+) -> np.ndarray:
+    for name in names:
+        if name in records:
+            return _array(records, name, shape_tail=shape_tail)
+    raise ValueError(f"localized bank is missing one of {names!r}")
+
+
 def _optional_array(
     records: Mapping[str, Any], name: str, *, shape_tail: tuple[int, ...] = ()
 ) -> np.ndarray | None:
@@ -88,8 +100,8 @@ def validate_figure_inputs(
     )
     energy = _array(records, "energy_eV").astype(float)
     time = _array(records, "time_s").astype(float)
-    weight = _array(records, "weight").astype(float)
-    particle = _array(records, "particle")
+    weight = _array_alias(records, ("openmc_weight", "weight")).astype(float)
+    particle = _array_alias(records, ("particle_pdg", "particle"))
     surface_id = _array(records, "surface_id").astype(np.int64)
     supplied_mu = _optional_array(records, "mu")
     local = _optional_array(records, "position_local_cm", shape_tail=(3,))
