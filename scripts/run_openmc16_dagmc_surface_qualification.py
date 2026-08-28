@@ -78,6 +78,7 @@ def main() -> None:
     parser.add_argument("--batches", type=int, default=2)
     parser.add_argument("--seed", type=int, default=8_280_731)
     parser.add_argument("--max-particles", type=int, default=100_000)
+    parser.add_argument("--threads", type=int, default=1)
     args = parser.parse_args()
 
     if openmc.__version__ != "0.16.0":
@@ -89,7 +90,16 @@ def main() -> None:
     surface_manifest = args.surface_manifest.resolve(strict=True)
     output = args.output_directory.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    if min(args.particles, args.batches, args.seed, args.max_particles) <= 0:
+    if (
+        min(
+            args.particles,
+            args.batches,
+            args.seed,
+            args.max_particles,
+            args.threads,
+        )
+        <= 0
+    ):
         raise ValueError("run controls must be positive integers")
 
     signs = _surface_signs(surface_manifest)
@@ -122,7 +132,7 @@ def main() -> None:
     log_path = output / "openmc.log"
     with log_path.open("x", encoding="utf-8") as log:
         completed = subprocess.run(
-            ["openmc", "-s", "1"],
+            ["openmc", "-s", str(args.threads)],
             cwd=output,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -141,6 +151,7 @@ def main() -> None:
         "particles_per_batch": int(args.particles),
         "batches": int(args.batches),
         "seed": int(args.seed),
+        "openmp_threads": int(args.threads),
         "dagmc_universe_id": dagmc_universe_id,
         "dagmc": {"path": str(dagmc_path), "sha256": _sha256(dagmc_path)},
         "input_model_xml": {
