@@ -1,0 +1,74 @@
+{
+  "schema": "parastell.geometry_recovery.source_cad_acceptance/v1.0.0",
+  "created_at": "2026-08-27T07:55:29-04:00",
+  "candidate": "A1R_target575",
+  "classification": "SOURCE_CAD_PHYSICAL_GATE_PASS",
+  "geometry_gate_status": "PENDING_MATCHED_REFACETING_NATIVE_AND_OPENMC_QUALIFICATION",
+  "source_cad_authority": {
+    "candidate_manifest_sha256": "36fed787de68ba1ed963b8d0bf212e9f35615ad14abefad39b8ef3e16a755f91",
+    "candidate_h5m_sha256": "8a2d1930cc03a82269feeedef60267197581559c99aa69a021235a7ac7fafa90",
+    "physical_change_report_sha256": "7411d2564b9210cf2d0c7d99e0691a346083fd5ca202c4529c2b609d12465141",
+    "acceptance_criteria_sha256": "092315725cfd06e64fa403cc8f484a8135f4920a5af93bcdccc797dfb41134ca",
+    "audit_script_sha256": "ea28aa0ac9c4529542d0e352b292f61e9d65b5b943979300c5e6e55d00d4484a",
+    "source_geometry_identity_sha256": "0290e7a98e4587353ef6769905e2d5a6fa88fd1851c94bc57a4051a07aaa5662"
+  },
+  "terminal_evidence": {
+    "external_root": "D:\\parastell-artifacts\\geometry-recovery-20260827\\sourcecad_v16_remote_terminal_20260827T115318Z",
+    "remote_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/sourcecad_v16_remote_20260827T112400Z",
+    "audit_sha256": "e47f34884fc04b4a353b96a4e6a18928bdb4d501e26f3b6793b213c80ae2a9aa",
+    "seal_sha256": "397968a853f7c5a5d75d95c3143cebaa73b2280e8b6be30475a3a9db3d5ddd3c",
+    "progress_sha256": "6ce7cfde1e2e982fbe15787c4c13d5e4d0e155e5c8f886d5fa53c86bf89785c8",
+    "seal_binds_audit": true,
+    "input_immutability_pass": true,
+    "path_relocation_contract_pass": true
+  },
+  "pair_coverage": {
+    "magnet_component": 108,
+    "component_pair": 15,
+    "magnet_pair": 153,
+    "total": 276,
+    "missing": 0,
+    "unexpected": 0,
+    "duplicates": 0,
+    "malformed": 0
+  },
+  "physical_results": {
+    "magnet_count": 18,
+    "component_count": 6,
+    "magnet_component_intersection_failures": 0,
+    "component_pair_intersection_failures": 0,
+    "magnet_pair_intersection_failures": 0,
+    "duplicate_magnet_shape_failures": 0,
+    "distance_error_count": 0,
+    "distance_witness_failure_count": 0,
+    "minimum_vessel_to_magnet_clearance_cm": 5.239626484915899,
+    "minimum_required_clearance_cm": 5.0,
+    "clearance_pass": true
+  },
+  "independent_root_recalculation": {
+    "all_reported_gate_booleans_true": true,
+    "all_failure_counts_zero": true,
+    "all_pair_rows_pass": true,
+    "exact_stage_counts_pass": true,
+    "audit_hash_matches_seal": true,
+    "frozen_control_hashes_match": true,
+    "all_checks_pass": true
+  },
+  "scope": {
+    "accepted": [
+      "source CAD physical solids",
+      "18 original homogenized magnet identities",
+      "source mesh identity",
+      "pairwise nonintersection evidence",
+      "exact vessel-to-magnet clearance witnesses"
+    ],
+    "not_yet_accepted": [
+      "candidate H5M faceting",
+      "native DAGMC topology",
+      "native overlap qualification",
+      "OpenMC navigation",
+      "production transport"
+    ]
+  },
+  "next_required_gate": "BUILD_MATCHED_COARSE_AND_REFINED_H5M_FROM_THE_SAME_IMMUTABLE_SOURCE_CAD"
+}

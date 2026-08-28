@@ -1,0 +1,40 @@
+{
+  "schema": "asc2026.prompt7r_tracker_delta_start/v1.0.0",
+  "recorded_at": "2026-08-26T23:09:23-04:00",
+  "tracker_snapshot": "2026-08-26T21:35:21-04:00",
+  "tracker_sha256": "f6e1ce16491b99f2dcaeacdb5c3aa512a64ac89710849a2acf2b19078477c2ef",
+  "program_classification": "PRE_BEYOND_DPA_HANDOFF_BLOCKED",
+  "prompt7a_terminal_sha": "dd3c2c53474980b6527d6ad40e8e2a638337d107",
+  "starting_interpretation": {
+    "A-05": "COMPLETE_NEGATIVE_GEOMETRY_AUTHORITY_ONLY",
+    "B-01": "PARTIAL",
+    "B-02": "COMPLETE_NEGATIVE_REFERENCE_REPRODUCTION",
+    "B-03": "PARTIAL_INTERSECTION_VOLUME_QUANTIFICATION_IN_PROGRESS",
+    "B-04": "REJECTED",
+    "B-05": "BLOCKED_PENDING_ACCEPTED_HOMOGENIZED_MAGNET_BASELINE",
+    "B-06": "BLOCKED_NO_PRODUCTION_VALID_GEOMETRY",
+    "B-07": "BLOCKED",
+    "B-08": "PARTIAL_NEGATIVE_REFERENCE_ONLY",
+    "B-09": "BLOCKED",
+    "B-10": "BLOCKED",
+    "B-11": "PARTIAL",
+    "B-12": "COMPLETE_NO_PORTS",
+    "B-13": "BLOCKED",
+    "B-14": "BLOCKED",
+    "C-01_to_C-06": "PARTIAL_OR_BLOCKED_PENDING_ACCEPTED_GEOMETRY",
+    "D-01": "COMPLETE_IMPLEMENTATION_REBIND_REQUIRED",
+    "E-05_to_E-06": "BLOCKED",
+    "E-07_to_E-11": "IMPLEMENTED_REBIND_REQUIRED",
+    "E-12": "BOUNDED_PASS_OLD_GEOMETRY_RECALIBRATION_MAY_BE_REQUIRED",
+    "H-01": "COMPLETE_CONTRACT_REBIND_REQUIRED",
+    "I-14": "BLOCKED_PENDING_ACCEPTED_FIELD"
+  },
+  "not_promoted": [
+    "source convergence",
+    "production statistics",
+    "accepted PKA fold",
+    "accepted local transport",
+    "accepted activation physics",
+    "production readiness"
+  ]
+}

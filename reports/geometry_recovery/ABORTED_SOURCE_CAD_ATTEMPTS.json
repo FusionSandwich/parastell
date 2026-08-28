@@ -1,0 +1,75 @@
+{
+  "schema": "parastell.aborted_source_cad_attempts/v1.0.0",
+  "candidate_h5m_sha256": "8a2d1930cc03a82269feeedef60267197581559c99aa69a021235a7ac7fafa90",
+  "attempts": [
+    {
+      "artifact_directory": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_target575_source_cad_full_v1_20260827T095100",
+      "container_id_prefix": "bd51a8aef729",
+      "classification": "ABORTED_NONSELECTABLE_UNBOUND_COMMAND",
+      "reason": "the older command line lacked caller-supplied expected hashes for the acceptance criteria and physical-change receipt",
+      "preserved": true
+    },
+    {
+      "artifact_directory": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_target575_source_cad_v12_20260827T095400",
+      "container_id_prefix": "285c346ee683",
+      "classification": "FAILED_BEFORE_OUTPUT_IMPORT_PATH",
+      "reason": "PYTHONPATH did not include the read-only worktree; the container exited before output creation",
+      "preserved": true
+    },
+    {
+      "artifact_directory": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_target575_source_cad_v12b_20260827T095500",
+      "container_id_prefix": "10d6a9befd3f",
+      "classification": "FAILED_BEFORE_OUTPUT_IMPORT_PATH",
+      "reason": "diagnostic relaunch confirmed ModuleNotFoundError before output creation",
+      "preserved": true
+    },
+    {
+      "artifact_directory": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_target575_source_cad_v12c_20260827T095600",
+      "container_id_prefix": "a062ad9608b0",
+      "classification": "ABORTED_NONSELECTABLE_UNNECESSARY_DISTANCE_WORK",
+      "reason": "checkpoint review proved the worker requested exact distance for 90 non-vessel pairs that require only Boolean intersection; 37 completed rows are retained but cannot qualify",
+      "preserved": true
+    },
+    {
+      "artifact_directory": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_target575_source_cad_v13_20260827T100100",
+      "container_id_prefix": "3bdf46c9dfb7",
+      "classification": "ABORTED_NONSELECTABLE_BIND_MOUNT_IO_AND_RECEIPT_GAPS",
+      "reason": "after 12 minutes the process remained blocked loading shield.step through the Windows p9 bind mount with no pair output; independent review also required stronger reference/support/input/pair/seal contracts before promotion",
+      "exit_code": 137,
+      "oom_killed": false,
+      "preserved": true
+    },
+    {
+      "artifact_directory": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_target575_source_cad_v14_20260827T102404",
+      "container_id_prefix": "b0a9e21e0f6c",
+      "classification": "ABORTED_NONSELECTABLE_RESOURCE_FLOOR_AND_SLOW_BOOLEAN_PATH",
+      "reason": "the scientifically valid exact-common Boolean path produced only 5/276 ordered rows in about five minutes and host free RAM crossed below the declared 2 GiB floor; owner stopped it, preserved evidence, and restored the exact positive-distance shortcut",
+      "exit_code": 137,
+      "oom_killed": false,
+      "progress_rows": 5,
+      "preserved": true
+    },
+    {
+      "artifact_directory": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_target575_source_cad_v15_20260827T103400",
+      "container_id_prefix": "d621e8b2aaf2",
+      "classification": "FAILED_NONSELECTABLE_OOM_DURING_COMPONENT_PAIR_AUDIT",
+      "reason": "all 108 magnet/component rows and six of fifteen component-pair rows completed, including 18/18 exact positive vessel witnesses and a 5.23962648491591 cm minimum, but one of three worker processes was OOM-killed at the 12 GiB container cap before a terminal report or seal could be written",
+      "exit_code": 1,
+      "oom_killed": true,
+      "progress_rows": 114,
+      "terminal_report_present": false,
+      "preserved": true
+    }
+  ],
+  "selectable_successor": null,
+  "remote_transfer_candidate": {
+    "host": "poly-bateman",
+    "status": "TRANSFER_IN_PROGRESS_NO_REMOTE_CPU_CLAIM",
+    "local_archive": "D:\\parastell-artifacts\\geometry-recovery-20260827\\remote_stage\\sourcecad_v16_inputs_20260827T104700.tar.gz",
+    "archive_size_bytes": 252519987,
+    "archive_sha256": "981fca14cd07767d634909c425c43bfd5408b42bc328fcfe43f54eed277aa9de",
+    "remote_final_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/stage/sourcecad_v16_inputs_20260827T104700.tar.gz",
+    "portable_audit_script_sha256": "ea28aa0ac9c4529542d0e352b292f61e9d65b5b943979300c5e6e55d00d4484a",
+    "receipt_schema": "parastell.source_cad_candidate_audit/v1.4.0"
+  }
+}

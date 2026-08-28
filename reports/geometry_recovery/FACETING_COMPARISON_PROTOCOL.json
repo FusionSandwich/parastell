@@ -1,0 +1,82 @@
+{
+  "schema": "parastell.faceting_comparison_protocol/v1.0.0",
+  "declared_before_refined_candidate_results_at": "2026-08-27T05:56:00-04:00",
+  "scientific_scope": "two-level thresholded resolution stability; not a convergence-order, Richardson extrapolation, bidirectional Hausdorff distance, or extrapolated discretization-error estimate",
+  "levels": {
+    "coarse": {
+      "minimum_mesh_size_cm": 5.0,
+      "maximum_mesh_size_cm": 20.0,
+      "algorithm": 1
+    },
+    "refined": {
+      "minimum_mesh_size_cm": 2.5,
+      "maximum_mesh_size_cm": 10.0,
+      "algorithm": 1
+    }
+  },
+  "identity": {
+    "only_faceting_settings_may_differ": true,
+    "vmec_hash_must_match": true,
+    "coil_hash_must_match": true,
+    "clearance_measurement_hash_must_match": true,
+    "acceptance_criteria_hash_must_match": true,
+    "corrected_thickness_matrices_must_match": true,
+    "geometry_invariants_must_match": true,
+    "canonical_step_payloads_must_match": true,
+    "canonical_source_mesh_fingerprint_must_match": true,
+    "raw_h5m_hash_equality_is_not_required": true,
+    "cross_resolution_canonical_geometry_fingerprint_equality_is_forbidden_as_a_gate": true
+  },
+  "thresholds": {
+    "maximum_per_volume_relative_difference": 0.0025,
+    "maximum_per_magnet_surface_area_relative_difference": 0.01,
+    "minimum_exact_source_cad_clearance_cm": 5.0,
+    "clearance_safety_factor": 2.0,
+    "clearance_inequality": "exact_source_cad_clearance_cm > clearance_safety_factor * certified_refined_facet_to_source_cad_boundary_upper_bound_cm"
+  },
+  "facet_deviation_certificate": {
+    "direction": "dagmc_facets_to_source_cad_boundary",
+    "source_boundary": "compound_of_all_brep_faces",
+    "maximum_cover_radius_cm": 0.25,
+    "solver_margin_cm": 1e-7,
+    "include_maximum_brep_entity_tolerance": true,
+    "require_all_physical_volume_triangles": true,
+    "require_all_magnet_triangles": true,
+    "projection_errors_allowed": 0,
+    "sampled_vertex_or_centroid_distance_is_not_a_certificate": true,
+    "coarse_refined_difference_is_not_a_refined_error_bound": true
+  },
+  "topology": {
+    "semantic_volume_and_material_identity_required": true,
+    "semantic_adjacency_multigraph_identity_required": true,
+    "per_volume_boundary_surface_count_identity_required": true,
+    "raw_entity_id_identity_not_required": true,
+    "native_sense_and_handle_closure_required_at_both_levels": true,
+    "pydagmc_reconciliation_required_at_both_levels": true,
+    "native_overlap_precisions_required": [1, 2, 4]
+  },
+  "former_overlap_zones": {
+    "required_zone_ids": [
+      "magnet-0005",
+      "magnet-0006",
+      "magnet-0011",
+      "magnet-0012"
+    ],
+    "global_refinement_classification": "GLOBAL_REFINEMENT_COVERS_FORMER_ZONES",
+    "required_evidence": [
+      "coarse_and_refined_zone_coverage",
+      "strictly_smaller_refined_maximum_edge",
+      "strictly_larger_refined_triangle_count",
+      "local_statistics_bound_to_public-reference_overlap_witnesses"
+    ],
+    "locally_targeted_refinement_claim_allowed": false
+  },
+  "fail_closed_statuses": [
+    "UNQUALIFIED_INPUT_EVIDENCE",
+    "UNQUALIFIED_SOURCE_CAD_IDENTITY",
+    "UNQUALIFIED_SEMANTIC_MAPPING",
+    "UNQUALIFIED_REFINED_FACET_DEVIATION",
+    "FACETING_CONVERGENCE_FAIL"
+  ],
+  "passing_status": "FACETING_CONVERGENCE_PASS"
+}

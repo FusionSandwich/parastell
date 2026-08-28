@@ -1,0 +1,24 @@
+{
+  "schema": "parastell.vanilla_reference_repository/v1.0.0",
+  "classification": "INDEPENDENT_CLEAN_MAIN_REPOSITORY",
+  "path": "D:\\parastell-reference-repos\\parastell-vanilla-main-de7d297",
+  "branch": "main",
+  "head_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+  "git_tree_sha": "f77cd1f89071b4cb63fdedb4cf3b95ffbc7c839c",
+  "fork_main_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+  "upstream_main_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+  "clone_source": "already-local fetched repository via file protocol",
+  "shallow": true,
+  "working_tree_clean": true,
+  "fetch_remotes": {
+    "origin": "https://github.com/FusionSandwich/parastell.git",
+    "upstream": "https://github.com/svalinn/parastell.git"
+  },
+  "push_urls": {
+    "origin": "DISABLED_BY_PROMPT7R",
+    "upstream": "DISABLED_BY_PROMPT7R"
+  },
+  "purpose": "immutable vanilla physical-geometry authority and comparison build",
+  "instrumentation_policy": "No feature code, tallies, boundary-bank configuration, ports, or H5M mutation is permitted in this repository.",
+  "reference_build_artifact_root": "D:\\parastell-artifacts\\geometry-recovery-20260827\\vanilla_main_reference"
+}

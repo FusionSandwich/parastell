@@ -1,0 +1,153 @@
+{
+  "schema": "parastell.refacet_recovery_design/v1.0.0",
+  "created_at": "2026-08-27T18:38:00Z",
+  "status": "DESIGN_ONLY_PENDING_INDEPENDENT_REVIEW",
+  "scientific_decision": "NOT_PERFORMED",
+  "remote_launch_authorized": false,
+  "predecessor_evidence": {
+    "attempt_id": "refacet_v5_remote_20260827T133901Z",
+    "terminal_failure_receipt_sha256": "0fd3d7ca98440640312996fd48502d95d3a420ed9db72158f21596a93b9503ea",
+    "independent_failure_qualification_sha256": "61d7e939535a4eda6c5e2fe158333b184c20676085b37e61636a8b1dfebaa7a2",
+    "walltime_limit_seconds": 10800,
+    "terminal_return_code_captured": false,
+    "resource_usage_captured": false,
+    "partial_artifact_count": 8,
+    "partial_artifact_total_bytes": 331691833,
+    "first_partial_artifact_at": "2026-08-27T14:22:47Z",
+    "last_partial_artifact_at": "2026-08-27T14:23:00Z",
+    "required_h5m_manifest_seal_created": false,
+    "inference_limit": "V5 proves that the NFS-resident copy stage completed and the job then remained incomplete beyond the three-hour boundary. It does not prove which later CAD/Gmsh substage consumed the remaining time because no stage receipt or terminal return code was persisted."
+  },
+  "fresh_namespaces": {
+    "diagnostic_runtime_preflight": {
+      "attempt_id": "runtime_stack_preflight_v4_diagnostic_20260827T184000Z",
+      "operational_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v4_diagnostic_20260827T184000Z",
+      "log_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v4_diagnostic_20260827T184000Z/runtime_probe.log",
+      "pid_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v4_diagnostic_20260827T184000Z/runtime_probe.pid",
+      "launch_nonce": "ce10c9178e2b0b1210b7e925b256811e22477e0707c647e5905bf8f07713dff5",
+      "run_mode": "IMPORT_FRAGMENT_DIAGNOSTIC",
+      "threads": 4
+    },
+    "coarse_runtime_preflight": {
+      "attempt_id": "runtime_stack_preflight_v5_coarse_20260827T184000Z",
+      "operational_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v5_coarse_20260827T184000Z",
+      "log_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v5_coarse_20260827T184000Z/runtime_probe.log",
+      "pid_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v5_coarse_20260827T184000Z/runtime_probe.pid",
+      "launch_nonce": "d70a7e6022eb1d263d2a777f89839804f96927998b8bca1914561379374d64d6",
+      "run_mode": "COARSE_SCIENTIFIC_REFACET",
+      "threads": 32,
+      "creation_gate": "FORBIDDEN_UNTIL_DIAGNOSTIC_TERMINAL_PASS_AND_INDEPENDENT_REVIEW"
+    },
+    "import_fragment_diagnostic": {
+      "attempt_id": "refacet_v6_import_diagnostic_remote_20260827T184000Z",
+      "operational_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z",
+      "publish_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_diagnostic_remote_20260827T184000Z",
+      "scratch_root": "/dev/shm/parastell-refacet-v6-import-20260827T184000Z",
+      "log_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z/import_fragment.log",
+      "pid_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z/import_fragment.pid",
+      "stage_receipt_dir": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z/stages",
+      "diagnostic_report_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z/diagnostic_report.json",
+      "publication_receipt_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z/diagnostic_publication_receipt.json",
+      "terminal_receipt_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z/terminal_receipt.json",
+      "resource_receipt_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_import_operational_20260827T184000Z/resource_usage.txt",
+      "launch_nonce": "d2e00226225f2959db1145f29b6ec86b90b685e349aa2cea7d6733e35d612781"
+    },
+    "coarse_scientific": {
+      "attempt_id": "refacet_v6_coarse_remote_20260827T184000Z",
+      "operational_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_operational_20260827T184000Z",
+      "publish_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_remote_20260827T184000Z",
+      "scratch_root": "/dev/shm/parastell-refacet-v6-coarse-20260827T184000Z",
+      "publish_dir": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_remote_20260827T184000Z/coarse",
+      "log_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_operational_20260827T184000Z/coarse.log",
+      "pid_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_operational_20260827T184000Z/coarse.pid",
+      "stage_receipt_dir": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_operational_20260827T184000Z/stages",
+      "terminal_receipt_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_operational_20260827T184000Z/terminal_receipt.json",
+      "resource_receipt_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_operational_20260827T184000Z/resource_usage.txt",
+      "publication_receipt_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v6_coarse_operational_20260827T184000Z/publication_receipt.json",
+      "launch_nonce": "c78f9b4165d1a418357ea2fea38c13374e39aa046db96156ec4c302745b0631e"
+    }
+  },
+  "required_implementation_changes_before_any_launch": [
+    "Define each operational root as an immutable subtree containing hash-frozen code, inputs, controls, and launcher plus a separately writable, explicit allowlist subtree for log, PID, time, stage, diagnostic, publication, terminal, and collection evidence. Seal the immutable inventory before launch; reject any change there and any unexpected path outside the writable allowlist.",
+    "Add hash-chained O_EXCL/no-symlink stage receipts before and after source verification, scratch staging, each STEP import, source-to-Gmsh matching, BooleanFragments, fragment matching, surface meshing, H5M writing, native readback, manifest publication, seal publication, and persistent publication. Every receipt binds attempt, nonce, run mode, stage ordinal and state, process/host, code/control/source/root hashes, and the previous receipt hash.",
+    "Factor one production import-to-bijection-to-BooleanFragments-to-fragment-bijection-to-topology routine shared without divergence by the diagnostic and coarse execution. The diagnostic performs no surface mesh or H5M publication.",
+    "Create runtime receipt schema v1.2 with distinct receipts for diagnostic and coarse runs. Bind run_mode, threads, immutable_source_root, intended-but-absent staged_source_root, scratch_output_root, persistent_publish_root, and hashes of every diagnostic, stage, publisher, terminal, launcher, and refaceter implementation. Preflight validates immutable NFS source/code and the absence/role binding of scratch paths; after staging, the scientific run must rehash the staged packet and revalidate runtime before the shared routine.",
+    "Stage every source/code/control file to a fresh host-local scratch root, verify its frozen hash after copying, and run CAD/Gmsh reads only from that scratch root.",
+    "Freeze Gmsh options General.NumThreads, Geometry.OCCParallel, Mesh.MaxNumThreads1D, Mesh.MaxNumThreads2D, and Mesh.MaxNumThreads3D in the control. Set/read General.NumThreads and Geometry.OCCParallel immediately after initialization before import/BooleanFragments; set/read every mesh option before meshing and revalidate after each sizing call. Missing options or readback/call-order mismatch fail closed.",
+    "The diagnostic publishes create-only diagnostic_report and diagnostic_publication_receipt schemas containing complete import mapping, fragment mapping, topology payload hashes, explicit H5M absence, and stage-chain root hash. The coarse lane publishes completed scratch artifacts with O_EXCL/no-symlink copies to the separately absent persistent publish root, verifies every copied hash, publishes the candidate manifest, publishes the build seal last, and then publishes an external publication receipt. Eligibility requires the appropriate external receipt, not stage markers alone.",
+    "Set PYTHONUNBUFFERED=1, while treating stdout as diagnostic only; stage and terminal receipts control.",
+    "Place /usr/bin/time outside GNU timeout so it survives timeout completion, disable immediate shell exit only around that command, capture every zero, nonzero, and 124 return code in the parent Bash launcher, and atomically publish a shell-owned terminal receipt hashing the time file, log, stage inventory, and artifact inventory before returning the exact code.",
+    "After the guarded process exits, an external collector rehashes log, time, stage, diagnostic/artifact, publication, and terminal files and compares them with the terminal receipt before qualification. Preserve scratch on any failure until evidence collection; prohibit automatic deletion or successor launch."
+  ],
+  "execution_chain": [
+    {
+      "order": 1,
+      "name": "implementation_and_test_gate",
+      "resources": "local_static_only",
+      "requirements": "Focused tests for stage ordering, scratch/publish identity, timeout code 124 capture, non-timeout nonzero capture, GNU-time receipt, create-only paths, partial publication rejection, and no successor. Independent code review must pass."
+    },
+    {
+      "order": 2,
+      "name": "diagnostic_runtime_preflight_v4",
+      "resources": "4 Bateman threads, import-only",
+      "requirements": "Fresh operational root is created and sealed before core-budget so its log parent exists; its log/PID/time/terminal paths remain absent. Diagnostic scratch and publish roots remain absent. Exact interpreter/native-module and new implementation/control hashes, schema-v1.2 diagnostic bindings, terminal collection, independent validation, and full cleanup are required."
+    },
+    {
+      "order": 3,
+      "name": "v6_import_fragment_diagnostic",
+      "resources": "4 Bateman threads, 5400-second walltime plus 120-second grace",
+      "requirements": "Fresh sealed operational root with absent log/PID/time/stage/terminal files; separately absent scratch and publish roots; at least 192 GiB MemAvailable before staging and 128 GiB after staging; tmpfs/free-byte/inode/stale-root checks; exact source hash staging; early four-thread Gmsh readback; all import/mapping/fragment/topology stage receipts; externally captured exit/resource evidence; no mesh/H5M; terminal independent review."
+    },
+    {
+      "order": 4,
+      "name": "coarse_runtime_preflight_v5",
+      "resources": "4 Bateman threads, import-only",
+      "requirements": "Created only after diagnostic terminal PASS and independent review. Use a wholly fresh operational root, nonce, PID, log and lease; schema-v1.2 binds the 32-thread coarse mode, immutable source, absent scratch/publish roles, and exact reviewed coarse implementation. Independent validation and full cleanup are required before coarse launch review."
+    },
+    {
+      "order": 5,
+      "name": "v6_coarse_scientific",
+      "resources": "32 Bateman threads, 21600-second walltime plus 120-second grace",
+      "requirements": "Allowed only after diagnostic terminal PASS, measured-stage walltime review, a separate schema-v1.2 coarse runtime receipt/validation, and independent coarse launch review. Use a fresh sealed operational root and separately absent scratch/publish roots plus fresh log/PID/time/stage/publication/terminal/lease identities. Require full coarse H5M/manifest/seal, native readback, persistent-copy hashes, and external publication receipt."
+    },
+    {
+      "order": 6,
+      "name": "coarse_terminal_qualification",
+      "resources": "read-only",
+      "requirements": "Collect and independently validate return code, time receipt, stage receipts, artifact hashes, native topology/material results, PIDs, lease cleanup, and no successor. Refined remains blocked."
+    }
+  ],
+  "resource_justification": {
+    "diagnostic_threads": 4,
+    "diagnostic_walltime_seconds": 5400,
+    "coarse_threads": 32,
+    "coarse_walltime_seconds": 21600,
+    "minimum_mem_available_before_staging_bytes": 206158430208,
+    "minimum_mem_available_after_staging_bytes": 137438953472,
+    "minimum_persistent_free_bytes": 21474836480,
+    "minimum_tmpfs_scratch_free_bytes": 68719476736,
+    "minimum_tmpfs_free_inodes": 10000,
+    "frozen_source_packet_bytes": 331691833,
+    "scratch_safety_factor_over_source_packet": 207,
+    "scratch_checks": [
+      "filesystem type is tmpfs",
+      "fresh scratch root is absent and not a symlink",
+      "free bytes and free inodes meet thresholds",
+      "same-user stale ParaStell scratch consumption is inventoried",
+      "MemAvailable remains at least 128 GiB after staging"
+    ],
+    "basis": "V5 copied 331,691,833 bytes within about eight minutes but produced no later checkpoint or H5M inside 10,800 seconds. The 90-minute diagnostic isolates the unmeasured import/fragment stages on host-local storage. A 64 GiB scratch floor is over 207 times the frozen packet and leaves room for staged code, duplicated STEP/OCC intermediates, Gmsh state, and a coarse H5M while the separate memory gate retains at least 128 GiB after staging. Six hours is only a maximum candidate ceiling: its final value must be justified from the diagnostic stage timings and independently reviewed before coarse launch; it may not be selected merely as twice v5 or increased without a new review."
+  },
+  "fail_closed_rules": [
+    "No remote action until this design and its implementation are independently reviewed.",
+    "For each lane, a distinct operational root may be created and sealed before core-budget solely to hold reviewed code, controls, launcher, and the required log parent. Its log, PID, resource, stage, publication, and terminal outputs must remain absent and not symlinks. Scientific publish and scratch roots must remain wholly absent and not symlinks until atomically claimed by the reviewed launcher.",
+    "Diagnostic and coarse require separate runtime receipts, independent validations, attempts, nonces, operational roots, scratch roots, publish roots, logs, PIDs, time records, stage chains, terminal receipts, and ssh-poly leases.",
+    "No root may be reused after setup, runtime, import, timeout, publication, or validation failure.",
+    "The import diagnostic cannot publish or qualify an H5M.",
+    "Diagnostic PASS requires a complete diagnostic report, external diagnostic publication receipt, full mapping/fragment/topology payload hashes, valid stage-chain root, and explicit absence of H5M, candidate manifest, and build seal.",
+    "The coarse attempt cannot start automatically after the diagnostic.",
+    "Refined faceting and OpenMC remain forbidden until coarse terminal qualification passes.",
+    "For the coarse lane, a missing terminal return code, resource receipt, stage receipt, H5M, manifest, build seal, publication receipt, or publisher hash makes the attempt nonselectable. For the diagnostic lane, missing diagnostic report/publication/terminal/resource/stage evidence or any unexpected H5M/manifest/seal makes it nonselectable.",
+    "External collection after process exit must rehash all evidence and match the terminal receipt before either lane can pass."
+  ]
+}

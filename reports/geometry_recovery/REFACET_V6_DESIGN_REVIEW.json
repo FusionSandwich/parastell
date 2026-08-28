@@ -1,0 +1,39 @@
+{
+  "schema": "parastell.refacet_recovery_design_review/v1.0.0",
+  "created_at": "2026-08-27T18:45:00Z",
+  "status": "DESIGN_REVIEW_PASS",
+  "scope": "DESIGN_TEXT_ONLY_NO_REMOTE_OR_SCIENTIFIC_AUTHORIZATION",
+  "review_mode": "INDEPENDENT_READ_ONLY_SUBAGENT",
+  "design_json": {
+    "path": "reports/geometry_recovery/REFACET_V6_RECOVERY_DESIGN.json",
+    "sha256": "1484e3cc0997382b47e2084ec6c404d8550dc1b32bb43ec6982cd99f37bd0fea"
+  },
+  "design_markdown": {
+    "path": "reports/geometry_recovery/REFACET_V6_RECOVERY_DESIGN.md",
+    "sha256": "b67fe0363a7520526535b9229727bf580bc092debd956bb78d9bd76a0c766167"
+  },
+  "gates": {
+    "operational_vs_scratch_publish_roles": true,
+    "immutable_vs_writable_allowlist": true,
+    "separate_diagnostic_and_coarse_runtime_receipts": true,
+    "coarse_runtime_preflight_sequence": true,
+    "post_staging_runtime_and_hash_revalidation": true,
+    "early_and_pre_mesh_gmsh_thread_contract": true,
+    "shared_production_import_fragment_topology_routine": true,
+    "diagnostic_report_publication_and_h5m_absence": true,
+    "coarse_exclusive_publication_and_external_receipt": true,
+    "post_exit_external_collection_rehash": true,
+    "quantified_tmpfs_memory_storage_gates": true,
+    "conditional_walltime_review": true,
+    "no_automatic_successor": true
+  },
+  "remaining_mandatory_gates": [
+    "implement schema and execution changes locally",
+    "pass focused tests including forced timeout and publication failures",
+    "freeze exact code and controls",
+    "independently review each concrete runtime and launch artifact",
+    "perform immediate live core-budget, memory, filesystem, root, and process checks before each remote launch"
+  ],
+  "remote_launch_authorized": false,
+  "scientific_acceptance_authorized": false
+}

@@ -34,6 +34,74 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def native_dagmc_id_inventory(path: str | Path) -> dict[str, Any]:
+    """Return native DAGMC surface/volume IDs without modifying the H5M.
+
+    OpenMC CSG wrapper entities share the cell/surface integer namespaces with
+    DAGMC geometry.  The complete native ID inventory therefore controls the
+    first safe wrapper ID; entity counts are not a substitute because DAGMC
+    IDs need not be contiguous.
+    """
+    from pymoab import core, types
+
+    resolved = Path(path).resolve()
+    mesh = core.Core()
+    mesh.load_file(str(resolved))
+    root = mesh.get_root_set()
+    category_tag = mesh.tag_get_handle(
+        types.CATEGORY_TAG_NAME,
+        types.CATEGORY_TAG_SIZE,
+        types.MB_TYPE_OPAQUE,
+        types.MB_TAG_SPARSE,
+    )
+    global_id_tag = mesh.tag_get_handle(
+        "GLOBAL_ID", 1, types.MB_TYPE_INTEGER, types.MB_TAG_DENSE
+    )
+
+    def ids(category: str) -> list[int]:
+        entity_sets = mesh.get_entities_by_type_and_tag(
+            root, types.MBENTITYSET, category_tag, [category]
+        )
+        if not len(entity_sets):
+            return []
+        values = mesh.tag_get_data(global_id_tag, entity_sets, flat=True)
+        return sorted(int(value) for value in values)
+
+    surface_ids = ids("Surface")
+    volume_ids = ids("Volume")
+    surface_duplicate_ids = sorted(
+        {value for value in surface_ids if surface_ids.count(value) > 1}
+    )
+    volume_duplicate_ids = sorted(
+        {value for value in volume_ids if volume_ids.count(value) > 1}
+    )
+    nonpositive_surface_ids = sorted(
+        {value for value in surface_ids if value <= 0}
+    )
+    nonpositive_volume_ids = sorted(
+        {value for value in volume_ids if value <= 0}
+    )
+    native_ids = sorted(set(surface_ids) | set(volume_ids))
+    if not surface_ids or not volume_ids or not native_ids:
+        raise ValueError("DAGMC H5M lacks native surface or volume IDs")
+    return {
+        "raw_h5m_sha256": sha256_file(resolved),
+        "surface_ids": surface_ids,
+        "volume_ids": volume_ids,
+        "surface_entity_count": len(surface_ids),
+        "volume_entity_count": len(volume_ids),
+        "duplicate_surface_global_ids": surface_duplicate_ids,
+        "duplicate_volume_global_ids": volume_duplicate_ids,
+        "nonpositive_surface_global_ids": nonpositive_surface_ids,
+        "nonpositive_volume_global_ids": nonpositive_volume_ids,
+        "native_id_gate_pass": not surface_duplicate_ids
+        and not volume_duplicate_ids
+        and not nonpositive_surface_ids
+        and not nonpositive_volume_ids,
+        "maximum_native_id": max(native_ids),
+    }
+
+
 def _json_hash(value: Any) -> str:
     encoded = json.dumps(
         value, sort_keys=True, separators=(",", ":"), allow_nan=False
@@ -78,6 +146,10 @@ def _outward_sign(surface: Any, volume_id: int) -> int:
     """Map the native DAGMC facet normal to the volume-outward normal."""
     forward = _volume_id(getattr(surface, "forward_volume", None))
     reverse = _volume_id(getattr(surface, "reverse_volume", None))
+    if forward == reverse and forward is not None:
+        raise ValueError(
+            f"surface {surface.id} assigns volume {forward} to both senses"
+        )
     if forward == int(volume_id):
         return 1
     if reverse == int(volume_id):
@@ -103,8 +175,16 @@ def _surface_geometry_signature(surface: Any, quantum_cm: float) -> str:
     quantized = _quantize(_triangles(surface.triangle_coords), quantum_cm)
     canonical = []
     for triangle in quantized:
-        vertices = sorted(tuple(int(item) for item in row) for row in triangle)
-        canonical.append(vertices)
+        vertices = [tuple(int(item) for item in row) for row in triangle]
+        # Preserve facet winding while ignoring only the arbitrary cyclic
+        # choice of the first vertex.  Reversing a triangle must change the
+        # fingerprint because it can change DAGMC surface orientation.
+        rotations = [
+            (vertices[0], vertices[1], vertices[2]),
+            (vertices[1], vertices[2], vertices[0]),
+            (vertices[2], vertices[0], vertices[1]),
+        ]
+        canonical.append(min(rotations))
     return _json_hash(sorted(canonical))
 
 
@@ -134,9 +214,11 @@ def audit_volume_envelope(
 ) -> dict[str, Any]:
     """Audit the complete, topology-sensed outer boundary of one volume."""
     edge_counts: dict[tuple[Any, Any], int] = {}
+    directed_edge_balance: dict[tuple[Any, Any], int] = {}
     vector_area = np.zeros(3)
     total_area = 0.0
     signed_six_volume = 0.0
+    degenerate_triangle_count = 0
     surface_rows = []
     all_vertices = []
     volume_id = int(volume.id)
@@ -146,15 +228,25 @@ def audit_volume_envelope(
         quantized = _quantize(triangles, coordinate_quantum_cm)
         for triangle in quantized:
             vertices = [tuple(int(item) for item in row) for row in triangle]
+            if sign < 0:
+                vertices = [vertices[0], vertices[2], vertices[1]]
             for first, second in ((0, 1), (1, 2), (2, 0)):
-                edge = tuple(sorted((vertices[first], vertices[second])))
+                directed = (vertices[first], vertices[second])
+                edge = tuple(sorted(directed))
                 edge_counts[edge] = edge_counts.get(edge, 0) + 1
+                direction = 1 if directed == edge else -1
+                directed_edge_balance[edge] = (
+                    directed_edge_balance.get(edge, 0) + direction
+                )
         all_vertices.append(triangles.reshape((-1, 3)))
         native_area_vectors = 0.5 * np.cross(
             triangles[:, 1] - triangles[:, 0],
             triangles[:, 2] - triangles[:, 0],
         )
         areas = np.linalg.norm(native_area_vectors, axis=1)
+        degenerate_triangle_count += int(
+            np.count_nonzero((~np.isfinite(areas)) | (areas <= 0.0))
+        )
         surface_area = float(areas.sum())
         total_area += surface_area
         vector_area += sign * native_area_vectors.sum(axis=0)
@@ -184,8 +276,12 @@ def audit_volume_envelope(
         key = str(int(count))
         multiplicity_histogram[key] = multiplicity_histogram.get(key, 0) + 1
     errors = sum(count != 2 for count in edge_counts.values())
+    orientation_errors = sum(
+        balance != 0 for balance in directed_edge_balance.values()
+    )
     relative_closure = float(np.linalg.norm(vector_area) / total_area)
     vertices = np.concatenate(all_vertices)
+    signed_volume = signed_six_volume / 6.0
     return {
         "volume_id": volume_id,
         "material_tag": _material(getattr(volume, "material", "")),
@@ -196,17 +292,26 @@ def audit_volume_envelope(
         "edge_multiplicity_histogram": multiplicity_histogram,
         "edge_multiplicity_error_count": int(errors),
         "edge_closure_pass": errors == 0,
+        "directed_edge_orientation_error_count": int(orientation_errors),
+        "directed_edge_closure_pass": orientation_errors == 0,
+        "degenerate_triangle_count": degenerate_triangle_count,
+        "nondegenerate_facets_pass": degenerate_triangle_count == 0,
         "vector_area_cm2": [float(item) for item in vector_area],
         "vector_area_closure_relative": relative_closure,
         "vector_area_closure_tolerance": float(vector_area_relative_tolerance),
         "vector_area_closure_pass": relative_closure
         <= float(vector_area_relative_tolerance),
-        "volume_cm3": abs(signed_six_volume) / 6.0,
+        "signed_volume_cm3": signed_volume,
+        "positive_signed_volume_pass": bool(signed_volume > 0.0),
+        "volume_cm3": abs(signed_volume),
         "bounding_box_cm": {
             "lower": [float(item) for item in vertices.min(axis=0)],
             "upper": [float(item) for item in vertices.max(axis=0)],
         },
         "closed": errors == 0
+        and orientation_errors == 0
+        and degenerate_triangle_count == 0
+        and signed_volume > 0.0
         and relative_closure <= float(vector_area_relative_tolerance),
     }
 
@@ -445,18 +550,101 @@ class ReferenceGeometry:
         if external_vacuum_radius_cm is None:
             universe = self.dagmc_universe()
             return openmc.Geometry(universe)
-        # The wrapper cell is OpenMC CSG and therefore has an ID in the same
-        # namespace as DAGMC cells.  Remap DAGMC entity IDs only in OpenMC's
-        # in-memory model to avoid a collision; the H5M remains byte-identical.
-        universe = self.dagmc_universe(auto_geom_ids=True)
+        native = native_dagmc_id_inventory(self.path)
+        if not native["native_id_gate_pass"]:
+            raise ValueError(
+                "DAGMC H5M contains duplicate native GLOBAL_ID values"
+            )
+        first_wrapper_id = int(native["maximum_native_id"]) + 1
+        universe = self.dagmc_universe(
+            universe_id=first_wrapper_id + 3, auto_geom_ids=False
+        )
         radius = float(external_vacuum_radius_cm)
         if not np.isfinite(radius) or radius <= 0.0:
             raise ValueError(
                 "external vacuum radius must be positive and finite"
             )
-        boundary = openmc.Sphere(r=radius, boundary_type="vacuum")
-        cell = openmc.Cell(fill=universe, region=-boundary)
-        return openmc.Geometry([cell])
+        boundary = openmc.Sphere(
+            surface_id=first_wrapper_id,
+            r=radius,
+            boundary_type="vacuum",
+        )
+        cell = openmc.Cell(
+            cell_id=first_wrapper_id + 1,
+            fill=universe,
+            region=-boundary,
+        )
+        root = openmc.Universe(universe_id=first_wrapper_id + 2, cells=[cell])
+        return openmc.Geometry(root)
+
+    def openmc_one_period_geometry(
+        self,
+        *,
+        n_field_periods: int,
+        external_vacuum_radius_cm: float,
+        expected_openmc_version: str = "0.16.0",
+    ) -> Any:
+        """Wrap an immutable DAGMC model in one rotational field period.
+
+        This uses only standard OpenMC rotational periodic planes.  It does not
+        implement the reflection transformation needed by a stellarator
+        half-period model.
+        """
+        import openmc
+
+        from .periodic_geometry import FieldPeriodContract
+
+        actual_version = str(getattr(openmc, "__version__", ""))
+        if actual_version != expected_openmc_version:
+            raise RuntimeError(
+                "OpenMC version mismatch: expected "
+                f"{expected_openmc_version}, got {actual_version or 'unknown'}"
+            )
+        period = FieldPeriodContract(n_field_periods=n_field_periods)
+        extent_radians = np.deg2rad(period.one_period_extent_degrees)
+        radius = float(external_vacuum_radius_cm)
+        if not np.isfinite(radius) or radius <= 0.0:
+            raise ValueError(
+                "external vacuum radius must be positive and finite"
+            )
+
+        native = native_dagmc_id_inventory(self.path)
+        if not native["native_id_gate_pass"]:
+            raise ValueError(
+                "DAGMC H5M contains duplicate native GLOBAL_ID values"
+            )
+        first_wrapper_id = int(native["maximum_native_id"]) + 1
+        start = openmc.YPlane(
+            surface_id=first_wrapper_id,
+            boundary_type="periodic",
+        )
+        end = openmc.Plane(
+            surface_id=first_wrapper_id + 1,
+            a=float(np.sin(extent_radians)),
+            b=float(-np.cos(extent_radians)),
+            c=0.0,
+            d=0.0,
+            boundary_type="periodic",
+        )
+        start.periodic_surface = end
+        vacuum = openmc.Sphere(
+            surface_id=first_wrapper_id + 2,
+            r=radius,
+            boundary_type="vacuum",
+        )
+        universe = self.dagmc_universe(
+            universe_id=first_wrapper_id + 5, auto_geom_ids=False
+        )
+        # Both periodic-plane normals point into the modeled wedge, as required
+        # for OpenMC rotational periodicity.
+        region = -vacuum & +start & +end
+        cell = openmc.Cell(
+            cell_id=first_wrapper_id + 3,
+            fill=universe,
+            region=region,
+        )
+        root = openmc.Universe(universe_id=first_wrapper_id + 4, cells=[cell])
+        return openmc.Geometry(root)
 
     def evidence(self) -> dict[str, Any]:
         self.verify_unchanged()

@@ -68,6 +68,11 @@ def audit(dagmc_path: Path, inventory_path: Path) -> dict:
 
     model = pydagmc.Model(str(dagmc_path))
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    if (
+        inventory.get("magnet_count") != 18
+        or len(inventory.get("magnets", [])) != 18
+    ):
+        raise ValueError("deterministic ray audit requires exactly 18 magnets")
     unique_surfaces = {
         int(surface.id): surface
         for volume in model.volumes_by_id.values()
@@ -160,10 +165,13 @@ def audit(dagmc_path: Path, inventory_path: Path) -> dict:
     return {
         "schema": "parastell.reference_deterministic_ray_audit/v1.0.0",
         "raw_h5m_sha256": sha256_file(dagmc_path),
+        "magnet_inventory_path": str(inventory_path),
+        "magnet_inventory_sha256": sha256_file(inventory_path),
         "ray_algorithm": "vectorized Moller-Trumbore on actual DAGMC facets",
         "point_in_volume_algorithm": "odd-even forward ray parity",
         "deterministic_direction": [float(item) for item in parity_direction],
         "magnet_count": len(rows),
+        "magnet_count_is_exact": len(rows) == 18,
         "ray_count": 2 * len(rows),
         "all_first_surface_ids_pass": all(
             row["outside_to_inside"]["pass"]
@@ -184,7 +192,11 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     arguments = parser.parse_args()
     result = audit(arguments.dagmc.resolve(), arguments.inventory.resolve())
-    arguments.output.write_text(
+    output = arguments.output.resolve()
+    if output.exists():
+        raise FileExistsError(f"create-only output exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )

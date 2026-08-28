@@ -1,0 +1,181 @@
+{
+  "schema": "parastell.geometry_recovery.remote_refaceting_attempts/v1.0.0",
+  "updated_at": "2026-08-27T14:36:00-04:00",
+  "attempts": [
+    {
+      "attempt_id": "refacet_v1_remote_20260827T120500Z",
+      "remote_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v1_remote_20260827T120500Z",
+      "classification": "NONSELECTABLE_SETUP_FAILURE_EVIDENCE",
+      "scientific_output_launched": false,
+      "scientific_h5m_created": false,
+      "events": [
+        {
+          "classification": "PRELAUNCH_SHELL_CONTRACT_FAILURE",
+          "detail": "The first tracked one-core setup used set -o pipefail under POSIX sh and failed before extraction."
+        },
+        {
+          "classification": "SUCCESSFUL_EXTRACTION_IN_CONTAMINATED_ROOT",
+          "detail": "A corrected extraction reused the root. Although hashes passed and no scientific output was launched, root reuse makes the entire attempt nonselectable."
+        },
+        {
+          "classification": "READ_ONLY_IMPORT_PREFLIGHT_ONLY",
+          "detail": "A later import/help preflight touched no scientific output. It does not restore selectability."
+        }
+      ],
+      "preservation_policy": "PRESERVE_NO_REUSE_NO_PROMOTION"
+    },
+    {
+      "attempt_id": "refacet_v2_remote_20260827T122000Z",
+      "remote_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v2_remote_20260827T122000Z",
+      "classification": "NONSELECTABLE_SOURCE_NATIVE_PREREQUISITE_FAILURE",
+      "scientific_output_launched": true,
+      "scientific_h5m_created": false,
+      "coarse": {
+        "lease": "93d3ee4bbebcee1eb2efeef35e597def",
+        "pid": 771659,
+        "reserved_threads": 8,
+        "result": "FAILED_BEFORE_MESHING",
+        "error": "source H5M material/volume ordering is unqualified"
+      },
+      "refined": {
+        "result": "NOT_LAUNCHED",
+        "reason": "the ssh-poly start channel closed and authoritative post-reconnect inspection found no lease, PID, log, temp path, or output"
+      },
+      "root_cause": {
+        "classification": "LOCAL_PYMOAB_ADAPTER_FLAG_ERROR",
+        "minimal_reproducer_report_sha256": "5b01232fe6f036699c7fad72322d64e975725554b829ea948b5bdf0eadee2b85",
+        "observed_error": "TypeError: MOAB ErrorCode: MB_TYPE_OUT_OF_RANGE",
+        "cause": "MB_TAG_STORE (value 128) was incorrectly ORed into the storage_type argument; the installed tag_get_handle signature expects one storage enum and create_if_missing separately",
+        "physical_geometry_implicated": false,
+        "external_package_patch_required": false
+      },
+      "preservation_policy": "PRESERVE_NO_REUSE_NO_PROMOTION"
+    },
+    {
+      "attempt_id": "refacet_v3_remote_20260827T125000Z",
+      "remote_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v3_remote_20260827T125000Z",
+      "classification": "NONSELECTABLE_SOURCE_TO_GMSH_IDENTITY_FAILURE",
+      "scientific_output_launched": true,
+      "scientific_h5m_created": false,
+      "source_native_prerequisite": {
+        "classification": "PASS",
+        "diagnostic_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/source_native_diagnostic_v3_20260827T124500Z",
+        "report_sha256": "6380ac6c8de8b53d8b35136077451484d85c767fa860795e7514a480ff2a924e"
+      },
+      "coarse": {
+        "lease": "78212c33cfc7707fd4579c5f3a95e7aa",
+        "pid": 775646,
+        "reserved_threads": 8,
+        "result": "FAILED_BEFORE_FRAGMENTATION_MESHING_OR_H5M_WRITE",
+        "error": "source solid 0 has 0 Gmsh import matches"
+      },
+      "refined": {
+        "result": "NOT_LAUNCHED",
+        "reason": "coarse source-to-Gmsh identity prerequisite failed"
+      },
+      "root_cause_status": "DIAGNOSED_LOCAL_IDENTITY_ADAPTER_INVARIANT",
+      "root_cause": {
+        "diagnostic_path": "D:\\parastell-artifacts\\geometry-recovery-20260827\\gmsh_import_diagnostic_v5_local_20260827T125100Z\\import_mapping.json",
+        "diagnostic_sha256": "594cc9808210117ef53932f1edcbc4f2af2ddc5c70047a54c5a170a349fafbdf",
+        "source_solid_count": 24,
+        "gmsh_imported_volume_count": 24,
+        "source_import_identity_bijection_pass": true,
+        "matches_per_source_minimum": 1,
+        "matches_per_source_maximum": 1,
+        "maximum_diagonal_mass_ratio_error": 0.0,
+        "maximum_diagonal_center_delta_cm": 0.0,
+        "maximum_diagonal_inertia_delta_cm5": 0.0,
+        "diagnostic_cadquery_to_gmsh_bounds_delta_cm": 238.43942121244584,
+        "cause": "CadQuery 2.7 BoundingBox is not location-normalized for nested located STEP magnet solids in this call path; source-to-import identity must use exact volume, center, and full inertia, while Gmsh-to-fragment preservation still requires bounds",
+        "corrected_code_policy": "SOURCE_TO_IMPORT_VOLUME_CENTER_INERTIA_AND_UNIQUE_BIJECTION; IMPORT_TO_FRAGMENT_VOLUME_CENTER_INERTIA_BOUNDS",
+        "scientific_geometry_implicated": false,
+        "external_package_patch_required": false
+      },
+      "physical_geometry_implicated": false,
+      "external_package_patch_required": false,
+      "preservation_policy": "PRESERVE_NO_REUSE_NO_PROMOTION"
+    },
+    {
+      "attempt_id": "refacet_v4_remote_20260827T125500Z",
+      "remote_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v4_remote_20260827T125500Z",
+      "classification": "NONSELECTABLE_RUNTIME_INTERPRETER_FAILURE",
+      "scientific_output_launched": true,
+      "scientific_h5m_created": false,
+      "coarse": {
+        "lease": "4ecaf36ff1e356d3b9ebab3e1820522e",
+        "pid": 779518,
+        "reserved_threads": 8,
+        "result": "FAILED_BEFORE_IMPORT_MATCHING_FRAGMENTATION_MESHING_OR_H5M_WRITE",
+        "error": "ModuleNotFoundError: No module named 'pymoab'"
+      },
+      "refined": {
+        "result": "NOT_LAUNCHED",
+        "reason": "coarse runtime prerequisite failed"
+      },
+      "root_cause": {
+        "classification": "UNBOUND_DEFAULT_SHELL_INTERPRETER",
+        "cause": "the reopened interactive shell resolved a default python3 with CadQuery/Gmsh but without the qualified PyMOAB package",
+        "scientific_geometry_implicated": false,
+        "external_package_patch_required": false
+      },
+      "preservation_policy": "PRESERVE_NO_REUSE_NO_PROMOTION"
+    },
+    {
+      "attempt_id": "refacet_v5_remote_20260827T133901Z",
+      "remote_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v5_remote_20260827T133901Z",
+      "classification": "FAIL_CLOSED_TERMINAL_AFTER_TIMEOUT_BOUNDARY_INCOMPLETE",
+      "scientific_output_launched": true,
+      "scientific_h5m_created": false,
+      "coarse": {
+        "lease": "764e2138e1930ffa2f3154712ccf780d",
+        "guard_and_timeout_pid": 803261,
+        "time_pid": 803379,
+        "python_pid": 803380,
+        "reserved_threads": 32,
+        "walltime_limit_seconds": 10800,
+        "result": "TERMINAL_INCOMPLETE_OBSERVED_AFTER_TIMEOUT_BOUNDARY",
+        "terminal_return_code": "NOT_CAPTURED",
+        "resource_usage_receipt": "ABSENT_AT_TERMINAL_OBSERVATION",
+        "partial_artifact_count": 8,
+        "partial_artifact_bytes": 331691833,
+        "dagmc_h5m_created": false,
+        "candidate_manifest_created": false,
+        "build_seal_created": false
+      },
+      "refined": {
+        "result": "NOT_LAUNCHED",
+        "reason": "coarse did not publish a qualified H5M, manifest, or seal"
+      },
+      "terminal_failure_receipt": {
+        "path": "reports/geometry_recovery/REFACET_V5_COARSE_TERMINAL_FAILURE.json",
+        "sha256": "0fd3d7ca98440640312996fd48502d95d3a420ed9db72158f21596a93b9503ea"
+      },
+      "independent_failure_qualification": {
+        "path": "reports/geometry_recovery/REFACET_V5_INDEPENDENT_FAILURE_QUALIFICATION.json",
+        "sha256": "61d7e939535a4eda6c5e2fe158333b184c20676085b37e61636a8b1dfebaa7a2",
+        "status": "INDEPENDENT_FAILURE_QUALIFICATION_PASS"
+      },
+      "cleanup": {
+        "all_bound_pids_gone": true,
+        "owner_lease_reaped": true,
+        "active_leases": 0,
+        "reserved_threads": 0
+      },
+      "physical_geometry_implicated": false,
+      "preservation_policy": "PRESERVE_NO_REUSE_NO_RESUME_NO_RELABEL_NO_PROMOTION"
+    }
+  ],
+  "next_selectable_root_requirement": {
+    "minimum_version": 6,
+    "create_only": true,
+    "distinct_code_control_output_log_pid_and_lease_identities": true,
+    "distinct_attempt_and_nonce_identities": true,
+    "zero_active_reserved_and_used_ssh_poly_lease_before_launch": true,
+    "exact_code_input_and_control_hash_binding_required": true,
+    "exact_interpreter_and_geometry_dependency_runtime_receipt_required": true,
+    "terminal_return_code_capture_outside_python_required": true,
+    "resource_usage_capture_outside_python_required": true,
+    "revised_staging_and_walltime_justification_required": true,
+    "independent_design_review_required": true
+  }
+}

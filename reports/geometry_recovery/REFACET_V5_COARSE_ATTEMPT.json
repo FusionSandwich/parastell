@@ -1,0 +1,57 @@
+{
+  "schema": "parastell.refacet_remote_attempt/v1.0.0",
+  "updated_at": "2026-08-27T14:15:38Z",
+  "attempt_id": "refacet_v5_remote_20260827T133901Z",
+  "host_alias": "poly-bateman",
+  "hostname": "bateman",
+  "machine": "aarch64",
+  "status": "RUNNING",
+  "scientific_scope": "COARSE_FACETING_ONLY_NO_TRANSPORT",
+  "remote_root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v5_remote_20260827T133901Z",
+  "output_dir": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v5_remote_20260827T133901Z/coarse",
+  "log_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v3_20260827T133901Z/refacet_v5_coarse.log",
+  "pid_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v3_20260827T133901Z/refacet_v5_coarse.pid",
+  "launch": {
+    "started_at": "2026-08-27T14:15:18Z",
+    "lease": "764e2138e1930ffa2f3154712ccf780d",
+    "guard_and_timeout_pid": 803261,
+    "time_pid": 803379,
+    "python_pid": 803380,
+    "claimed_threads": 32,
+    "launcher_sha256": "540387e76139820a250ffc4d8e478c654bc85a14b1d05b08c24384a38c01c848",
+    "control_sha256": "1d599ea9cb0357f5fb721d8bee5f805ea369cde7d7df6e82c26bde8c30d7184d",
+    "launcher_hash_check_pass": true,
+    "atomic_root_claim_pass": true
+  },
+  "live_preflight": {
+    "timestamp": "2026-08-27T14:15:10Z",
+    "host_total_threads": 256,
+    "codex_policy_limit_threads": 64,
+    "active_leases_before": 0,
+    "reserved_threads_before": 0,
+    "observed_unreserved_threads_before": 0,
+    "available_threads_before": 64,
+    "mem_total_kib": 2108047640,
+    "mem_available_kib": 2086852660,
+    "mem_available_bytes": 2136937123840,
+    "output_filesystem_available_bytes": 76604555395072,
+    "scientific_root_absent": true,
+    "output_dir_absent": true,
+    "log_path_absent": true,
+    "pid_path_absent": true,
+    "matching_process_absent": true,
+    "remote_control_hash_pass": true,
+    "remote_launcher_hash_pass": true
+  },
+  "limits": {
+    "walltime_seconds": 10800,
+    "termination_grace_seconds": 120,
+    "minimum_mem_available_bytes": 137438953472,
+    "minimum_output_filesystem_free_bytes": 21474836480
+  },
+  "successor_policy": {
+    "automatic_successor": false,
+    "refined_status": "BLOCKED_PENDING_COARSE_TERMINAL_QUALIFICATION",
+    "openmc_status": "NOT_AUTHORIZED_IN_THIS_ATTEMPT"
+  }
+}

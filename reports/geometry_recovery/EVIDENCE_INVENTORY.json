@@ -1,0 +1,120 @@
+{
+  "schema": "parastell.geometry_recovery_evidence/v1.0.0",
+  "recorded_at": "2026-08-26T23:09:23-04:00",
+  "authoritative_prompt": {
+    "path": "C:\\Users\\joshu\\Downloads\\PROMPT7R_VALID_GEOMETRY_PROMPT1_PROMPT7_COMPLETION.md",
+    "line_count": 2117,
+    "size_bytes": 42661,
+    "sha256": "170d0073f00378e42b8ef0f6eebd41a933544fa520135d79b36b3882f2886acd"
+  },
+  "parastell_repository": {
+    "name": "FusionSandwich/parastell",
+    "principal_worktree": "D:\\parastell-worktrees\\magnet-radiation-valid-baseline-and-instrumentation",
+    "principal_branch": "magnet-radiation-valid-baseline-and-instrumentation-20260827",
+    "starting_sha": "dd3c2c53474980b6527d6ad40e8e2a638337d107",
+    "starting_sha_verified": true,
+    "origin_main_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+    "upstream_main_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+    "main_merge_base": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+    "starting_worktree_clean": true,
+    "principal_writer": "root_only",
+    "fetch_all_tags_prune": "PASS"
+  },
+  "authoritative_negative_geometries": [
+    {
+      "identity": "public_r1",
+      "h5m_path": "D:\\parastell-artifacts\\geometry-parity-20260826\\r1_public_main\\20260826T165308-0400\\dagmc.h5m",
+      "h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+      "canonical_fingerprint": "1c4a6c1fdb37f7bb9d7ef59ab99913884bde6df7b55977a53a68f2a037552bd1",
+      "disposition": "REJECTED_PHYSICAL_OVERLAP_REFERENCE_ONLY"
+    },
+    {
+      "identity": "failed_split",
+      "h5m_sha256": "7c710fe3dd261ce7f46e5d08b4f9d2924513994ccb6229468933d0b91b2cd7cb",
+      "branch_sha": "df53ed28edc8d8123b6e42a9e4e5c4e970e69dc8",
+      "disposition": "REJECTED"
+    }
+  ],
+  "prompt_7a_visual_package": {
+    "root": "D:\\parastell-artifacts\\geometry-parity-20260826\\visual_evidence\\20260826T181804-0400",
+    "manifest_sha256": "e4713df2a4d0b02d931a310f3d22053614fc06bb791a99abc36c95d880f7ed71",
+    "png_count": 70,
+    "vtk_count": 2,
+    "hash_failures": 0,
+    "visual_review": "COMPLETE",
+    "prompt_7r_disposition": "PARTIAL_NEGATIVE_REFERENCE_EVIDENCE_ONLY"
+  },
+  "project_control": {
+    "root": "D:\\2026_DPA\\project_control",
+    "plan_pdf": {
+      "path": "ASC_2026_Definitive_Global_to_Local_Beyond_DPA_Project_Plan.pdf",
+      "pages": 35,
+      "sha256": "2282e0918618e0670f8073dbe9822508e14a9aa2c40ffe6b47ed74d1ca201b9a",
+      "visual_review": "COMPLETE_35_PAGES"
+    },
+    "task_register": {
+      "path": "ASC_2026_PROJECT_COMPLETION_TASK_REGISTER.csv",
+      "sha256": "a050c1f355523f7c3731aa7549627c37f193fbf376a0759dd190170ef0e1a90b",
+      "row_count": 188
+    },
+    "tracker": {
+      "path": "ASC_2026_PROJECT_COMPLETION_TRACKER.json",
+      "sha256": "f6e1ce16491b99f2dcaeacdb5c3aa512a64ac89710849a2acf2b19078477c2ef",
+      "snapshot": "2026-08-26T21:35:21-04:00",
+      "classification": "PRE_BEYOND_DPA_HANDOFF_BLOCKED",
+      "task_count": 188,
+      "csv_json_task_mismatches": 0
+    },
+    "critical_path_sha256": "5a5801a42336b52698260415fb554db4d5659039bf6f10ac4fb362a054a5a86a",
+    "parallel_next_work_sha256": "9ddafacb5fd6320b14feddbb26743bf8ddd987f8ab43c9b3b5038ee92acc3d84",
+    "openmc_v2_disposition_sha256": "4605f0af6458715727367857b6c02d83a834fa807ffacfaf01bee99913735b61"
+  },
+  "wistell_d_assets": {
+    "repository": "D:\\Beyound DPA Repos\\BlanketNeutronics",
+    "reported_branch": "t1e_main",
+    "reported_sha": "bc4ab3d0f27369d4eda908a3fc187a10b6c7fedb",
+    "vmec_sha256": "9231969001203a8133255ee0a275bf552b114cc12524dda0608ab2f12047f7ac",
+    "coils_sha256": "7748369407d28a70f35b5c4a7c0ab860495a08fd0030002112ea933fe570159b",
+    "radial_distances_sha256": "0e3c7d3fb6cd914abe04f1293ffb06e19db5a63289ca05c05d2aed70d9a9081c",
+    "live_ref_verification": "PENDING_CONTENDED_READ_ONLY_CHECKOUT"
+  },
+  "machine": {
+    "total_ram_gib": 31.91,
+    "free_ram_gib_at_snapshot": 12.73,
+    "c_free_gib": 180.83,
+    "d_free_gib": 442.24,
+    "docker_running_containers": 0,
+    "wsl_distributions": {
+      "Debian": "RUNNING",
+      "docker-desktop": "RUNNING",
+      "OpenMC-Dev-D": "STOPPED"
+    },
+    "unrelated_active_work": [
+      "WSL Geant4 common-source audit",
+      "DPA local-transport pytest",
+      "DPA formatting task",
+      "persistent SSH broker processes"
+    ]
+  },
+  "available_environment": {
+    "container_image": "parastell-openmc:0.16.0",
+    "openmc": "0.16.0",
+    "cadquery": "2.7.0",
+    "cad_to_dagmc": "0.11.5",
+    "pymoab": "5.5.1",
+    "pydagmc": "0.0.1",
+    "pyvista": "0.48.4",
+    "vtk": "9.3.1",
+    "nuclear_data": "D:\\parastell-artifacts\\openmc-data\\nndc_hdf5\\cross_sections.xml",
+    "dependency_acquisition_required": false,
+    "planned_acquisition_bytes": 0
+  },
+  "ownership": {
+    "principal_worktree": "root_only",
+    "candidate_worktrees": "one_writer_each_or_read_only",
+    "prompt_7a_artifacts": "read_only",
+    "failed_split_artifacts": "read_only",
+    "project_control": "read_only_until_terminal_delta",
+    "dpa_workflow": "no_write_before_geometry_gate"
+  }
+}

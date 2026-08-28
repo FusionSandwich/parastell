@@ -1,0 +1,43 @@
+{
+  "schema": "parastell.historical_artifact_reaudit/v1.0.0",
+  "recorded_at": "2026-08-26T23:36:22-04:00",
+  "artifacts": [
+    {
+      "reported_identity": "3634effa862b7092fb5a62c0ecbd33adc74f83bb0d37df4c6ea62bb119cc62d9",
+      "exact_file_found": false,
+      "near_match_path": "C:\\Users\\joshu\\OneDrive\\Documents\\ChatGPT\\Parastell-validation-basic-20260823\\basic_dagmc.h5m",
+      "near_match_sha256": "3634eefa862b7092fb5a62c0ecbd33adc74f83bb0d37df4c6ea62bb119cc62d9",
+      "source_script_path": "C:\\Users\\joshu\\OneDrive\\Documents\\ChatGPT\\Parastell-validation-basic-20260823\\basic_full_assembly.py",
+      "source_script_sha256": "2b8304f38fb359576b11f4d5b1365c86da969334650a45be1d8edd06d1f2ab69",
+      "geometry": "40 cm shield, PyDAGMC in-vessel construction, max_mesh_size 60 cm",
+      "strict_current_reaudit": "PENDING_CONTAINER_RECOVERY",
+      "classification": "REJECTED_FILE_NOT_FOUND",
+      "near_match_classification": "REJECTED_COARSE_OVERLAP_CHECK"
+    },
+    {
+      "reported_identity": "22e30b10d5f57f8a12e8b6238287f40354b7e31d1513c6b552c96b81dabbeff3",
+      "exact_file_found": true,
+      "path": "C:\\Users\\joshu\\OneDrive\\Documents\\ChatGPT\\Parastell-validation-basic-20260823\\production_transport_openmc016_final\\combined_reactor_magnet.h5m",
+      "sha256": "22e30b10d5f57f8a12e8b6238287f40354b7e31d1513c6b552c96b81dabbeff3",
+      "source_config_git_object": "43aec9ba973e46e762c2ca0d3df8c74945643992:examples/config.yaml",
+      "source_branch": "magnet-boundary-phase-space-production-20260822",
+      "geometry": "39 cm uniform shield, 40 x 50 cm outer magnets, 5 cm explicit casing, split casing/winding, PyDAGMC in-vessel geometry",
+      "historical_overlap_check": "p1_only",
+      "strict_current_reaudit": "PENDING_CONTAINER_RECOVERY",
+      "classification": "REJECTED_GEOMETRY_DIFFERENT_FROM_CLAIM"
+    },
+    {
+      "reported_identity": "39_cm_shield_candidate",
+      "exact_file_found": true,
+      "bound_artifact_sha256": "22e30b10d5f57f8a12e8b6238287f40354b7e31d1513c6b552c96b81dabbeff3",
+      "classification": "REJECTED_GEOMETRY_DIFFERENT_FROM_CLAIM",
+      "allowed_future_use": "UNIFORM_SHIELD_SENSITIVITY_ONLY"
+    },
+    {
+      "reported_identity": "38.5_cm_clearance_candidate",
+      "exact_file_found": false,
+      "classification": "REJECTED_FILE_NOT_FOUND"
+    }
+  ],
+  "phase_2_status": "PARTIAL_PENDING_CURRENT_P1_P2_P4_AND_OPENMC_REAUDIT"
+}

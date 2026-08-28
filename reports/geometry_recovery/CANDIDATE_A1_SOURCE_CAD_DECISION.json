@@ -1,0 +1,26 @@
+{
+  "schema": "parastell.geometry_candidate_source_cad_decision/v1.0.0",
+  "candidate": "A1_breeder_only_clearance_target_5_cm",
+  "classification": "REJECTED_SOURCE_CAD_CLEARANCE_BELOW_PREREGISTERED_MINIMUM",
+  "advance_to_dagmc": false,
+  "source_cad_audit": {
+    "path": "D:\\parastell-artifacts\\geometry-recovery-20260827\\candidate_A1_source_cad_exact_distance_20260827T040219\\source_cad_audit.json",
+    "sha256": "e3c29f33769b734599b49c1c036e37c04bd8f4ccb52c5d811c0ef78c1bfe5b47",
+    "script_sha256": "487c1c97f50d17eaea503179c41b15f1fcceec93b7fc433da81823c32c239cbb",
+    "acceptance_criteria_sha256": "092315725cfd06e64fa403cc8f484a8135f4920a5af93bcdccc797dfb41134ca"
+  },
+  "results": {
+    "pair_check_count": 276,
+    "unintended_intersection_failure_count": 0,
+    "duplicate_magnet_failure_count": 0,
+    "distance_measurement_count": 18,
+    "distance_error_count": 0,
+    "distance_witness_failure_count": 0,
+    "minimum_vessel_to_magnet_clearance_cm": 4.493516669986348,
+    "minimum_required_clearance_cm": 5.0,
+    "magnet_step_canonical_identity_pass": true,
+    "all_magnets_physically_equal_to_vanilla": true,
+    "source_mesh_semantic_identity_pass": true
+  },
+  "diagnostic_note": "The v1.1 audit also false-failed valid imported TopoDS solids by reading the Solid Closed flag instead of the bounding-shell Closed flags. That auditor defect has been corrected and tested, but it does not alter the independent exact-distance rejection."
+}

@@ -1,0 +1,155 @@
+{
+  "schema": "parastell.wistell_d_authoritative_source_contract/v1.0.0",
+  "recorded_utc": "2026-08-27T21:15:25.8897379Z",
+  "status": "HALF_PERIOD_SOURCE_CAD_VALIDATED_FULL_PERIOD_TARGET_PENDING_BUILD",
+  "supersedes_scientific_candidacy": [
+    "public_parastell_example",
+    "a1r_public_example_clearance_repair"
+  ],
+  "identity": {
+    "name": "WISTELL-D one-full-period bounded NWL baseline",
+    "device_field_periods": 4,
+    "one_full_period_degrees": 90.0,
+    "validated_source_cad_seed_degrees": 45.0,
+    "target_toroidal_extent_degrees": 90.0,
+    "field_period_semantics": "one complete rotational field period",
+    "half_period_semantics": "45 degrees requires stellarator reflection symmetry and is not a simple rotational repeat",
+    "control_points_per_field": 452,
+    "magnet_representation": "continuous 30 cm winding-surface layer",
+    "explicit_coil_solids": false,
+    "coil_file_role": "upstream derivation of blanket and magnet boundary arrays"
+  },
+  "authoritative_files": {
+    "combined_step": {
+      "path": "D:\\Scratch\\wistell_d_parametric_parastell_20260827_01\\nwl_baseline_bounded\\wistell_d_model.step",
+      "bytes": 117785795,
+      "sha256": "1e9d933e5fd4d393c82f47b26da82d9e58cfbb59e951e354a2f871ebd1920a62"
+    },
+    "vmec": {
+      "path": "D:\\Scratch\\stellarator_optimization\\wistell-d_data\\wout_wistell-d.nc",
+      "bytes": 4626928,
+      "sha256": "9231969001203a8133255ee0a275bf552b114cc12524dda0608ab2f12047f7ac"
+    },
+    "coils": {
+      "path": "D:\\Scratch\\stellarator_optimization\\wistell-d_data\\coils.wistell-d",
+      "bytes": 1737790,
+      "sha256": "7748369407d28a70f35b5c4a7c0ab860495a08fd0030002112ea933fe570159b"
+    },
+    "thickness_arrays": {
+      "path": "D:\\Scratch\\wistell_d_parametric_parastell_20260827_01\\nwl_baseline_bounded\\thickness_arrays_cm.npz",
+      "bytes": 30916,
+      "sha256": "047585172bd682692b30787424a7e1977afdb60693b606b036dab3817b3bb501"
+    },
+    "source_manifest": {
+      "path": "D:\\Scratch\\wistell_d_parametric_parastell_20260827_01\\nwl_baseline_bounded\\manifest.json",
+      "bytes": 7316,
+      "sha256": "f330bbd06a0c8234a3b52932ee48e8dcdec7e2842c3d12a5c75d3052028920b4"
+    },
+    "builder": {
+      "path": "D:\\Scratch\\wistell_d_parametric_parastell_20260827_01\\build_wistell_d.py",
+      "bytes": 12757,
+      "sha256": "3702b76d3c5c0876119e99d16614069b6dc8181d9977c9b617dc013ac2eaf5c6"
+    },
+    "full_period_source_mesh_candidate": {
+      "path": "D:\\Scratch\\stellarator_optimization\\wistell-d_data\\source_mesh.h5m",
+      "bytes": 4619464,
+      "sha256": "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322",
+      "qualification": "PENDING_DOMAIN_AND_ELEMENT_ORDER_AUDIT"
+    },
+    "full_period_source_strengths_candidate": {
+      "path": "D:\\Scratch\\stellarator_optimization\\wistell-d_data\\strengths.npy",
+      "bytes": 691328,
+      "sha256": "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df",
+      "count": 86400,
+      "all_finite_and_positive": true,
+      "sum_per_second": 9.427053032700795e+19,
+      "qualification": "PENDING_MESH_ORDER_AND_NORMALIZATION_AUDIT"
+    }
+  },
+  "source_repositories": {
+    "parastell": {
+      "path": "D:\\Scratch\\parastell",
+      "branch": "fix/example-shield-clearance-40cm",
+      "commit": "d480424e53747691075d6b0b074face03efd311f"
+    },
+    "stellarator_optimization": {
+      "path": "D:\\Scratch\\stellarator_optimization",
+      "branch": "main",
+      "commit": "398032b8c0b4e7c0459c602f2af1e73b3fca0b9a"
+    }
+  },
+  "upstream_boundary_arrays": {
+    "blanket_boundary.npy": "fdb85b2c0c8cd72f5d000302e0b67349ebf72679f98f9c4d7739e5d8484cdde3",
+    "magnet_boundary.npy": "3579e5d8fe97dd74c8700e5676964159f00f07989ca6436528f60462889f05bd",
+    "nwl.npy": "56baa090d61b67273efba61213849b7516beabb2a57fc2ad4751a6f3a32b2db4"
+  },
+  "radial_stack_cm": {
+    "order": [
+      "first_wall",
+      "breeder",
+      "back_wall",
+      "hts",
+      "vacuum_vessel",
+      "lts",
+      "gap",
+      "magnets"
+    ],
+    "first_wall": {"min": 4.0, "max": 4.0, "mean": 4.0},
+    "breeder": {"min": 25.0, "max": 55.0, "mean": 37.9758263974267},
+    "back_wall": {"min": 5.0, "max": 5.0, "mean": 5.0},
+    "hts": {"min": 20.0, "max": 20.0, "mean": 20.0},
+    "vacuum_vessel": {"min": 10.0, "max": 10.0, "mean": 10.0},
+    "lts": {"min": 16.20090476498764, "max": 116.78187513598832, "mean": 61.25919930865928},
+    "gap": {"min": 6.2132034355964265, "max": 124.40572236970061, "mean": 28.207610159713393},
+    "magnets": {"min": 30.0, "max": 30.0, "mean": 30.0}
+  },
+  "independent_local_verification": {
+    "all_six_authoritative_files_present": true,
+    "source_manifest_hash_bindings_match": true,
+    "each_npz_field_has_452_values": true,
+    "all_npz_values_finite": true,
+    "all_npz_thicknesses_strictly_positive": true,
+    "source_cad_manifest_status": "geometry_validated",
+    "source_cad_components": 9,
+    "source_cad_all_components_valid": true,
+    "source_cad_positive_component_volumes": true,
+    "source_cad_pair_boolean_failures": 0,
+    "source_cad_overlap_count": 0
+  },
+  "period_decision": {
+    "vmec_nfp": 4,
+    "coil_file_periods": 4,
+    "ordinary_rotational_repeat_degrees": 90.0,
+    "stellarator_half_period_degrees": 45.0,
+    "stock_openmc_0_16_boundary_types": [
+      "transmission",
+      "vacuum",
+      "reflective",
+      "periodic",
+      "white"
+    ],
+    "custom_transformation_boundary_in_stock_openmc_0_16": false,
+    "selected_transport_extent_degrees": 90.0,
+    "rationale": "One full period uses stock rotational periodic planes and avoids the custom reflection transformation required by a 45-degree model."
+  },
+  "qualification_boundary": {
+    "half_period_source_cad_physical_geometry": "PASS",
+    "full_period_source_cad_physical_geometry": "NOT_BUILT",
+    "dagmc_h5m_created_from_this_contract": false,
+    "native_dagmc_topology": "NOT_RUN",
+    "native_dagmc_overlap_check": "NOT_RUN",
+    "watertightness": "NOT_RUN",
+    "magnet_entry_envelope_closure": "NOT_RUN",
+    "openmc_geometry_debug": "NOT_RUN",
+    "instrumentation": "NOT_RUN",
+    "source_mesh_and_medium_statistics": "NOT_AUTHORIZED_YET"
+  },
+  "producer_interface": {
+    "global_coupling_interface": "continuous_magnet_layer_inner_boundary",
+    "per_coil_18_surface_contract_applicable": false,
+    "per_coil_extension_policy": "requires a separate geometry candidate and full requalification",
+    "h5m_mutation_for_tallies": false,
+    "tallies_and_surface_recording": "configure outside the immutable accepted H5M"
+  },
+  "next_action": "Expand the 452-point half-period thickness fields through ParaStell helical symmetry, build and validate one 90-degree full-period STEP model, and only then create and qualify its DAGMC H5M for stock OpenMC 0.16.0."
+}

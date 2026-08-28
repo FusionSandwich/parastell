@@ -1,0 +1,43 @@
+{
+  "schema": "parastell.refacet_independent_failure_qualification/v1.0.0",
+  "created_at": "2026-08-27T18:37:00Z",
+  "attempt_id": "refacet_v5_remote_20260827T133901Z",
+  "status": "INDEPENDENT_FAILURE_QUALIFICATION_PASS",
+  "review_mode": "INDEPENDENT_READ_ONLY_SUBAGENT",
+  "terminal_failure_receipt": {
+    "path": "reports/geometry_recovery/REFACET_V5_COARSE_TERMINAL_FAILURE.json",
+    "sha256": "0fd3d7ca98440640312996fd48502d95d3a420ed9db72158f21596a93b9503ea"
+  },
+  "gates": {
+    "attempt_root_output_log_pid_identity": true,
+    "control_launcher_runtime_identity": true,
+    "nonce_lease_process_identity": true,
+    "honest_timeout_language": true,
+    "no_uncaptured_return_code_invented": true,
+    "no_unobserved_timeout_signal_claimed": true,
+    "all_bound_pids_gone": true,
+    "owner_lease_reaped": true,
+    "partial_artifact_count_and_total": true,
+    "partial_artifacts_match_immutable_source_packet": true,
+    "required_terminal_artifacts_absent": true,
+    "refined_v6_openmc_successors_absent": true,
+    "stale_running_receipt_preserved_and_hash_bound": true,
+    "permanent_nonselectability": true
+  },
+  "evidence_summary": {
+    "terminal_observation_seconds_after_nominal_boundary": 4577,
+    "terminal_return_code": "NOT_CAPTURED",
+    "last_live_boundary_observation": "NOT_RECORDED",
+    "partial_artifact_count": 8,
+    "partial_artifact_total_bytes": 331691833,
+    "dagmc_h5m_present": false,
+    "candidate_manifest_present": false,
+    "build_seal_present": false,
+    "active_leases": 0,
+    "reserved_threads": 0,
+    "unrelated_observed_threads": 1
+  },
+  "refaceter_ordering_interpretation": "The eight files are the immutable source inputs copied before Gmsh import, fragmentation, meshing, DAGMC writing, manifest publication, and seal publication. Their presence is operational progress evidence only and cannot qualify geometry.",
+  "permanent_disposition": "PRESERVE_NO_REUSE_NO_RESUME_NO_RELABEL_NO_PROMOTION",
+  "v6_authorization": "NOT_REVIEWED_NOT_AUTHORIZED"
+}

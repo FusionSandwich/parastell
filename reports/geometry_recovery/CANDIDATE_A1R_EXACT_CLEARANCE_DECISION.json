@@ -1,0 +1,42 @@
+{
+  "schema": "parastell.candidate_exact_clearance_decision/v1.0.0",
+  "candidate": "A1R_breeder_only_directional_target_5.75_cm",
+  "decision": "PASS_EXACT_CLEARANCE_AS_CANDIDATE_ONLY",
+  "source_cad_acceptance": false,
+  "geometry_acceptance": false,
+  "acceptance_criteria_sha256": "092315725cfd06e64fa403cc8f484a8135f4920a5af93bcdccc797dfb41134ca",
+  "construction_manifest_sha256": "85b1c74fcd21122774649a60d993fa43562797d3ea468ca6a555a1f8d7227491",
+  "exact_clearance_receipt": {
+    "path": "D:/parastell-artifacts/geometry-recovery-20260827/candidate_A1_target575_exact_clearance_20260827T045721/exact_global_clearance.json",
+    "sha256": "0d263c410791ad6dafe823d17b1de96a825f6e19860b775cde1f1965f2a5573f"
+  },
+  "minimum_required_clearance_cm": 5.0,
+  "minimum_measured_clearance_cm": 5.239626484915912,
+  "decision_margin_cm": 0.239626484915912,
+  "limiting_magnets": [
+    "magnet-0008",
+    "magnet-0009"
+  ],
+  "measurement_count": 18,
+  "error_count": 0,
+  "witness_failure_count": 0,
+  "independent_witness_reconstruction": {
+    "witness_count": 18,
+    "maximum_absolute_residual_cm": 3.552713678800501e-15,
+    "required_maximum_absolute_residual_cm_for_full_audit": 1e-8,
+    "pass": true
+  },
+  "remaining_before_source_cad_acceptance": [
+    "acceptance-bound full coarse construction",
+    "hardened 276-pair exact intersection and duplicate audit",
+    "closed-shell, validity, containment, and protected-identity audit",
+    "physical-change receipt bound to the full candidate manifest"
+  ],
+  "remaining_before_geometry_acceptance": [
+    "coarse and refined native DAGMC qualification",
+    "two-resolution faceting comparison",
+    "all 18 homogenized-magnet envelope audits and ray checks",
+    "source-domain audit",
+    "two independent bounded OpenMC geometry-debug replicas"
+  ]
+}

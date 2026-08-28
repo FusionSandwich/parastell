@@ -1,0 +1,125 @@
+{
+  "schema": "parastell.refacet_terminal_failure/v1.0.0",
+  "created_at": "2026-08-27T18:32:26Z",
+  "attempt_id": "refacet_v5_remote_20260827T133901Z",
+  "status": "FAIL_CLOSED_TERMINAL_AFTER_TIMEOUT_BOUNDARY_INCOMPLETE",
+  "selectable": false,
+  "permanent_disposition": "PRESERVE_AND_NEVER_REUSE_OR_RELABEL",
+  "scientific_decision": "NO_GEOMETRY_ACCEPTANCE_DECISION",
+  "remote_identity": {
+    "host_alias": "poly-bateman",
+    "hostname": "bateman",
+    "root": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v5_remote_20260827T133901Z",
+    "output_dir": "/home/apollon/josma/data/parastell_prompt7r_geometry/refacet_v5_remote_20260827T133901Z/coarse",
+    "log_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v3_20260827T133901Z/refacet_v5_coarse.log",
+    "pid_path": "/home/apollon/josma/data/parastell_prompt7r_geometry/runtime_stack_preflight_v3_20260827T133901Z/refacet_v5_coarse.pid"
+  },
+  "frozen_launch_identity": {
+    "control_sha256": "1d599ea9cb0357f5fb721d8bee5f805ea369cde7d7df6e82c26bde8c30d7184d",
+    "launcher_sha256": "540387e76139820a250ffc4d8e478c654bc85a14b1d05b08c24384a38c01c848",
+    "runtime_receipt_sha256": "2f6260b1fd45b1b7e8a3d9d079a4faf97158e03106352c9699990d508f8c85c7",
+    "runtime_validation_sha256": "946ba2126615f13bbc14a8ed86cba461811d8d61bc9701ad5eb861ab40881da6",
+    "launch_nonce": "1e48fbda07a40027d31107cbec7b6573fbf7d1583e943caa5a4b292a67c73ccd",
+    "lease": "764e2138e1930ffa2f3154712ccf780d",
+    "claimed_threads": 32,
+    "guard_and_timeout_pid": 803261,
+    "time_pid": 803379,
+    "python_pid": 803380
+  },
+  "timeout_evidence": {
+    "started_at": "2026-08-27T14:15:18Z",
+    "walltime_limit_seconds": 10800,
+    "termination_grace_seconds": 120,
+    "nominal_timeout_boundary_at": "2026-08-27T17:15:18Z",
+    "terminal_observed_at": "2026-08-27T18:31:35Z",
+    "guard_pid_gone": true,
+    "time_pid_gone": true,
+    "python_pid_gone": true,
+    "terminal_return_code": "NOT_CAPTURED_BY_V5_LAUNCH_CHAIN",
+    "resource_usage_receipt": "ABSENT_AT_TERMINAL_OBSERVATION",
+    "log_sha256": "fe5165b987cc29df2ee867289e70870ba950f2817a8669c77c693b07fffb4302",
+    "log_size_bytes": 138,
+    "log_content_status": "ONLY_PREEXEC_LAUNCHER_HASH_PASS_LINE",
+    "last_observed_live_at_or_near_boundary": "NOT_RECORDED",
+    "classification_basis": "The exact bounded process tree was launched under a 10800-second GNU timeout, all three bound PIDs were gone when checked 4577 seconds after the nominal boundary, and no required terminal artifact was published. V5 did not independently persist its terminal return code, GNU time record, or a last-live observation at the boundary. The receipt therefore establishes an incomplete terminal attempt observed after its timeout boundary, but does not claim direct observation of timeout delivering the terminating signal."
+  },
+  "partial_artifacts": {
+    "count": 8,
+    "total_size_bytes": 331691833,
+    "rows": [
+      {
+        "path": "coarse/back_wall.step",
+        "size_bytes": 58189768,
+        "sha256": "0c82763230cc14430ed994081aa3e362151fe8d56fe3e92498e2a26f6c64c581"
+      },
+      {
+        "path": "coarse/breeder.step",
+        "size_bytes": 57851443,
+        "sha256": "6ac4662bee23b28a00e0cba13d54f54edd48f8821bbd41365aa1cbe237864d58"
+      },
+      {
+        "path": "coarse/chamber.step",
+        "size_bytes": 28753406,
+        "sha256": "850f6b35b4903b769a63540a92ed77f4f988e9e133e1847ed7e6752bfa53c565"
+      },
+      {
+        "path": "coarse/first_wall.step",
+        "size_bytes": 57737884,
+        "sha256": "48a7d9f79ef3acd9a08f4279690c4cda50cdcc8009b50063c768fbc3f10b6215"
+      },
+      {
+        "path": "coarse/magnet_set.step",
+        "size_bytes": 3154305,
+        "sha256": "8f73d687ff63ca021ea24c1cea7cb63811926ad3b8fa18299045285f42a2c683"
+      },
+      {
+        "path": "coarse/shield.step",
+        "size_bytes": 58406130,
+        "sha256": "d3be6114e2bb669e8803ed476f8fd6c68eb03b3dd732c258af4125ca321f9e96"
+      },
+      {
+        "path": "coarse/source_mesh.h5m",
+        "size_bytes": 9199384,
+        "sha256": "b51e9573d4e3265fd380b66a21dc9bea52b15d2162151f556eac371ff329cc74"
+      },
+      {
+        "path": "coarse/vacuum_vessel.step",
+        "size_bytes": 58399513,
+        "sha256": "7dd9986a816a91d2b6fd7abc60087e7664ba1c3e2be7bde35c74ba96d4e339d4"
+      }
+    ]
+  },
+  "required_artifact_absence": {
+    "dagmc_h5m": true,
+    "candidate_build_manifest": true,
+    "refaceting_build_seal": true
+  },
+  "successor_absence": {
+    "refined_attempt": true,
+    "refacet_v6_or_later": true,
+    "openmc_process": true,
+    "automatic_successor": true
+  },
+  "shared_resource_cleanup": {
+    "checked_at": "2026-08-27T18:32:10Z",
+    "total_threads": 256,
+    "policy_limit_threads": 64,
+    "active_leases": 0,
+    "reserved_threads": 0,
+    "observed_unreserved_threads": 1,
+    "used_threads": 1,
+    "available_threads": 63,
+    "owner_lease_reaped": true
+  },
+  "stale_running_receipt": {
+    "path": "reports/geometry_recovery/REFACET_V5_COARSE_ATTEMPT.json",
+    "sha256": "f0cd6d30915245a21eda33c41147b8b716e285ea1528ff2df7af78797cf78739",
+    "preserved_unmodified": true,
+    "interpretation": "Historical start receipt only; it does not control terminal status."
+  },
+  "launch_review_receipt": {
+    "path": "reports/geometry_recovery/REFACET_V5_COARSE_LAUNCH_REVIEW.json",
+    "sha256": "b6e298c5cd46d3cde4653dd4d9a123758efd3b8055c9fa70a1aba697195beacd"
+  },
+  "successor_gate": "BLOCKED_PENDING_FRESH_V6_DESIGN_AND_INDEPENDENT_REVIEW"
+}

@@ -1,0 +1,42 @@
+{
+  "schema": "parastell.refacet_launch_review/v1.0.0",
+  "created_at": "2026-08-27T14:14:03Z",
+  "attempt_id": "refacet_v5_remote_20260827T133901Z",
+  "scope": "COARSE_FACETING_ONLY_NO_TRANSPORT",
+  "status": "LAUNCH_REVIEW_PASS",
+  "control": {
+    "path": "reports/geometry_recovery/REFACET_V5_COARSE_CONTROL.json",
+    "sha256": "1d599ea9cb0357f5fb721d8bee5f805ea369cde7d7df6e82c26bde8c30d7184d"
+  },
+  "launcher": {
+    "path": "reports/geometry_recovery/launch_refacet_v5_coarse.sh",
+    "sha256": "540387e76139820a250ffc4d8e478c654bc85a14b1d05b08c24384a38c01c848",
+    "bash_syntax_pass": true
+  },
+  "review": {
+    "reviewer_mode": "independent_read_only_subagent",
+    "create_only_semantics_pass": true,
+    "full_extracted_code_binding_pass": true,
+    "runtime_binding_pass": true,
+    "control_and_input_binding_pass": true,
+    "resource_bounds_pass": true,
+    "timeout_exit_propagation_pass": true,
+    "no_automatic_successor_pass": true
+  },
+  "remaining_launch_conditions": [
+    "stage control and launcher create-only",
+    "immediately prove root, log, and PID paths absent and not symlinks",
+    "prove no matching process",
+    "prove at least 128 GiB MemAvailable and 20 GiB output-filesystem free",
+    "obtain an authoritative shared core-budget status",
+    "start through ssh-poly core-budget with exactly 32 cores",
+    "verify the exact launcher SHA-256 before exec",
+    "seal lease, PID, log, and terminal evidence"
+  ],
+  "forbidden_successors": [
+    "refined refacet before coarse terminal qualification",
+    "OpenMC transport",
+    "automatic successor"
+  ],
+  "scientific_decision": "NOT_PERFORMED_LAUNCH_REVIEW_ONLY"
+}

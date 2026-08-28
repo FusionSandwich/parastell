@@ -1,0 +1,109 @@
+{
+  "schema": "parastell.public_reference_overlap_quantification/v1.0.0",
+  "recorded_at": "2026-08-26T23:36:22-04:00",
+  "reference": {
+    "identity": "current_public_parastell_cad_to_dagmc_example_negative_reference",
+    "parastell_sha": "de7d2978ff314b060ca2e6b10745a034e8b2a3c4",
+    "h5m_path": "D:\\parastell-artifacts\\geometry-parity-20260826\\r1_public_main\\20260826T165308-0400\\dagmc.h5m",
+    "h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+    "vacuum_vessel_step_sha256": "a6637eeb2ee7c52023a88ca5d33094d2b1ddcf8e605e3d6fa8507000fc0e4cb1",
+    "magnet_set_step_sha256": "bfe4f90df1ad0351555a16dadf6fa84daab17b6e3ebc4689ec16b23e23b4e494"
+  },
+  "source_design": {
+    "vmec_sha256": "1cebb8d46e60d77df4a6904662a9c9f943137a9fb59f7290e5309af15fa04797",
+    "coil_bytes_sha256": "69f508b216f0b674368ca8731d390c9d514736ff092f0ebecd854e8772ae04ab",
+    "script_bytes_sha256": "edcacc6ab470a16ec5f83a1b38c1ea5b5830e76e0b40904b65d75783dbc822ea",
+    "magnet_cross_section_cm": [40.0, 50.0],
+    "case_thickness_cm": 0.0,
+    "shield_thickness_cm": 50.0,
+    "vacuum_vessel_thickness_cm": 10.0,
+    "magnet_transform": "native_unmodified"
+  },
+  "methods": {
+    "source_cad": "CadQuery/OpenCascade exact Boolean intersection of the one vacuum-vessel STEP solid with all 18 magnet STEP solids",
+    "dagmc": "native overlap_check -p 2 -t 4 on the accepted negative-reference H5M",
+    "pending": [
+      "native overlap_check -p 1",
+      "native overlap_check -p 4",
+      "signed penetration-depth metric",
+      "local surface-normal clearance sampling",
+      "matched refined faceting"
+    ]
+  },
+  "intersections": [
+    {
+      "magnet_id": "magnet-0005",
+      "magnet_volume_id": 12,
+      "vacuum_vessel_volume_id": 6,
+      "cad_intersection_volume_cm3": 5092.197638,
+      "boolean_result_boundary_area_cm2": 3649.566180,
+      "intersection_connected_solid_count": 1,
+      "intersection_aabb_spans_cm": [15.686, 85.775, 58.713],
+      "dagmc_witness_cm": [1160.39, 380.476, 128.459],
+      "shared_topological_surface_ids": [],
+      "classification": "TRUE_SOURCE_CAD_PHYSICAL_INTERSECTION"
+    },
+    {
+      "magnet_id": "magnet-0006",
+      "magnet_volume_id": 13,
+      "vacuum_vessel_volume_id": 6,
+      "cad_intersection_volume_cm3": 21.589483,
+      "boolean_result_boundary_area_cm2": 168.216703,
+      "intersection_connected_solid_count": 1,
+      "intersection_aabb_spans_cm": [2.646, 50.185, 14.693],
+      "dagmc_witness_cm": [1095.15, 498.581, 92.5898],
+      "shared_topological_surface_ids": [],
+      "classification": "TRUE_SOURCE_CAD_PHYSICAL_INTERSECTION"
+    },
+    {
+      "magnet_id": "magnet-0011",
+      "magnet_volume_id": 18,
+      "vacuum_vessel_volume_id": 6,
+      "cad_intersection_volume_cm3": 21.591609,
+      "boolean_result_boundary_area_cm2": 167.838750,
+      "intersection_connected_solid_count": 1,
+      "intersection_aabb_spans_cm": [50.185, 2.646, 14.693],
+      "dagmc_witness_cm": [476.445, 1095.28, -86.2664],
+      "shared_topological_surface_ids": [],
+      "classification": "TRUE_SOURCE_CAD_PHYSICAL_INTERSECTION"
+    },
+    {
+      "magnet_id": "magnet-0012",
+      "magnet_volume_id": 19,
+      "vacuum_vessel_volume_id": 6,
+      "cad_intersection_volume_cm3": 5113.576116,
+      "boolean_result_boundary_area_cm2": 3673.516439,
+      "intersection_connected_solid_count": 1,
+      "intersection_aabb_spans_cm": [85.775, 15.686, 58.713],
+      "dagmc_witness_cm": [364.23, 1158.37, -121.329],
+      "shared_topological_surface_ids": [],
+      "classification": "TRUE_SOURCE_CAD_PHYSICAL_INTERSECTION"
+    }
+  ],
+  "zero_intersection_magnets": [
+    "magnet-0000",
+    "magnet-0001",
+    "magnet-0002",
+    "magnet-0003",
+    "magnet-0004",
+    "magnet-0007",
+    "magnet-0008",
+    "magnet-0009",
+    "magnet-0010",
+    "magnet-0013",
+    "magnet-0014",
+    "magnet-0015",
+    "magnet-0016",
+    "magnet-0017"
+  ],
+  "qualifications": {
+    "aabb_spans_are_penetration_depths": false,
+    "boolean_boundary_area_is_interface_contact_area": false,
+    "signed_penetration_depth": "NOT_RUN",
+    "minimum_distance_around_intersection": "NOT_RUN",
+    "local_radial_build_thicknesses": "NOT_RUN",
+    "faceting_sensitivity": "PARTIAL_P2_ONLY"
+  },
+  "reference_disposition": "REJECTED_PHYSICAL_OVERLAP_REFERENCE_ONLY",
+  "phase_1_status": "PARTIAL_PENDING_CONVERGED_DISTANCE_AND_FACETING_AUDITS"
+}

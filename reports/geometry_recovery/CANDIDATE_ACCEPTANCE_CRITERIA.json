@@ -1,0 +1,108 @@
+{
+  "schema": "parastell.geometry_candidate_acceptance/v1.1.0",
+  "declared_before_candidate_results_at": "2026-08-26T23:36:22-04:00",
+  "pre_result_revision": {
+    "recorded_at": "2026-08-26T23:48:00-04:00",
+    "reason": "current examples/radial_distance_example.py explicitly reserves 5 cm to coils; no candidate had yet been built or inspected",
+    "changed_field": "separated_interface target and minimum clearance"
+  },
+  "post_adversarial_revision": {
+    "recorded_at": "2026-08-27T02:08:00-04:00",
+    "reason": "independent Gate-1 review identified false-reject identity rules and missing continuous-clearance, witness, and physical-change evidence before any refined DAGMC result existed",
+    "review_thread": "01a041be-7b66-76c1-b3cd-f02fcf674997",
+    "scope": "adds evidence requirements; does not relax any physical threshold"
+  },
+  "source_cad": {
+    "minimum_positive_solid_volume_cm3": 1e-6,
+    "maximum_unintended_intersection_volume_cm3": 1e-6,
+    "maximum_duplicate_shape_distance_cm": 1e-6,
+    "magnet_dimension_relative_tolerance": 1e-9,
+    "magnet_transform_absolute_tolerance_cm": 1e-8,
+    "global_distance_witnesses_required_for_each_magnet": true,
+    "distance_errors_allowed": 0,
+    "source_mesh_semantic_identity_required": true,
+    "magnet_step_canonical_identity_required": true,
+    "raw_file_hashes_retained_as_provenance": true
+  },
+  "separated_interface": {
+    "target_source_cad_clearance_cm": 5.0,
+    "minimum_accepted_clearance_cm": 5.0,
+    "rule": "measured minimum clearance must be at least 5.0 cm and exceed twice the measured refined-facet geometric deviation",
+    "near_tangent_is_failure": true
+  },
+  "continuous_reconstruction": {
+    "global_exact_brep_minimum_controls_clearance": true,
+    "normal_ray_miss_counts_as_clearance_evidence": false,
+    "maximum_toroidal_sampling_step_deg": 0.25,
+    "maximum_poloidal_sampling_step_deg": 0.5,
+    "continuous_minimum_breeder_thickness_cm": 5.0,
+    "continuous_interpolant_and_source_cad_both_required": true
+  },
+  "physical_change": {
+    "actual_component_cad_volume_and_area_deltas_required": true,
+    "changed_toroidal_and_poloidal_extent_required": true,
+    "changed_control_and_dense_maps_required": true,
+    "unchanged_component_canonical_step_identity_required": true,
+    "first_wall_geometry_change_allowed": false,
+    "back_wall_shield_vessel_thickness_matrix_change_allowed": false,
+    "outer_layer_position_and_volume_change_induced_by_upstream_breeder_reduction_must_be_quantified": true,
+    "magnet_geometry_change_allowed": false,
+    "minimum_breeder_thickness_is_functional_not_neutronic_qualification": true
+  },
+  "conformal_interface": {
+    "maximum_gap_cm": 1e-4,
+    "maximum_overlap_cm3": 1e-6,
+    "minimum_shared_surface_fraction": 0.999999,
+    "opposite_senses_required": true,
+    "physical_material_ownership_required": true
+  },
+  "dagmc": {
+    "unmatched_edges": 0,
+    "unsealed_surfaces": 0,
+    "unsealed_volumes": 0,
+    "orphan_surfaces": 0,
+    "invalid_senses": 0,
+    "duplicate_physical_volumes": 0,
+    "overlap_checks": [1, 2, 4]
+  },
+  "faceting": {
+    "levels_required": 2,
+    "coarse_mesh_size_cm": [5.0, 20.0],
+    "refined_mesh_size_cm": [2.5, 10.0],
+    "maximum_component_volume_relative_difference": 0.0025,
+    "maximum_magnet_area_relative_difference": 0.01,
+    "topology_identity_required": true,
+    "overlap_class_identity_required": true
+  },
+  "magnet_envelopes": {
+    "edge_multiplicity": 2,
+    "vector_area_relative_tolerance": 1e-8,
+    "positive_signed_volume_required": true,
+    "independent_two_sided_point_location_required": true,
+    "independent_first_hit_ray_required": true
+  },
+  "source_domain": {
+    "invalid_tetrahedra": 0,
+    "negative_strength_tetrahedra": 0,
+    "invalid_sample_points": 0,
+    "source_strength_relative_tolerance": 1e-12,
+    "centroid_and_interior_quadrature_required": true
+  },
+  "openmc_geometry_debug": {
+    "histories": 4000,
+    "replicas": 2,
+    "seeds": [20260827, 20260828],
+    "lost_particles": 0,
+    "navigation_errors": 0,
+    "overlapping_cell_messages": 0,
+    "clean_exit_required": true,
+    "one_thread_confirmation_on_disagreement": true,
+    "immutable_h5m_hash_required": true,
+    "external_wrapper_ids": "strictly above all native DAGMC entity IDs; auto_geom_ids disabled"
+  },
+  "provenance": {
+    "full_build_manifest_must_hash_this_criteria_file": true,
+    "construct_only_experiments_may_be_unanchored_but_cannot_be_selected": true
+  },
+  "selection_is_fail_closed": true
+}
