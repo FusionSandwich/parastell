@@ -62,6 +62,30 @@ def test_phase_space_validation_accepts_root_auditor_column_names():
     assert values.particle.tolist() == [2112, 2112, 22]
 
 
+def test_phase_space_validation_is_global_frame_and_surface_id_neutral():
+    records = _records()
+    rotation = np.asarray([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    translation = np.asarray([1700.0, -900.0, 250.0])
+    records["position_global_cm"] = (
+        records["position_global_cm"] @ rotation.T + translation
+    )
+    records["direction_global"] = records["direction_global"] @ rotation.T
+    records["outward_normal_global"] = (
+        records["outward_normal_global"] @ rotation.T
+    )
+    records["surface_id"] = np.asarray([103, 103, 905])
+
+    values = validate_figure_inputs(records)
+    summary = summarize_phase_space(
+        values, source_histories=10, grazing_tolerance=1.0e-8
+    )
+
+    assert values.mu.tolist() == [-1.0, 1.0, 0.0]
+    assert summary["surface_ids"] == [103, 905]
+    assert summary["incoming_count"] == 1
+    assert summary["outgoing_count"] == 1
+
+
 def test_phase_space_validation_rejects_mu_inconsistent_with_normal_sense():
     records = copy.deepcopy(_records())
     records["mu"][0] = 1.0
