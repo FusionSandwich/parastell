@@ -102,7 +102,10 @@ def main() -> None:
             if key in seen:
                 continue
             seen.add(key)
-            if not Path(execution_path).is_absolute():
+            is_execution_absolute = Path(execution_path).is_absolute() or (
+                PurePosixPath(execution_path.replace("\\", "/")).is_absolute()
+            )
+            if not is_execution_absolute:
                 candidate = bundle / "figures" / execution_path
                 if not candidate.is_file():
                     continue
