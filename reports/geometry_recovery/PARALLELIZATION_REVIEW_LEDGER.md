@@ -220,3 +220,18 @@
 - Delegated QA: one reviewer cleared the v1.1 receipt for the import-only probe; a second reviewer enumerated the exact six-control launch contract and downstream proof gaps.
 - Shared-artifact risks: runtime-preflight-v1 and refacet-v1 through v4 are quarantined permanently; v2 has its own code, control, log, PID, lease, nonce, and receipt namespace. The future refacet-v5 root remains absent. Lane A has explicitly reconfirmed its read-only inventory window terminal and released.
 - Gate: no successor may start until v2 is terminal, the receipt is collected and independently checked, the lease/PIDs are gone, and a fresh ssh-poly ledger shows zero active/reserved/used threads.
+
+## 2026-08-28 11:30 EDT — Direct-90 imprinted mesh and activation rebinding
+
+- Serial/root-owned: the root agent alone may accept the direct-90 H5M. The fresh v2 imprinted coarse job is the only Bateman geometry job and has no automatic refined or OpenMC successor.
+- Safe parallel work completed: two read-only reviewers independently located the local depletion chain/transport catalog and audited the existing `DPA_workflow` activation adapters. No activation physics ran and no shared consumer worktree was edited.
+- Remote job state: the v2 exporter holds a 32-of-64 permitted Bateman lease, uses one observed native thread during the current OCC import stage, and remains within memory/headroom bounds. OpenMC transport is forbidden on Bateman.
+- Integration decision: add a generic continuous-envelope activation metadata contract instead of cherry-picking the failed split casing/winding implementation. Volume track-length scalar flux is the only activation observable; boundary current remains exclusive to local transport.
+- Shared-artifact risks: old Prompt-1B MicroXS/depletion results and its selected six-material catalog are rejected as new physical inputs. They remain software-reference evidence only. The new contract cannot become ready until the accepted geometry fingerprint, actual OpenMC cell IDs, source mesh, and medium scalar-flux field are all present.
+
+## 2026-08-28 11:35 EDT — Imprinted coarse v2 terminal and activation QA
+
+- V2 is terminal and permanently nonselectable: Gmsh MeshAdapt failed during 2D meshing after intersecting edge recovery, with `unable to find 378 445 0 1`. No H5M, export receipt, native gate, or OpenMC successor exists. The exact 5,279-byte log is preserved under external artifacts with SHA-256 `0568fc7eb456c9214ab23c439d797e50b053fb992ad1c3f2e053e3bf6c1c62ab`.
+- The 32-core ssh-poly lease is reaped; the authoritative ledger returned 0 active leases, 0 reserved threads, 1 observed unreserved thread, and 63 of 64 permitted threads available. No successor was launched automatically.
+- Activation work safe in parallel: all 728 transport HDF5 payloads were content-hashed into ledger SHA-256 `ef339cb80fef10d54b9372087c1a0ed4864bc6af2212460d591932aeea40f38b`; producer contract tests are local and transport-free.
+- Independent QA rejected three intermediate activation drafts and drove closure of geometry naming, source-rate scope, source-audit, actual ID mapping, native/periodic closure separation, scalar-flux artifact binding, tally-volume closure, and payload-ledger identity gaps. The source mesh remains explicitly pending its domain/element-order audit.

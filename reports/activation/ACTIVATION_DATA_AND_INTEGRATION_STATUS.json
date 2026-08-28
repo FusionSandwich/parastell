@@ -1,0 +1,75 @@
+{
+  "schema": "parastell.activation_integration_status/v1.0.0",
+  "status": "BLOCKED_PENDING_ACCEPTED_GEOMETRY_AND_MEDIUM_FIELD",
+  "producer_contract_implemented": true,
+  "bounded_activation_qualification_status": "BLOCKED_PENDING_ACCEPTED_GEOMETRY_AND_MEDIUM_FIELD",
+  "production_activation_status": "BLOCKED_PRODUCTION_NUCLEAR_DATA",
+  "execution_owner": "DPA_workflow",
+  "producer_owner": "FusionSandwich/parastell",
+  "depletion_chain": {
+    "format": "OpenMC depletion chain XML",
+    "nuclide_count": 3820,
+    "path": "D:\\openc-hts-dpa-data\\openmc-data\\depletion-chains\\endfb-viii.0-fast\\chain-endfb80-fast.xml",
+    "sha256": "5eeb727498d824d7c951ad89864bbc1c2d76ec5e8c9097a820505213ba6a2bf3",
+    "size_bytes": 27527401,
+    "status": "QUALIFIED_BOUNDED_IDENTITY"
+  },
+  "transport_catalog": {
+    "library_rows": 728,
+    "missing_referenced_files": 0,
+    "payloads_hashed": 728,
+    "payload_ledger_sha256": "ef339cb80fef10d54b9372087c1a0ed4864bc6af2212460d591932aeea40f38b",
+    "path": "C:\\Users\\joshu\\Documents\\2026_DPA\\openc-hts-dpa\\.data\\openmc\\cross_sections.xml",
+    "sha256": "218236803b2c4a21b038992af93dacfdfe5c0c0401cbbc57f3ff3a947c63abc7",
+    "size_bytes": 53257,
+    "status": "QUALIFIED_BOUNDED_IDENTITY"
+  },
+  "openmc_runtime": {
+    "container_image": "parastell-openmc:0.16.0",
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "cross_sections_mount_path": "/data/openmc/cross_sections.xml",
+    "status": "LOCALLY_AVAILABLE"
+  },
+  "old_selected_catalog": {
+    "path": "D:\\2026_DPA\\_artifacts\\openmc_microxs_alara_production_library_20260826\\prompt1b_recovery\\cross_sections.bound-selected6-9-6622bc43.xml",
+    "sha256": "ad0edc324ead933f13f4931af15670403234ff4337e4da95a671ad0ba46aade3",
+    "status": "REJECTED_FOR_NEW_WISTELL_D_BINDING_OLD_SIX_MATERIAL_MODEL"
+  },
+  "old_activation_results": {
+    "status": "REFERENCE_ONLY_REJECTED_GEOMETRY",
+    "software_path_validation_allowed": true,
+    "final_physical_use_allowed": false
+  },
+  "producer_contract": {
+    "schema": "parastell.activation_ready_metadata/v2.0.0",
+    "module": "parastell.activation_handoff",
+    "global_magnet_representation": "continuous_30_cm_magnet_envelope",
+    "required_observable": "volume_scalar_flux",
+    "required_estimator": "track_length",
+    "surface_current_allowed_as_activation_input": false,
+    "dagmc_volume_id_may_be_inferred_as_openmc_cell_id": false,
+    "periodic_boundary_semantics_required": true
+  },
+  "candidate_modeled_source": {
+    "extent_degrees": 90.0,
+    "rate_scope": "modeled_90_degree_period",
+    "source_mesh_sha256": "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322",
+    "strengths_sha256": "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df",
+    "strength_sum_per_s": 9.427053032700795e19,
+    "old_prompt1b_rate_rejected_for_rebinding_per_s": 2.693734274881251e20,
+    "status": "PENDING_DOMAIN_AND_ELEMENT_ORDER_AUDIT"
+  },
+  "remaining_gates": [
+    "accepted direct-90 H5M with canonical fingerprint",
+    "nine-volume material and component inventory",
+    "zero native watertightness and overlap defects",
+    "two-seed OpenMC 0.16.0 navigation pass",
+    "actual OpenMC cell and material ID discovery",
+    "source-mesh domain, element-order, and normalization audit receipt",
+    "geometry-bound source mesh",
+    "positive volume scalar-flux field with normalization closure",
+    "requested nuclide and reaction MicroXS coverage",
+    "bounded R2S and IndependentOperator comparison in DPA_workflow"
+  ],
+  "scientific_caveat": "The mixed per-nuclide transport index has incomplete evaluation metadata for 315 audited rows. Exact hashes qualify bounded identity, not production evaluation compatibility."
+}

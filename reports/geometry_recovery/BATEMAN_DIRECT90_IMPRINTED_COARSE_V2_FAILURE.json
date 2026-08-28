@@ -1,0 +1,52 @@
+{
+  "schema": "parastell.bateman_geometry_attempt/v1.0.0",
+  "attempt_id": "prompt7r-direct90-imprinted-coarse-v2-20260828T143000Z",
+  "classification": "FAIL_CLOSED_GMSH_2D_MESH_GENERATION",
+  "selectable": false,
+  "reusable": false,
+  "remote_root": "/home/apollon/josma/codex-runs/prompt7r-direct90-imprinted-coarse-v2-20260828T143000Z",
+  "input_archive": {
+    "sha256": "8aa294fb5b7ec45322a003c99371f2ab500d6526ad396980c436c78c6ad4f7d4",
+    "size_bytes": 310784262
+  },
+  "exporter": {
+    "sha256": "096e824c37c10f2a43e9bfadfd3b41f2e3e4bf0c30771a27a8a71d1f8ba9cde8",
+    "size_bytes": 14329
+  },
+  "controls": {
+    "imprint": true,
+    "gmsh_algorithm": 1,
+    "max_mesh_size_cm": 120.0,
+    "min_mesh_size_cm": 60.0,
+    "requested_threads": 32,
+    "observed_native_threads": 1
+  },
+  "terminal_evidence": {
+    "started_utc": "NOT_CAPTURED_INDEPENDENTLY",
+    "terminal_observed_utc": "2026-08-28T15:31:42Z",
+    "python_pid": 1158709,
+    "pid_gone": true,
+    "traceback_terminal_error": "Exception: unable to find 378 445 0 1",
+    "stage": "gmsh.model.mesh.generate(dim=2)",
+    "log_sha256": "0568fc7eb456c9214ab23c439d797e50b053fb992ad1c3f2e053e3bf6c1c62ab",
+    "log_size_bytes": 5279,
+    "local_log_copy": "D:\\parastell-artifacts\\prompt7r-wistell90-20260828\\direct90-imprinted-coarse-v2-terminal\\coarse.log"
+  },
+  "outputs": {
+    "result_directory_claimed": true,
+    "result_file_count": 0,
+    "dagmc_h5m_present": false,
+    "export_receipt_present": false,
+    "native_geometry_gate_run": false,
+    "openmc_run": false
+  },
+  "resource_cleanup": {
+    "active_leases": 0,
+    "reserved_threads": 0,
+    "observed_unreserved_threads": 1,
+    "policy_limit_threads": 64,
+    "available_threads": 63
+  },
+  "scientific_interpretation": "The imprinted BRep reached 2D meshing, but the fixed coarse MeshAdapt control could not recover intersecting curve discretizations. This is a meshing-control failure, not a native DAGMC geometry result.",
+  "automatic_successor_launched": false
+}
