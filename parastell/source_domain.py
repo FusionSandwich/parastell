@@ -148,22 +148,35 @@ def _source_arrays(
     return coordinates, volumes, strengths
 
 
-def _source_volume_surface(dagmc_path: Path, material: str):
+def select_source_volume(
+    volumes_by_id: Any, volume_id: int, expected_material: str
+) -> Any:
+    """Select the exact chamber volume and reject material-only ambiguity."""
+    try:
+        volume = volumes_by_id[int(volume_id)]
+    except KeyError as exc:
+        raise ValueError(
+            f"DAGMC source volume {volume_id} does not exist"
+        ) from exc
+    material = str(getattr(volume, "material", "")).strip()
+    if material != str(expected_material):
+        raise ValueError(
+            f"DAGMC source volume {volume_id} material {material!r} does not "
+            f"match {expected_material!r}"
+        )
+    return volume
+
+
+def _source_volume_surface(
+    dagmc_path: Path, volume_id: int, expected_material: str
+):
     import pydagmc
     import pyvista as pv
 
     model = pydagmc.Model(str(dagmc_path))
-    matches = [
-        volume
-        for volume in model.volumes_by_id.values()
-        if str(getattr(volume, "material", "")).strip() == str(material)
-    ]
-    if len(matches) != 1:
-        raise ValueError(
-            f"expected one DAGMC source volume with material {material!r}, "
-            f"got {len(matches)}"
-        )
-    volume = matches[0]
+    volume = select_source_volume(
+        model.volumes_by_id, volume_id, expected_material
+    )
     triangles = np.concatenate(
         [_triangles(surface.triangle_coords) for surface in volume.surfaces]
     )
@@ -187,6 +200,8 @@ def audit_source_domain(
     source_mesh_path: str | Path,
     reference_source_mesh_path: str | Path,
     *,
+    source_volume_id: int,
+    source_component: str = "chamber",
     source_material: str = "Vacuum",
     source_strength_relative_tolerance: float = 1.0e-12,
     point_chunk_size: int = 10000,
@@ -217,7 +232,13 @@ def audit_source_domain(
         == reference_identity["canonical_fingerprint"]
     )
 
-    source_volume, surface = _source_volume_surface(dagmc, source_material)
+    if source_component != "chamber":
+        raise ValueError("the source component role must be chamber")
+    if int(source_volume_id) <= 0:
+        raise ValueError("source volume ID must be a positive integer")
+    source_volume, surface = _source_volume_surface(
+        dagmc, int(source_volume_id), source_material
+    )
     invalid_point_count = 0
     invalid_vertex_count = 0
     invalid_quadrature_count = 0
@@ -282,6 +303,7 @@ def audit_source_domain(
         "source_mesh_sha256": sha256_file(source_mesh),
         "reference_source_mesh_sha256": sha256_file(reference_source),
         "source_material": str(source_material),
+        "source_component": source_component,
         "source_volume_id": int(source_volume.id),
         "source_volume_surface_open_edge_count": int(surface.n_open_edges),
         "source_mesh_identity": source_identity,

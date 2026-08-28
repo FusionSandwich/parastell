@@ -21,10 +21,14 @@ The local ENDF/B-VIII.0 fast depletion chain and all 728 payloads referenced by
 the transport index are content-hashed. Existing old-geometry MicroXS/depletion artifacts may
 exercise the software path only; they cannot supply final physical results.
 
-The intended source-rate scope is the modeled 90° period. The candidate source
-mesh and strengths hashes sum to `9.427053032700795e19 s^-1`, but remain
-`PENDING_DOMAIN_AND_ELEMENT_ORDER_AUDIT` and cannot unlock activation until a
-hash-bound audit receipt passes. The old
+The retained source mesh is the qualified 0–45° half-period input and sums to
+`9.427053032700797e19 s^-1`; it is not a 90° transport source. A create-only
+stellarator-symmetry expansion now provides a 0–90° construction candidate
+with 172,800 tetrahedra and `1.8854106065401587e20 s^-1`. Its element order,
+seam topology, orientation, doubled volume/rate, and angular extent pass, but
+it remains `ACCEPTED_GEOMETRY_CONTAINMENT_PENDING` and cannot unlock activation
+until a hash-bound containment receipt passes against the accepted chamber
+volume. The old
 Prompt-1B value `2.693734274881251e20 s^-1` is rejected for this rebinding.
 
 Bounded activation remains locked until the direct-90 geometry passes native

@@ -30,6 +30,7 @@ TERMINATION_GRACE_SECONDS = 30
 REQUESTED_THREADS = 32
 POLICY_TOTAL_THREADS = 256
 POLICY_LIMIT_THREADS = 64
+EXPECTED_LEASE_ROOT = Path("/home/apollon/josma/.codex/ssh-poly-core-budget")
 SIGTERM = getattr(signal, "SIGTERM", 15)
 SIGKILL = getattr(signal, "SIGKILL", 9)
 
@@ -227,7 +228,10 @@ def run(args: argparse.Namespace) -> int:
             raise ValueError("frozen thread environment mismatch")
         if args.lease_id != "AUTO_DISCOVER":
             raise ValueError("explicit ssh-poly lease IDs are forbidden")
-        lease = _discover_lease()
+        lease_root = args.lease_root.resolve()
+        if lease_root != EXPECTED_LEASE_ROOT:
+            raise ValueError("unexpected ssh-poly lease root")
+        lease = _discover_lease(lease_root)
         if not args.attempt_id or not args.nonce:
             raise ValueError(
                 "attempt, nonce, and lease identities are required"
@@ -237,6 +241,7 @@ def run(args: argparse.Namespace) -> int:
             "nonce": args.nonce,
             "host": socket.gethostname(),
             "lease": lease,
+            "lease_root": str(lease_root),
             "lease_discovery": "matched_live_current_session_lease",
             "policy_total_threads": args.policy_total_threads,
             "policy_limit_threads": args.policy_limit_threads,
@@ -325,6 +330,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attempt-id", required=True)
     parser.add_argument("--nonce", required=True)
     parser.add_argument("--lease-id", required=True)
+    parser.add_argument("--lease-root", type=Path, required=True)
     parser.add_argument("--exporter", type=Path, required=True)
     parser.add_argument("--expected-exporter-sha256", required=True)
     parser.add_argument("--expected-wrapper-sha256", required=True)

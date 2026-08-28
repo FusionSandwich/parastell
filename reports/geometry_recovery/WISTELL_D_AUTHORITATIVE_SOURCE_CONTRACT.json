@@ -50,20 +50,21 @@
       "bytes": 12757,
       "sha256": "3702b76d3c5c0876119e99d16614069b6dc8181d9977c9b617dc013ac2eaf5c6"
     },
-    "full_period_source_mesh_candidate": {
+    "half_period_source_mesh_input": {
       "path": "D:\\Scratch\\stellarator_optimization\\wistell-d_data\\source_mesh.h5m",
       "bytes": 4619464,
       "sha256": "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322",
-      "qualification": "PENDING_DOMAIN_AND_ELEMENT_ORDER_AUDIT"
+      "extent_degrees": [0.0, 45.0],
+      "qualification": "QUALIFIED_HALF_PERIOD_SOURCE_INPUT"
     },
-    "full_period_source_strengths_candidate": {
+    "half_period_source_strengths_input": {
       "path": "D:\\Scratch\\stellarator_optimization\\wistell-d_data\\strengths.npy",
       "bytes": 691328,
       "sha256": "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df",
       "count": 86400,
       "all_finite_and_positive": true,
       "sum_per_second": 9.427053032700795e+19,
-      "qualification": "PENDING_MESH_ORDER_AND_NORMALIZATION_AUDIT"
+      "qualification": "QUALIFIED_HALF_PERIOD_SOURCE_INPUT"
     }
   },
   "source_repositories": {

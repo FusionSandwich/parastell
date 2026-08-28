@@ -27,6 +27,8 @@ def main() -> None:
     parser.add_argument("--acceptance-criteria", required=True, type=Path)
     parser.add_argument("--expected-acceptance-criteria-sha256", required=True)
     parser.add_argument("--source-material", default="Vacuum")
+    parser.add_argument("--source-component", default="chamber")
+    parser.add_argument("--source-volume-id", required=True, type=int)
     arguments = parser.parse_args()
 
     dagmc = arguments.dagmc.resolve()
@@ -55,6 +57,8 @@ def main() -> None:
         dagmc,
         source,
         reference,
+        source_volume_id=arguments.source_volume_id,
+        source_component=arguments.source_component,
         source_material=arguments.source_material,
         source_strength_relative_tolerance=float(
             criteria["source_domain"]["source_strength_relative_tolerance"]
@@ -92,10 +96,9 @@ def main() -> None:
         and result["input_immutability_pass"]
     )
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
-        encoding="utf-8",
-    )
+    with output.open("x", encoding="utf-8") as stream:
+        json.dump(result, stream, indent=2, sort_keys=True, allow_nan=False)
+        stream.write("\n")
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ def _case(tmp_path):
             attempt_id="attempt-v3",
             nonce="nonce-v3",
             lease_id="AUTO_DISCOVER",
+            lease_root=tmp_path / "leases",
             exporter=exporter,
             expected_exporter_sha256=_sha(exporter),
             expected_wrapper_sha256=_sha(wrapper),
@@ -54,6 +55,10 @@ def _case(tmp_path):
 
 
 def _patch_preflight(monkeypatch, wrapper):
+    monkeypatch.setattr(
+        "scripts.run_bounded_direct90_export.EXPECTED_LEASE_ROOT",
+        wrapper.parent / "leases",
+    )
     monkeypatch.setattr(
         "scripts.run_bounded_direct90_export.Path.resolve",
         lambda self: (
@@ -77,7 +82,7 @@ def _patch_preflight(monkeypatch, wrapper):
     )
     monkeypatch.setattr(
         "scripts.run_bounded_direct90_export._discover_lease",
-        lambda: {
+        lambda _root: {
             "lease_id": "lease-v3",
             "cores": 32,
             "pid": 99,

@@ -1,0 +1,49 @@
+{
+  "schema": "wistell_d.expanded_90_source_qualification/v1.0.0",
+  "status": "EXPANDED_90_SOURCE_CONSTRUCTION_PASS_CONTAINMENT_PENDING",
+  "artifact_root": "D:\\parastell-artifacts\\prompt7r-wistell90-20260828\\source-mesh-expanded90-v2",
+  "execution": {
+    "container_name": "prompt7r-source-expand90-v2-20260828",
+    "container_image": "parastell-openmc:0.16.0",
+    "container_image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "network": "none",
+    "cpu_limit": 2,
+    "memory_limit_gib": 4,
+    "exit_code": 0,
+    "oom_killed": false
+  },
+  "parent_half_period": {
+    "extent_degrees": [0.0, 45.0],
+    "source_mesh_sha256": "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322",
+    "strengths_sha256": "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df",
+    "tetrahedron_count": 86400,
+    "source_rate_per_s": 9.427053032700797e19
+  },
+  "expanded_period": {
+    "extent_degrees": [0.0, 90.0],
+    "manifest_sha256": "682d19bd0d9d4ff1b1d10b2a303cb53d903e0d779e15496c7c049d6994f9495a",
+    "source_mesh_sha256": "910e286113d0f939167c66452acc9d9d1b855f83013886271948432824d0e441",
+    "strengths_sha256": "9d372b43b34f147b908d710e0dc10536b6c2b57eba44ab3f7db635f8bcaa094f",
+    "canonical_source_fingerprint": "3dc89981275d84fff93e09f0f18292478044c8f0d0596ddd0d45f75131ecbc67",
+    "vertex_count": 36661,
+    "tetrahedron_count": 172800,
+    "source_rate_per_s": 1.8854106065401587e20,
+    "merged_seam_vertices": 601,
+    "maximum_seam_residual_cm": 4.836390438425052e-13,
+    "unmatched_internal_seam_faces": 0,
+    "tetrahedron_orientation_preserved": true,
+    "order_rate_volume_and_angular_gates_pass": true
+  },
+  "independent_review": {
+    "status": "PARTIAL_GATE_PASS_CONTAINMENT_PENDING",
+    "unreferenced_vertices": 0,
+    "unique_tetrahedra": 172800,
+    "multiplicity_two_faces": 340860,
+    "external_faces": 9480,
+    "unmatched_45_degree_faces": 0,
+    "zero_degree_boundary_faces": 1140,
+    "ninety_degree_boundary_faces": 1140
+  },
+  "remaining_gate": "Bind every source tetrahedron to the exact accepted chamber volume and accepted raw H5M/canonical geometry fingerprint, then pass bounded OpenMC 0.16 navigation.",
+  "activation_authorized": false
+}

@@ -11,8 +11,12 @@ from parastell.activation_handoff import (
     FULL_TRANSPORT_CATALOG_SHA256,
     FULL_TRANSPORT_PAYLOAD_LEDGER_SHA256,
     DIRECT90_MODELED_SOURCE_RATE_PER_S,
+    DIRECT90_SOURCE_CANONICAL_FINGERPRINT,
+    DIRECT90_SOURCE_EXPANSION_MANIFEST_SHA256,
     DIRECT90_SOURCE_MESH_SHA256,
     DIRECT90_STRENGTHS_SHA256,
+    HALF45_SOURCE_MESH_SHA256,
+    HALF45_STRENGTHS_SHA256,
     build_activation_handoff,
     inspect_activation_data,
     validate_activation_handoff,
@@ -80,6 +84,10 @@ def _source_mesh():
     return {
         "sha256": DIRECT90_SOURCE_MESH_SHA256,
         "strengths_sha256": DIRECT90_STRENGTHS_SHA256,
+        "expansion_manifest_sha256": DIRECT90_SOURCE_EXPANSION_MANIFEST_SHA256,
+        "parent_half_source_mesh_sha256": HALF45_SOURCE_MESH_SHA256,
+        "parent_half_strengths_sha256": HALF45_STRENGTHS_SHA256,
+        "canonical_source_fingerprint": DIRECT90_SOURCE_CANONICAL_FINGERPRINT,
         "geometry_fingerprint": "b" * 64,
         "status": "PASS",
         "modeled_toroidal_extent_degrees": 90.0,
@@ -87,6 +95,10 @@ def _source_mesh():
         "strength_sum_per_s": DIRECT90_MODELED_SOURCE_RATE_PER_S,
         "domain_element_order_audit_status": "PASS",
         "audit_receipt_sha256": "7" * 64,
+        "accepted_geometry_containment_run": True,
+        "containment_status": "PASS",
+        "containment_receipt_sha256": "8" * 64,
+        "containment_raw_h5m_sha256": "a" * 64,
     }
 
 
@@ -327,6 +339,38 @@ def test_source_mesh_requires_domain_and_element_order_audit_receipt():
     source = _source_mesh()
     source["domain_element_order_audit_status"] = "PENDING"
     with pytest.raises(ActivationHandoffError, match="has not passed"):
+        build_activation_handoff(
+            geometry=_geometry(),
+            volumes=_volumes(),
+            scalar_flux=None,
+            activation_data=_data(),
+            physical_source_rate_per_s=DIRECT90_MODELED_SOURCE_RATE_PER_S,
+            source_mesh=source,
+            activation_domains=[_domain()],
+        )
+
+
+def test_half_period_source_is_rejected_as_direct90_even_with_forged_extent():
+    source = _source_mesh()
+    source["sha256"] = HALF45_SOURCE_MESH_SHA256
+    source["strengths_sha256"] = HALF45_STRENGTHS_SHA256
+    with pytest.raises(ActivationHandoffError, match="source mesh hash"):
+        build_activation_handoff(
+            geometry=_geometry(),
+            volumes=_volumes(),
+            scalar_flux=None,
+            activation_data=_data(),
+            physical_source_rate_per_s=DIRECT90_MODELED_SOURCE_RATE_PER_S,
+            source_mesh=source,
+            activation_domains=[_domain()],
+        )
+
+
+def test_source_containment_pending_cannot_unlock_activation():
+    source = _source_mesh()
+    source["accepted_geometry_containment_run"] = False
+    source["containment_status"] = "PENDING"
+    with pytest.raises(ActivationHandoffError, match="containment"):
         build_activation_handoff(
             geometry=_geometry(),
             volumes=_volumes(),

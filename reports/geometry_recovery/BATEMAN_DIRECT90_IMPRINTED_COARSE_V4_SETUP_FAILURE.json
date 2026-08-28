@@ -1,0 +1,30 @@
+{
+  "schema": "wistell_d.direct90_bateman_attempt/v1.0.0",
+  "attempt_id": "prompt7r-direct90-imprinted-coarse-v4-20260828T161000Z",
+  "status": "TERMINAL_FAIL_CLOSED_LEASE_DISCOVERY_SETUP_FAILURE",
+  "selectable": false,
+  "remote_root": "/home/apollon/josma/codex-runs/prompt7r-direct90-imprinted-coarse-v4-20260828T161000Z",
+  "started_utc": "2026-08-28T16:06:28.203094+00:00",
+  "finished_utc": "2026-08-28T16:07:07.457441+00:00",
+  "return_code": 125,
+  "terminal_receipt_sha256": "45954bcd950113adea628b85456c919d2e1044c60ca0e07af04f7f5bf5493351",
+  "exporter_sha256": "d4b4f5cfbdaafca0e3344b6106a26f09ca99607d5fe1120698e2dea4d17157bd",
+  "wrapper_sha256": "ea89999bdad1311bb743518e8ee499333dc4a75e3d90e2e304cb18c965e0e3fe",
+  "input_archive_sha256": "8aa294fb5b7ec45322a003c99371f2ab500d6526ad396980c436c78c6ad4f7d4",
+  "source_manifest_sha256": "b6e723cdb9ac95d789a838abbf44590d210c4fdbe718c3b459777d38768e0499",
+  "failure": "The guarded process ran with a noncanonical HOME, so Path.home() did not resolve the actual ssh-poly lease directory. The wrapper timed out before exporter launch.",
+  "geometry_work_started": false,
+  "dagmc_h5m_created": false,
+  "openmc_started": false,
+  "automatic_successor_launched": false,
+  "processes_reaped": true,
+  "post_terminal_core_budget": {
+    "total_threads": 256,
+    "limit_threads": 64,
+    "active_leases": 0,
+    "reserved_threads": 0,
+    "observed_unreserved_threads": 0,
+    "available_threads": 64
+  },
+  "corrective_action": "Bind and validate /home/apollon/josma/.codex/ssh-poly-core-budget explicitly in a fresh create-only successor; do not reuse v4."
+}

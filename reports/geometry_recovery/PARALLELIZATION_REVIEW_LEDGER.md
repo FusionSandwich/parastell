@@ -235,3 +235,10 @@
 - The 32-core ssh-poly lease is reaped; the authoritative ledger returned 0 active leases, 0 reserved threads, 1 observed unreserved thread, and 63 of 64 permitted threads available. No successor was launched automatically.
 - Activation work safe in parallel: all 728 transport HDF5 payloads were content-hashed into ledger SHA-256 `ef339cb80fef10d54b9372087c1a0ed4864bc6af2212460d591932aeea40f38b`; producer contract tests are local and transport-free.
 - Independent QA rejected three intermediate activation drafts and drove closure of geometry naming, source-rate scope, source-audit, actual ID mapping, native/periodic closure separation, scalar-flux artifact binding, tally-volume closure, and payload-ledger identity gaps. The source mesh remains explicitly pending its domain/element-order audit.
+
+## 2026-08-28 12:20 EDT — Source expansion and Bateman v4 separation
+
+- Serial/root-owned: accepted geometry selection, any fresh Bateman geometry launch, and later source containment against the exact chamber volume. No OpenMC transport or activation physics is running.
+- Safe parallel work completed: read-only reviewers audited the activation rebinding and the 45°→90° source construction. The existing Docker runtime generated a fresh 90° construction candidate with 172,800 tetrahedra, a conformal 45° seam, and doubled modeled-period rate. It remains containment-pending.
+- Remote state: Bateman v4 failed closed before exporter launch because the guarded environment's noncanonical `HOME` hid the actual lease directory. It created no H5M and launched no successor. The lease and processes are reaped; the authoritative ledger reports all 64 permitted threads available.
+- Shared-artifact risks: expanded-source v1 is preserved as an independently checked partial artifact; v2 is the provenance-strengthened candidate. Neither may drive transport until geometry-bound containment passes. Bateman v4 is permanently nonselectable and any successor requires a wholly fresh root, attempt, nonce, log, lease, and immediate live resource check.

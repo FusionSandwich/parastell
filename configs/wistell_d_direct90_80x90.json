@@ -11,6 +11,12 @@
     "source_mesh.h5m": "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322",
     "strengths.npy": "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df"
   },
+  "source_mesh_contract": {
+    "input_extent_degrees": [0.0, 45.0],
+    "input_role": "authoritative_half_period_source",
+    "transport_output_role": "expanded_90_degree_source",
+    "transport_output_containment_status": "PENDING_ACCEPTED_GEOMETRY"
+  },
   "construction": {
     "wall_s": 1.0,
     "canonical_control_count": 452,

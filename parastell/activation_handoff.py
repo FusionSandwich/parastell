@@ -41,13 +41,26 @@ EXPECTED_DIRECT90_MATERIAL_COUNTS = {
     "magnet_envelope": 1,
     "vacuum_vessel": 1,
 }
-DIRECT90_SOURCE_MESH_SHA256 = (
+HALF45_SOURCE_MESH_SHA256 = (
     "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322"
 )
-DIRECT90_STRENGTHS_SHA256 = (
+HALF45_STRENGTHS_SHA256 = (
     "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df"
 )
-DIRECT90_MODELED_SOURCE_RATE_PER_S = 9.427053032700795e19
+HALF45_MODELED_SOURCE_RATE_PER_S = 9.427053032700797e19
+DIRECT90_SOURCE_MESH_SHA256 = (
+    "910e286113d0f939167c66452acc9d9d1b855f83013886271948432824d0e441"
+)
+DIRECT90_STRENGTHS_SHA256 = (
+    "9d372b43b34f147b908d710e0dc10536b6c2b57eba44ab3f7db635f8bcaa094f"
+)
+DIRECT90_SOURCE_EXPANSION_MANIFEST_SHA256 = (
+    "682d19bd0d9d4ff1b1d10b2a303cb53d903e0d779e15496c7c049d6994f9495a"
+)
+DIRECT90_SOURCE_CANONICAL_FINGERPRINT = (
+    "3dc89981275d84fff93e09f0f18292478044c8f0d0596ddd0d45f75131ecbc67"
+)
+DIRECT90_MODELED_SOURCE_RATE_PER_S = 1.8854106065401587e20
 
 
 class ActivationHandoffError(ValueError):
@@ -338,12 +351,46 @@ def validate_activation_handoff(handoff: Mapping[str, Any]) -> None:
             raise ActivationHandoffError("source mesh hash is invalid")
         if source_mesh.get("strengths_sha256") != DIRECT90_STRENGTHS_SHA256:
             raise ActivationHandoffError("source strengths hash is invalid")
+        if source_mesh.get("expansion_manifest_sha256") != (
+            DIRECT90_SOURCE_EXPANSION_MANIFEST_SHA256
+        ):
+            raise ActivationHandoffError(
+                "source expansion manifest is invalid"
+            )
+        if source_mesh.get("parent_half_source_mesh_sha256") != (
+            HALF45_SOURCE_MESH_SHA256
+        ) or source_mesh.get("parent_half_strengths_sha256") != (
+            HALF45_STRENGTHS_SHA256
+        ):
+            raise ActivationHandoffError("source expansion parent is invalid")
+        if source_mesh.get("canonical_source_fingerprint") != (
+            DIRECT90_SOURCE_CANONICAL_FINGERPRINT
+        ):
+            raise ActivationHandoffError(
+                "source canonical fingerprint is invalid"
+            )
         if source_mesh.get("status") != "PASS":
             raise ActivationHandoffError("source mesh is not qualified")
         if source_mesh.get("domain_element_order_audit_status") != "PASS":
             raise ActivationHandoffError(
                 "source domain and element-order audit has not passed"
             )
+        if source_mesh.get("accepted_geometry_containment_run") is not True:
+            raise ActivationHandoffError(
+                "source containment against accepted geometry has not passed"
+            )
+        if source_mesh.get("containment_status") != "PASS":
+            raise ActivationHandoffError(
+                "source containment status is not PASS"
+            )
+        if not _is_sha256(source_mesh.get("containment_receipt_sha256")):
+            raise ActivationHandoffError(
+                "source containment receipt is invalid"
+            )
+        if source_mesh.get("containment_raw_h5m_sha256") != geometry.get(
+            "raw_h5m_sha256"
+        ):
+            raise ActivationHandoffError("source containment used another H5M")
         if not _is_sha256(source_mesh.get("audit_receipt_sha256")):
             raise ActivationHandoffError(
                 "source audit receipt hash is invalid"

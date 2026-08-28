@@ -2,6 +2,7 @@ import numpy as np
 
 from parastell.source_domain import SOURCE_QUADRATURE_BARYCENTRICS
 from parastell.source_domain import audit_source_tetrahedra_arrays
+from parastell.source_domain import select_source_volume
 
 
 def _two_tetrahedra():
@@ -59,3 +60,16 @@ def test_source_quadrature_matches_parastell_five_point_rule():
     assert np.allclose(
         SOURCE_QUADRATURE_BARYCENTRICS[0], [0.25, 0.25, 0.25, 0.25]
     )
+
+
+def test_source_volume_selection_requires_exact_id_not_unique_material():
+    class Volume:
+        def __init__(self, material):
+            self.material = material
+
+    volumes = {1: Volume("Vacuum"), 7: Volume("Vacuum")}
+    assert select_source_volume(volumes, 1, "Vacuum") is volumes[1]
+    with np.testing.assert_raises_regex(ValueError, "does not exist"):
+        select_source_volume(volumes, 2, "Vacuum")
+    with np.testing.assert_raises_regex(ValueError, "does not match"):
+        select_source_volume(volumes, 7, "breeder")
