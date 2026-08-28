@@ -1,0 +1,36 @@
+{
+  "schema": "wistell_d.direct90_imprinted_attempt/v1.0.0",
+  "attempt_id": "prompt7r-direct90-imprinted-coarse-v1-20260828T141500Z",
+  "status": "FAIL_CLOSED_NATIVE_THREAD_ENVELOPE_UNBOUND",
+  "selectable": false,
+  "host": "poly-bateman",
+  "source_revision": "20c00c8418bc854d492e67d594ed44966abc8202",
+  "resource_lease": {
+    "requested_threads": 32,
+    "policy_limit_threads": 64,
+    "reserved_before_launch": 0,
+    "observed_unreserved_before_launch": 1,
+    "active_leases_after_cleanup": 0
+  },
+  "inputs": {
+    "archive_sha256": "8aa294fb5b7ec45322a003c99371f2ab500d6526ad396980c436c78c6ad4f7d4",
+    "archive_bytes": 310784262,
+    "exporter_sha256": "50299f9fa0f63b5cf643dad68bab652c370631cd2729d639bfeed62fe22a63c5"
+  },
+  "terminal_evidence": {
+    "pid": 1154582,
+    "maximum_observed_native_threads": 128,
+    "maximum_observed_cpu_percent_of_one_core": 11.9,
+    "maximum_observed_rss_kib": 1049480,
+    "h5m_created": false,
+    "receipt_created": false,
+    "processes_reaped": true,
+    "lease_reaped": true
+  },
+  "decision": {
+    "quarantine_root": true,
+    "do_not_reuse": true,
+    "openmc_allowed": false,
+    "required_successor_change": "Freeze OMP/OpenBLAS/MKL/NumExpr/BLIS thread variables before Python starts, enforce them inside the exporter, and use a fresh create-only attempt root."
+  }
+}

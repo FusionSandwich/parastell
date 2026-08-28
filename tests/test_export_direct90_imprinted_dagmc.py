@@ -13,11 +13,13 @@ from scripts.export_direct90_imprinted_dagmc import (
     COARSE_THREADS,
     COMPONENT_ORDER,
     MATERIAL_TAGS,
+    REQUIRED_THREAD_ENVIRONMENT,
     STEP_SHA256,
     _expected_volumes,
     _fragment_one_to_one,
     _validated_step_artifacts,
     _validate_frozen_mesh_controls,
+    _validate_thread_environment,
     _unique_volume_assignment,
     export,
 )
@@ -131,6 +133,15 @@ def test_source_constants_cover_exact_component_order():
         "Vacuum",
         "magnet_envelope",
     )
+
+
+def test_thread_environment_must_be_frozen(monkeypatch):
+    for name, value in REQUIRED_THREAD_ENVIRONMENT.items():
+        monkeypatch.setenv(name, value)
+    _validate_thread_environment()
+    monkeypatch.setenv("OMP_NUM_THREADS", "128")
+    with pytest.raises(ValueError, match="thread environment"):
+        _validate_thread_environment()
 
 
 def test_reference_volume_inventory_rejects_wrong_order():

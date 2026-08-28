@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import time
 
@@ -51,6 +52,15 @@ COARSE_MIN_MESH_SIZE_CM = 60.0
 COARSE_MAX_MESH_SIZE_CM = 120.0
 COARSE_MESH_ALGORITHM = 1
 COARSE_THREADS = 32
+REQUIRED_THREAD_ENVIRONMENT = {
+    "OMP_NUM_THREADS": "32",
+    "OMP_THREAD_LIMIT": "32",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1",
+    "BLIS_NUM_THREADS": "1",
+}
 VOLUME_RELATIVE_TOLERANCE = 1.0e-7
 VOLUME_ABSOLUTE_TOLERANCE_CM3 = 1.0e-3
 
@@ -122,6 +132,16 @@ def _validate_frozen_mesh_controls(
         or threads != COARSE_THREADS
     ):
         raise ValueError("mesh controls differ from the frozen coarse attempt")
+
+
+def _validate_thread_environment() -> None:
+    mismatches = {
+        name: os.environ.get(name)
+        for name, expected in REQUIRED_THREAD_ENVIRONMENT.items()
+        if os.environ.get(name) != expected
+    }
+    if mismatches:
+        raise ValueError(f"thread environment is not frozen: {mismatches}")
 
 
 def _unique_volume_assignment(
@@ -229,6 +249,7 @@ def export(args: argparse.Namespace) -> None:
         args.algorithm,
         args.threads,
     )
+    _validate_thread_environment()
 
     import cad_to_dagmc
     import cadquery as cq
@@ -342,6 +363,7 @@ def export(args: argparse.Namespace) -> None:
             "max_mesh_size_cm": args.max_mesh_size_cm,
             "algorithm": args.algorithm,
             "threads": args.threads,
+            "thread_environment": dict(REQUIRED_THREAD_ENVIRONMENT),
         },
         "source_artifacts": source_artifacts,
         "import_assignment": import_evidence,
