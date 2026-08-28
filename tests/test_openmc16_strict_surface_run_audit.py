@@ -173,6 +173,7 @@ def _fixture(tmp_path, *, mpi_ranks=2, max_particles=10):
         + mpi_line
         + "Loading file fake.h5m\n"
         + "FIXED SOURCE TRANSPORT SIMULATION\n"
+        + "Creating state point statepoint.1.h5...\n"
         + "Creating source file surface_source.h5 with 1 particles ...\n"
         + "RESULTS\n"
     )

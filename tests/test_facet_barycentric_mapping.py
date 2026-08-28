@@ -77,3 +77,25 @@ def test_outward_normal_and_one_sided_plane_residual_are_consistent():
     assert above["signed_plane_residual_cm"] > 0.0
     assert below["signed_plane_residual_cm"] < 0.0
     assert above["outward_normal_global"] == pytest.approx([0.0, 0.0, 1.0])
+
+
+def test_noncoplanar_shared_edge_is_rejected_without_native_facet_id():
+    surface = FacetedSurface(
+        surface_id=29,
+        role="plasma_facing",
+        triangles_cm=np.asarray(
+            [
+                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]],
+            ]
+        ),
+        triangle_normals_outward=np.asarray(
+            [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0]]
+        ),
+        triangle_areas_cm2=np.asarray([0.5, 0.5]),
+        centroid_global_cm=np.asarray([1.0 / 3.0, 1.0 / 6.0, -1.0 / 6.0]),
+        canonical_facet_ids=("xy", "xz"),
+        dagmc_volume_id=8,
+    )
+    with pytest.raises(ValueError, match="ambiguous noncoplanar facet edge"):
+        surface.locate([0.25, 0.0, 0.0])

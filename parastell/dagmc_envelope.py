@@ -436,6 +436,52 @@ class FacetedSurface:
             raise ValueError("facet query position must be a finite vector")
         if barycentric_tolerance < 0.0 or source_tolerance_cm <= 0.0:
             raise ValueError("facet mapping tolerances must be positive")
+
+        def select_unambiguous(candidates, residuals) -> int:
+            candidates = np.asarray(candidates, dtype=int)
+            if len(candidates) > 1:
+                reference = int(candidates[0])
+                reference_normal = self.triangle_normals_outward[reference]
+                reference_origin = self.triangles_cm[reference, 0]
+                for candidate in candidates[1:]:
+                    candidate = int(candidate)
+                    same_normal = (
+                        np.dot(
+                            reference_normal,
+                            self.triangle_normals_outward[candidate],
+                        )
+                        >= 1.0 - 1.0e-10
+                    )
+                    same_plane = (
+                        abs(
+                            np.dot(
+                                self.triangles_cm[candidate, 0]
+                                - reference_origin,
+                                reference_normal,
+                            )
+                        )
+                        <= source_tolerance_cm
+                    )
+                    if not (same_normal and same_plane):
+                        raise ValueError(
+                            "crossing lies on an ambiguous noncoplanar facet "
+                            "edge; OpenMC 0.16 does not store native hit-facet "
+                            "identity"
+                        )
+            facet_ids = self.canonical_facet_ids or tuple(
+                f"surface-{self.surface_id}-facet-{index}"
+                for index in range(len(self.triangles_cm))
+            )
+            return int(
+                min(
+                    candidates,
+                    key=lambda index: (
+                        float(residuals[int(index)]),
+                        str(facet_ids[int(index)]),
+                    ),
+                )
+            )
+
         first = self.triangles_cm[:, 0]
         edge_u = self.triangles_cm[:, 1] - first
         edge_v = self.triangles_cm[:, 2] - first
@@ -467,9 +513,7 @@ class FacetedSurface:
         )
         if np.any(contains):
             candidates = np.flatnonzero(contains)
-            index = int(
-                candidates[np.argmin(np.abs(plane_distance[candidates]))]
-            )
+            index = select_unambiguous(candidates, np.abs(plane_distance))
             barycentric = np.asarray(
                 [
                     1.0 - bary_u[index] - bary_v[index],
@@ -493,7 +537,12 @@ class FacetedSurface:
             distances = np.asarray(
                 [np.linalg.norm(point - row[0]) for row in closest]
             )
-            index = int(np.argmin(distances))
+            close_candidates = np.flatnonzero(distances <= source_tolerance_cm)
+            index = (
+                select_unambiguous(close_candidates, distances)
+                if len(close_candidates)
+                else int(np.argmin(distances))
+            )
             reconstructed, barycentric = closest[index]
             nearest_residual = float(distances[index])
             if nearest_residual <= source_tolerance_cm:

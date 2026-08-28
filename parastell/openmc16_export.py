@@ -532,6 +532,7 @@ def _parse_terminal_log(
     path: Path,
     source_files: Sequence[Mapping[str, Any]],
     dagmc_declared_filename: str,
+    statepoint_path: Path,
 ) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="strict")
     if not re.search(r"Version\s*\|\s*0\.16\.0\b", text):
@@ -552,6 +553,9 @@ def _parse_terminal_log(
         raise ValueError(
             "terminal log does not bind the declared DAGMC filename"
         )
+    statepoints = re.findall(r"Creating state point\s+(\S+\.h5)", text)
+    if not statepoints or Path(statepoints[-1]).name != statepoint_path.name:
+        raise ValueError("terminal log does not bind the final statepoint")
     writer_rows = [
         {
             "name": match.group("name"),
@@ -578,6 +582,7 @@ def _parse_terminal_log(
         "writer_rows": writer_rows,
         "mpi_ranks": int(mpi[0]) if mpi else 1,
         "dagmc_loaded_filename": loaded[0],
+        "final_statepoint_filename": statepoints[-1],
     }
 
 
@@ -655,6 +660,9 @@ def _bank_tally_integrity_rows(
     energy = np.asarray(records["E"], dtype=float).reshape(-1)
     time = np.asarray(records["time"], dtype=float).reshape(-1)
     weights = np.asarray(records["wgt"], dtype=float).reshape(-1)
+    delayed_groups = np.asarray(records["delayed_group"], dtype=int).reshape(
+        -1
+    )
     pdg = np.asarray(records["particle"], dtype=int).reshape(-1)
     if any(
         np.any(~np.isfinite(value))
@@ -666,6 +674,7 @@ def _bank_tally_integrity_rows(
         or np.any(energy <= 0.0)
         or np.any(time < 0.0)
         or np.any(weights < 0.0)
+        or np.any(delayed_groups < 0)
     ):
         raise ValueError("surface bank contains invalid phase-space values")
     inverse_pdg = {value: key for key, value in PDG_PARTICLES.items()}
@@ -865,7 +874,10 @@ def audit_openmc16_surface_run(
     )
     records, source_files = _read_surface_banks(source_paths)
     log = _parse_terminal_log(
-        log_path, source_files, model["dagmc_declared_filename"]
+        log_path,
+        source_files,
+        model["dagmc_declared_filename"],
+        statepoint_path,
     )
     compared_rows, integrity = _bank_tally_integrity_rows(
         records,
