@@ -1,0 +1,36 @@
+{
+  "schema": "wistell_d.local_attempt_terminal_failure/v1.0.0",
+  "generated_utc": "2026-08-28T05:00:08.1919115Z",
+  "classification": "FAIL_CLOSED_PRE_AUDIT_REVIEW_FOUND_NON_ISOLATED_BOOLEAN_PATH",
+  "selectable": false,
+  "attempt": {
+    "root": "D:/parastell-artifacts/prompt7r-wistell90-20260828/source-cad-45d-61x121-v2",
+    "pid": 30664,
+    "started_local": "2026-08-28T00:55:01-04:00",
+    "terminal_action": "operator_stopped_exact_pid_before_STEP_export_and_pairwise_audit",
+    "git_head_at_launch": "62f3a197114d31afe9e9692dd5251a2e5820f3fd",
+    "launched_script_git_blob_sha256": "12fd68af2f50e3d14cdcebd92e2d99829060ed05b6f552fbbe16f9e35aff6033"
+  },
+  "reason": {
+    "finding": "independent_read_only_review_proved_build_45_still_called_complete_pairwise_audit_in_the_parent_process",
+    "risk": "the_attempt_would_repeat_the_native_OpenCascade_memory_accumulation_hazard_seen_in_v1",
+    "detection_phase": "construction_before_STEP_export",
+    "scientific_geometry_failure_observed": false
+  },
+  "partial_artifacts": [
+    {
+      "path": "canonical_thickness_arrays_cm.npz",
+      "bytes": 31024,
+      "sha256": "97bb293bb32d4a99950bfb75c21886ec0f63aaa41965b4b1a022dc737643ade8"
+    }
+  ],
+  "absent_required_artifacts": [
+    "component STEP files",
+    "combined STEP",
+    "SOURCE_CAD_61X121_ACCEPTANCE.json",
+    "DAGMC H5M",
+    "OpenMC geometry-debug result"
+  ],
+  "successors_launched": false,
+  "disposition": "preserve_create_only_attempt_as_nonselectable_operational_evidence"
+}

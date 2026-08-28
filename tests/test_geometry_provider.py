@@ -103,6 +103,17 @@ def test_streaming_step_pairwise_audit_isolates_real_step_pairs(tmp_path):
     assert report["pairs"][0]["intersection_volume_cm3"] == 0.0
 
 
+def test_build_45_uses_process_isolated_pairwise_audit():
+    import inspect
+
+    from scripts.wistell_d_geometry_lane import build_45
+
+    source = inspect.getsource(build_45)
+    assert "streaming_step_pairwise_audit(" in source
+    assert "pairwise = complete_pairwise_audit(" not in source
+    assert "del combined, components, stellarator" in source
+
+
 def _geometry_build_config() -> dict:
     return {
         "schema": "parastell.geometry_build_config/v1.0.0",

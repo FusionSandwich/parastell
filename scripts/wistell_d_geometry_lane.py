@@ -541,13 +541,8 @@ def audit_existing_31x61(args: argparse.Namespace) -> None:
     metrics = {
         name: shape_metrics(shape) for name, shape in components.items()
     }
-    # Retain only scalar geometry evidence before the memory-bounded audit.
-    del combined, components, stellarator
-    gc.collect()
-    pairwise = streaming_step_pairwise_audit(
-        output_root,
-        EXPECTED_LAYER_ORDER,
-        tolerance_cm3=args.tolerance_cm3,
+    pairwise = complete_pairwise_audit(
+        components, intersection_volume, tolerance_cm3=args.tolerance_cm3
     )
     nonzero = [row for row in pairwise["pairs"] if row["overlap"]]
     payload = {
@@ -758,8 +753,16 @@ def build_45(args: argparse.Namespace) -> None:
         name: shape_metrics(shape) for name, shape in components.items()
     }
     surface_diagnostics = expanded_surface_diagnostics(stellarator)
-    pairwise = complete_pairwise_audit(
-        components, intersection_volume, tolerance_cm3=args.tolerance_cm3
+    component_names = tuple(components)
+    # OpenCascade does not reliably return all native allocations to the OS
+    # while a long-lived process retains the constructed model. Preserve only
+    # scalar evidence, then audit each exported STEP pair in its own process.
+    del combined, components, stellarator
+    gc.collect()
+    pairwise = streaming_step_pairwise_audit(
+        output_root,
+        component_names,
+        tolerance_cm3=args.tolerance_cm3,
     )
     require_complete_pairwise_acceptance(pairwise)
     input_after = verify_source_set(input_root)
@@ -776,7 +779,7 @@ def build_45(args: argparse.Namespace) -> None:
             / "canonical_thickness_arrays_cm.npz",
             **{
                 f"component_step:{name}": output_root / f"{name}.step"
-                for name in components
+                for name in component_names
             },
         },
     )
@@ -817,7 +820,9 @@ def build_45(args: argparse.Namespace) -> None:
         "thickness_validation": thickness,
         "expanded_surface_validation": surface_diagnostics,
         "components": component_metrics,
-        "materials": {name: config["materials"][name] for name in components},
+        "materials": {
+            name: config["materials"][name] for name in component_names
+        },
         "complete_pairwise_audit": pairwise,
         "source_domain": {
             "mesh_path": str(source_files["source_mesh.h5m"].resolve()),
