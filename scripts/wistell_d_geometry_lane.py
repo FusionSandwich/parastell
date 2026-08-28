@@ -2037,6 +2037,200 @@ def audit_symmetry(args: argparse.Namespace) -> None:
     )
 
 
+def validate_half_period_transform_receipt(
+    receipt: Mapping[str, Any],
+) -> np.ndarray:
+    """Return the qualified proper half-period transform matrix."""
+    if receipt.get("classification") != (
+        "WISTELL_D_EXACT_HALF_PERIOD_TRANSFORM_PASS"
+    ):
+        raise ValueError("symmetry transform receipt is not accepted")
+    evidence = receipt.get("evidence", {})
+    if (
+        evidence.get("nfp") != 4
+        or evidence.get("stellarator_symmetric") is not True
+        or float(evidence.get("phase_origin_degrees", math.nan)) != 0.0
+        or evidence.get("canonical_domain_degrees") != [0.0, 45.0]
+        or evidence.get("derived_domain_degrees") != [45.0, 90.0]
+        or evidence.get("source_hashes") != WISTELL_D_SOURCE_HASHES
+    ):
+        raise ValueError("symmetry transform provenance is not WISTELL-D")
+    row = receipt.get("transforms", {}).get("half_period_mate", {})
+    matrix = np.asarray(row.get("matrix"), dtype=float)
+    inverse = np.asarray(row.get("inverse_matrix"), dtype=float)
+    expected = np.eye(4)
+    expected[:3, :3] = np.array(
+        [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]]
+    )
+    if (
+        matrix.shape != (4, 4)
+        or inverse.shape != (4, 4)
+        or not np.isfinite(matrix).all()
+        or not np.isfinite(inverse).all()
+        or not np.allclose(matrix, expected, atol=1.0e-12)
+        or not np.allclose(matrix @ inverse, np.eye(4), atol=1.0e-12)
+        or not math.isclose(
+            np.linalg.det(matrix[:3, :3]), 1.0, abs_tol=1.0e-12
+        )
+    ):
+        raise ValueError(
+            "half-period transform matrix is not the qualified map"
+        )
+    return matrix
+
+
+def verify_accepted_component_steps(
+    source_root: Path,
+    manifest: Mapping[str, Any],
+    names: tuple[str, ...],
+) -> dict[str, dict[str, Any]]:
+    """Rehash every accepted source STEP before symmetry derivation."""
+    rows: dict[str, dict[str, Any]] = {}
+    for name in names:
+        role = f"component_step:{name}"
+        accepted = manifest.get("artifacts", {}).get(role)
+        path = (source_root / f"{name}.step").resolve()
+        if not isinstance(accepted, Mapping) or not path.is_file():
+            raise ValueError(f"missing accepted component STEP: {role}")
+        if Path(str(accepted.get("path", ""))).resolve() != path:
+            raise ValueError(f"accepted component path mismatch: {role}")
+        actual = {
+            "path": str(path),
+            "bytes": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
+        if actual["bytes"] != int(accepted.get("bytes", -1)) or actual[
+            "sha256"
+        ] != accepted.get("sha256"):
+            raise ValueError(f"accepted component hash/size mismatch: {role}")
+        rows[role] = actual
+    return rows
+
+
+def seam_face_area(shape: Any, *, tolerance_cm: float = 1.0e-6) -> float:
+    """Area of faces wholly on the shared 45-degree plane x=y."""
+    area = 0.0
+    for face in shape.Faces():
+        vertices = face.Vertices()
+        if (
+            vertices
+            and max(abs(vertex.X - vertex.Y) for vertex in vertices)
+            <= tolerance_cm
+        ):
+            area += float(face.Area())
+    return area
+
+
+def derive_step_component(args: argparse.Namespace) -> None:
+    """Derive and validate one 90-degree component in an isolated process."""
+    source_path = Path(args.source).resolve()
+    output_path = Path(args.output).resolve()
+    receipt_path = Path(args.receipt).resolve()
+    transform_path = Path(args.transform_receipt).resolve()
+    if output_path.exists() or receipt_path.exists():
+        raise FileExistsError("derive-component outputs are create-only")
+    transform_receipt = json.loads(transform_path.read_text(encoding="utf-8"))
+    matrix = validate_half_period_transform_receipt(transform_receipt)
+    source = cq.importers.importStep(str(source_path)).val()
+    # The exact qualified matrix is a 180-degree proper rotation about (1,1,0).
+    expected_from_rotation = np.eye(4)
+    expected_from_rotation[:3, :3] = np.array(
+        [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]]
+    )
+    if not np.allclose(matrix, expected_from_rotation, atol=1.0e-12):
+        raise RuntimeError("CadQuery rotation is not the receipt transform")
+    mate = source.rotate((0.0, 0.0, 0.0), (1.0, 1.0, 0.0), 180.0)
+    common_volume = intersection_volume(source, mate)
+    source_metrics = shape_metrics(source)
+    shared_seam_area = seam_face_area(source)
+    if shared_seam_area <= 0.0:
+        raise RuntimeError(
+            "source component has no qualified 45-degree seam face"
+        )
+    joined = source.fuse(mate).clean()
+    joined_metrics = shape_metrics(joined)
+    joined_internal_seam_area = seam_face_area(joined)
+    expected_joined_area = (
+        2.0 * source_metrics["surface_area_cm2"] - 2.0 * shared_seam_area
+    )
+    area_residual = abs(
+        joined_metrics["surface_area_cm2"] - expected_joined_area
+    )
+    area_tolerance = max(1.0e-5, 2.0e-8 * expected_joined_area)
+    volume_scale = joined_metrics["volume_cm3"] / source_metrics["volume_cm3"]
+    row = {
+        "component": args.component,
+        "source_mate_intersection_volume_cm3": common_volume,
+        "source_shared_seam_area_cm2": shared_seam_area,
+        "joined_internal_45_degree_face_area_cm2": joined_internal_seam_area,
+        "joined_solid_count": joined_metrics["solid_count"],
+        "volume_scale_90d_over_45d": volume_scale,
+        "source_surface_area_cm2": source_metrics["surface_area_cm2"],
+        "joined_surface_area_cm2": joined_metrics["surface_area_cm2"],
+        "expected_joined_surface_area_cm2": expected_joined_area,
+        "surface_area_residual_cm2": area_residual,
+        "surface_area_tolerance_cm2": area_tolerance,
+        "joined_valid_brep": joined_metrics["valid_brep"],
+    }
+    if (
+        common_volume > args.tolerance_cm3
+        or not joined_metrics["valid_brep"]
+        or joined_metrics["solid_count"] != 1
+        or not math.isclose(volume_scale, 2.0, rel_tol=2.0e-8, abs_tol=1.0e-8)
+        or joined_internal_seam_area > 1.0e-5
+        or area_residual > area_tolerance
+    ):
+        raise RuntimeError(f"90-degree seam expansion failed: {row}")
+    cq.exporters.export(joined, str(output_path))
+    reloaded = cq.importers.importStep(str(output_path)).val()
+    reloaded_metrics = shape_metrics(reloaded)
+    if (
+        not reloaded_metrics["valid_brep"]
+        or reloaded_metrics["solid_count"] != 1
+    ):
+        raise RuntimeError("derived STEP fails reload qualification")
+    payload = {
+        "classification": "WISTELL_D_90D_COMPONENT_DERIVATION_PASS",
+        "component": args.component,
+        "source_step": {
+            "path": str(source_path),
+            "bytes": source_path.stat().st_size,
+            "sha256": sha256_file(source_path),
+        },
+        "derived_step": {
+            "path": str(output_path),
+            "bytes": output_path.stat().st_size,
+            "sha256": sha256_file(output_path),
+        },
+        "transform_receipt_sha256": sha256_file(transform_path),
+        "seam_validation": row,
+        "joined_metrics": reloaded_metrics,
+    }
+    write_json_create_only(receipt_path, payload)
+    print(json.dumps(payload, allow_nan=False))
+
+
+def combine_step_components(args: argparse.Namespace) -> None:
+    """Write one inspectable compound STEP in a disposable child process."""
+    root = Path(args.root).resolve()
+    output = Path(args.output).resolve()
+    if output.exists():
+        raise FileExistsError(output)
+    names = tuple(args.components.split(","))
+    components = load_step_components(root, names)
+    compound = cq.Compound.makeCompound(list(components.values()))
+    cq.exporters.export(compound, str(output))
+    print(
+        json.dumps(
+            {
+                "path": str(output),
+                "bytes": output.stat().st_size,
+                "sha256": sha256_file(output),
+            }
+        )
+    )
+
+
 def derive_90(args: argparse.Namespace) -> None:
     source_root = Path(args.source_root).resolve()
     output_root = Path(args.output_root).resolve()
@@ -2052,60 +2246,79 @@ def derive_90(args: argparse.Namespace) -> None:
         "WISTELL_D_45D_61X121_SOURCE_CAD_PASS"
     ):
         raise ValueError("45-degree source CAD is not accepted")
+    validate_wistell_d_manifest(source_manifest, required_extent_degrees=45.0)
     transform_receipt = json.loads(transform_path.read_text(encoding="utf-8"))
-    if transform_receipt.get("classification") != (
-        "WISTELL_D_EXACT_HALF_PERIOD_TRANSFORM_PASS"
-    ):
-        raise ValueError("symmetry transform receipt is not accepted")
+    validate_half_period_transform_receipt(transform_receipt)
     output_root.mkdir(parents=True)
     started = time.time()
     names = tuple(source_manifest["model"]["component_order"])
-    source_components = load_step_components(source_root, names)
-    expanded = OrderedDict()
+    source_component_artifacts = verify_accepted_component_steps(
+        source_root, source_manifest, names
+    )
     expansion_rows = []
-    for name, source in source_components.items():
-        mate = source.rotate((0.0, 0.0, 0.0), (1.0, 1.0, 0.0), 180.0)
-        common_volume = intersection_volume(source, mate)
-        joined = source.fuse(mate).clean()
-        source_metrics = shape_metrics(source)
-        joined_metrics = shape_metrics(joined)
-        volume_scale = (
-            joined_metrics["volume_cm3"] / source_metrics["volume_cm3"]
+    components = {}
+    for name in names:
+        receipt = output_root / f"{name}.derive.json"
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "derive-step-component",
+            "--component",
+            name,
+            "--source",
+            str(source_root / f"{name}.step"),
+            "--output",
+            str(output_root / f"{name}.step"),
+            "--receipt",
+            str(receipt),
+            "--transform-receipt",
+            str(transform_path),
+            "--tolerance-cm3",
+            str(args.tolerance_cm3),
+        ]
+        completed = subprocess.run(
+            command, capture_output=True, text=True, timeout=7200
         )
-        row = {
-            "component": name,
-            "source_mate_intersection_volume_cm3": common_volume,
-            "joined_solid_count": joined_metrics["solid_count"],
-            "volume_scale_90d_over_45d": volume_scale,
-            "source_surface_area_cm2": source_metrics["surface_area_cm2"],
-            "joined_surface_area_cm2": joined_metrics["surface_area_cm2"],
-            "joined_valid_brep": joined_metrics["valid_brep"],
-        }
-        if (
-            common_volume > args.tolerance_cm3
-            or not joined_metrics["valid_brep"]
-            or joined_metrics["solid_count"] != 1
-            or not math.isclose(
-                volume_scale, 2.0, rel_tol=2.0e-8, abs_tol=1.0e-8
-            )
-        ):
+        if completed.returncode != 0:
             raise RuntimeError(
-                f"90-degree seam expansion failed for {name}: {row}"
+                f"derive component {name} exited {completed.returncode}: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
             )
-        expanded[name] = joined
-        expansion_rows.append(row)
-        cq.exporters.export(joined, str(output_root / f"{name}.step"))
+        child = json.loads(receipt.read_text(encoding="utf-8"))
+        if (
+            child.get("classification")
+            != "WISTELL_D_90D_COMPONENT_DERIVATION_PASS"
+        ):
+            raise RuntimeError(f"component receipt is not accepted: {name}")
+        expansion_rows.append(child["seam_validation"])
+        components[name] = child["joined_metrics"]
 
-    combined = cq.Compound.makeCompound(list(expanded.values()))
     combined_path = output_root / "wistell_d_90d_symmetry_derived.step"
-    cq.exporters.export(combined, str(combined_path))
-    pairwise = complete_pairwise_audit(
-        expanded, intersection_volume, tolerance_cm3=args.tolerance_cm3
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "combine-step-components",
+            "--root",
+            str(output_root),
+            "--components",
+            ",".join(names),
+            "--output",
+            str(combined_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=7200,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"combined STEP child exited {completed.returncode}: "
+            f"{completed.stderr.strip() or completed.stdout.strip()}"
+        )
+    pairwise = streaming_step_pairwise_audit(
+        output_root, names, tolerance_cm3=args.tolerance_cm3
     )
     require_complete_pairwise_acceptance(pairwise)
-    components = {
-        name: shape_metrics(shape) for name, shape in expanded.items()
-    }
     artifacts = artifact_rows(
         output_root,
         {
@@ -2113,7 +2326,7 @@ def derive_90(args: argparse.Namespace) -> None:
             "transform_receipt": transform_path,
             **{
                 f"component_step:{name}": output_root / f"{name}.step"
-                for name in expanded
+                for name in names
             },
         },
     )
@@ -2123,6 +2336,13 @@ def derive_90(args: argparse.Namespace) -> None:
         "generated_utc": utc_now(),
         "classification": "WISTELL_D_90D_TRANSPORT_SOURCE_CAD_PASS",
         "source": source_manifest["source"],
+        "source_acceptance": {
+            "path": str(source_root / "SOURCE_CAD_61X121_ACCEPTANCE.json"),
+            "sha256": sha256_file(
+                source_root / "SOURCE_CAD_61X121_ACCEPTANCE.json"
+            ),
+            "component_steps_reverified": source_component_artifacts,
+        },
         "model": {
             **source_manifest["model"],
             "role": "derived_90_degree_one_field_period_transport_geometry",
@@ -2150,6 +2370,8 @@ def derive_90(args: argparse.Namespace) -> None:
             "derived_support": "canonical_plus_half_period_mate",
             "derived_toroidal_extent_degrees": [0.0, 90.0],
             "rate_scope": "UNRESOLVED_REQUIRES_LANE_01B_NORMALIZATION",
+            "expanded_90_degree_source_mesh": "NOT_YET_MATERIALIZED",
+            "transport_eligible": False,
         },
         "physical_boundaries": {
             "toroidal_start": "field_period_boundary_at_0_degrees",
@@ -2843,6 +3065,23 @@ def parse_args() -> argparse.Namespace:
     one_pair.add_argument("--left", required=True)
     one_pair.add_argument("--right", required=True)
     one_pair.set_defaults(function=audit_step_pair)
+
+    derive_component = subparsers.add_parser("derive-step-component")
+    derive_component.add_argument("--component", required=True)
+    derive_component.add_argument("--source", required=True)
+    derive_component.add_argument("--output", required=True)
+    derive_component.add_argument("--receipt", required=True)
+    derive_component.add_argument("--transform-receipt", required=True)
+    derive_component.add_argument(
+        "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
+    )
+    derive_component.set_defaults(function=derive_step_component)
+
+    combine = subparsers.add_parser("combine-step-components")
+    combine.add_argument("--root", required=True)
+    combine.add_argument("--components", required=True)
+    combine.add_argument("--output", required=True)
+    combine.set_defaults(function=combine_step_components)
 
     build = subparsers.add_parser("build-45")
     build.add_argument("--input-root", required=True)

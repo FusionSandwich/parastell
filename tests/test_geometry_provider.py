@@ -114,6 +114,79 @@ def test_build_45_uses_process_isolated_pairwise_audit():
     assert "del combined, components, stellarator" in source
 
 
+def _half_period_receipt() -> dict:
+    from scripts.wistell_d_geometry_lane import WISTELL_D_SOURCE_HASHES
+
+    matrix = [
+        [0.0, 1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+    return {
+        "classification": "WISTELL_D_EXACT_HALF_PERIOD_TRANSFORM_PASS",
+        "evidence": {
+            "nfp": 4,
+            "stellarator_symmetric": True,
+            "phase_origin_degrees": 0.0,
+            "canonical_domain_degrees": [0.0, 45.0],
+            "derived_domain_degrees": [45.0, 90.0],
+            "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        },
+        "transforms": {
+            "half_period_mate": {
+                "matrix": matrix,
+                "inverse_matrix": matrix,
+            }
+        },
+    }
+
+
+def test_half_period_transform_rejects_accepted_label_with_wrong_matrix():
+    from scripts.wistell_d_geometry_lane import (
+        validate_half_period_transform_receipt,
+    )
+
+    receipt = _half_period_receipt()
+    receipt["transforms"]["half_period_mate"]["matrix"][0][0] = 1.0
+    with pytest.raises(ValueError, match="qualified map"):
+        validate_half_period_transform_receipt(receipt)
+
+
+def test_accepted_component_steps_are_rehashed_before_derivation(tmp_path):
+    from parastell.geometry_provider import sha256_file
+    from scripts.wistell_d_geometry_lane import verify_accepted_component_steps
+
+    step = tmp_path / "chamber.step"
+    step.write_bytes(b"accepted")
+    manifest = {
+        "artifacts": {
+            "component_step:chamber": {
+                "path": str(step.resolve()),
+                "bytes": step.stat().st_size,
+                "sha256": sha256_file(step),
+            }
+        }
+    }
+    verify_accepted_component_steps(tmp_path, manifest, ("chamber",))
+    step.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="hash/size mismatch"):
+        verify_accepted_component_steps(tmp_path, manifest, ("chamber",))
+
+
+def test_derive_90_parent_does_not_load_or_retain_cad_shapes():
+    import inspect
+
+    from scripts.wistell_d_geometry_lane import derive_90
+
+    source = inspect.getsource(derive_90)
+    assert "derive-step-component" in source
+    assert "streaming_step_pairwise_audit(" in source
+    assert "load_step_components(" not in source
+    assert "complete_pairwise_audit(" not in source
+    assert '"transport_eligible": False' in source
+
+
 def _geometry_build_config() -> dict:
     return {
         "schema": "parastell.geometry_build_config/v1.0.0",
