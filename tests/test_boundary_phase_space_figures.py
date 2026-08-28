@@ -8,6 +8,22 @@ from parastell.boundary_phase_space_figures import validate_figure_inputs
 from parastell.boundary_phase_space_figures import write_phase_space_figures
 
 
+def _phase_manifest(histories=10):
+    return {
+        "schema": "parastell.openmc16_surface_phase_space/v1.0.0",
+        "raw_phase_space_pass": True,
+        "source_histories": histories,
+        "history_binding": {
+            "kind": "fixed_source_run",
+            "run_id": "bounded-test",
+            "source_histories": histories,
+            "openmc_version": "0.16.0",
+            "settings_payload_sha256": "a" * 64,
+            "statepoint_sha256": "b" * 64,
+        },
+    }
+
+
 def _records():
     return {
         "position_global_cm": np.asarray(
@@ -38,7 +54,9 @@ def _records():
 def test_phase_space_validation_preserves_all_required_correlations():
     values = validate_figure_inputs(_records())
     summary = summarize_phase_space(
-        values, source_histories=10, grazing_tolerance=1.0e-8
+        values,
+        phase_space_manifest=_phase_manifest(),
+        grazing_tolerance=1.0e-8,
     )
 
     assert summary["record_count"] == 3
@@ -77,7 +95,9 @@ def test_phase_space_validation_is_global_frame_and_surface_id_neutral():
 
     values = validate_figure_inputs(records)
     summary = summarize_phase_space(
-        values, source_histories=10, grazing_tolerance=1.0e-8
+        values,
+        phase_space_manifest=_phase_manifest(),
+        grazing_tolerance=1.0e-8,
     )
 
     assert values.mu.tolist() == [-1.0, 1.0, 0.0]
@@ -109,7 +129,7 @@ def test_matched_figures_are_hash_bound(tmp_path):
         geometry_label="synthetic-variant",
         geometry_sha256="a" * 64,
         source_bank_sha256="b" * 64,
-        source_histories=10,
+        phase_space_manifest=_phase_manifest(),
     )
 
     assert len(manifest["figures"]) == 4
@@ -117,3 +137,40 @@ def test_matched_figures_are_hash_bound(tmp_path):
         (tmp_path / row["path"]).is_file() for row in manifest["figures"]
     )
     assert (tmp_path / "FIGURE_MANIFEST.json").is_file()
+
+
+def test_summary_rejects_independently_mismatched_history_binding():
+    values = validate_figure_inputs(_records())
+    manifest = _phase_manifest(histories=10)
+    manifest["history_binding"]["source_histories"] = 11
+
+    with pytest.raises(ValueError, match="manifest and history binding"):
+        summarize_phase_space(
+            values,
+            phase_space_manifest=manifest,
+            grazing_tolerance=1.0e-8,
+        )
+
+
+def test_summary_rejects_legacy_independent_history_count():
+    values = validate_figure_inputs(_records())
+
+    with pytest.raises(TypeError, match="source_histories"):
+        summarize_phase_space(
+            values,
+            source_histories=10,
+            grazing_tolerance=1.0e-8,
+        )
+
+
+def test_summary_rejects_mismatched_derived_normalized_weights():
+    records = _records()
+    records["weight_per_source_history"] = np.asarray([0.1, 0.2, 0.4])
+    values = validate_figure_inputs(records)
+
+    with pytest.raises(ValueError, match="weight_per_source_history"):
+        summarize_phase_space(
+            values,
+            phase_space_manifest=_phase_manifest(),
+            grazing_tolerance=1.0e-8,
+        )

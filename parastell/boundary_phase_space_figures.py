@@ -30,6 +30,7 @@ class BoundaryFigureInputs:
     energy_eV: np.ndarray
     time_s: np.ndarray
     weight: np.ndarray
+    weight_per_source_history: np.ndarray | None
     particle: np.ndarray
     surface_id: np.ndarray
     mu: np.ndarray
@@ -101,6 +102,7 @@ def validate_figure_inputs(
     energy = _array(records, "energy_eV").astype(float)
     time = _array(records, "time_s").astype(float)
     weight = _array_alias(records, ("openmc_weight", "weight")).astype(float)
+    normalized_weight = _optional_array(records, "weight_per_source_history")
     particle = _array_alias(records, ("particle_pdg", "particle"))
     surface_id = _array(records, "surface_id").astype(np.int64)
     supplied_mu = _optional_array(records, "mu")
@@ -117,6 +119,7 @@ def validate_figure_inputs(
             energy,
             time,
             weight,
+            normalized_weight,
             particle,
             surface_id,
             supplied_mu,
@@ -126,6 +129,8 @@ def validate_figure_inputs(
         ]
     )
     numeric = [position, direction, normal, energy, time, weight]
+    if normalized_weight is not None:
+        numeric.append(normalized_weight)
     if local is not None:
         numeric.append(local)
     if barycentric is not None:
@@ -169,6 +174,11 @@ def validate_figure_inputs(
         energy_eV=energy,
         time_s=time,
         weight=weight,
+        weight_per_source_history=(
+            None
+            if normalized_weight is None
+            else normalized_weight.astype(float)
+        ),
         particle=particle,
         surface_id=surface_id,
         mu=mu,
@@ -183,19 +193,28 @@ def validate_figure_inputs(
 def summarize_phase_space(
     values: BoundaryFigureInputs,
     *,
-    source_histories: int,
+    phase_space_manifest: Mapping[str, Any],
     grazing_tolerance: float,
 ) -> dict[str, Any]:
     """Return auditable finite-list statistics without marginal resampling."""
 
-    if source_histories <= 0:
-        raise ValueError("source_histories must be positive")
+    source_histories = _bound_source_histories(phase_space_manifest)
     if not 0.0 <= grazing_tolerance < 1.0:
         raise ValueError("grazing_tolerance must be in [0, 1)")
     incoming = values.mu < -grazing_tolerance
     outgoing = values.mu > grazing_tolerance
     grazing = ~(incoming | outgoing)
     normalized_weight = values.weight / float(source_histories)
+    if values.weight_per_source_history is not None and not np.allclose(
+        values.weight_per_source_history,
+        normalized_weight,
+        atol=0.0,
+        rtol=1.0e-14,
+    ):
+        raise ValueError(
+            "weight_per_source_history disagrees with raw OpenMC weight "
+            "divided by the exact history binding"
+        )
     return {
         "record_count": int(len(values.mu)),
         "incoming_count": int(incoming.sum()),
@@ -219,6 +238,46 @@ def summarize_phase_space(
         "barycentric_localization_present": values.barycentric is not None,
         "local_coordinates_present": values.local_position_cm is not None,
     }
+
+
+def _bound_source_histories(manifest: Mapping[str, Any]) -> int:
+    """Return the exact history count from a strict phase-space manifest."""
+
+    if not isinstance(manifest, Mapping):
+        raise ValueError("verified phase_space_manifest is required")
+    expected_schema = "parastell.openmc16_surface_phase_space/v1.0.0"
+    if manifest.get("schema") != expected_schema:
+        raise ValueError("unsupported phase-space manifest schema")
+    if manifest.get("raw_phase_space_pass") is not True:
+        raise ValueError("phase-space manifest is not verified PASS")
+    histories = manifest.get("source_histories")
+    if (
+        isinstance(histories, bool)
+        or not isinstance(histories, (int, np.integer))
+        or int(histories) <= 0
+    ):
+        raise ValueError(
+            "manifest source_histories must be a positive integer"
+        )
+    binding = manifest.get("history_binding")
+    if (
+        not isinstance(binding, Mapping)
+        or binding.get("kind") != "fixed_source_run"
+    ):
+        raise ValueError("a fixed-source-run history binding is required")
+    if binding.get("source_histories") != histories:
+        raise ValueError("phase manifest and history binding disagree")
+    if binding.get("openmc_version") != "0.16.0":
+        raise ValueError("history binding is not OpenMC 0.16.0")
+    if not str(binding.get("run_id", "")).strip():
+        raise ValueError("history binding omits run_id")
+    for name in ("settings_payload_sha256", "statepoint_sha256"):
+        digest = str(binding.get(name, "")).lower()
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
+            raise ValueError(f"history binding has invalid {name}")
+    return int(histories)
 
 
 def _sha256(path: Path) -> str:
@@ -248,7 +307,7 @@ def write_phase_space_figures(
     geometry_label: str,
     geometry_sha256: str,
     source_bank_sha256: str,
-    source_histories: int,
+    phase_space_manifest: Mapping[str, Any],
     grazing_tolerance: float = 1.0e-8,
     status: str = "BOUNDED_TEST_ONLY",
 ) -> dict[str, Any]:
@@ -259,7 +318,7 @@ def write_phase_space_figures(
     values = validate_figure_inputs(records)
     summary = summarize_phase_space(
         values,
-        source_histories=source_histories,
+        phase_space_manifest=phase_space_manifest,
         grazing_tolerance=grazing_tolerance,
     )
     output = Path(output_directory)
@@ -389,6 +448,7 @@ def write_phase_space_figures(
         "geometry_label": geometry_label,
         "geometry_sha256": geometry_sha256,
         "source_bank_sha256": source_bank_sha256,
+        "phase_space_history_binding": phase_space_manifest["history_binding"],
         "status": status,
         "grazing_tolerance": grazing_tolerance,
         "summary": summary,
