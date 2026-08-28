@@ -278,3 +278,21 @@
   exporter, consumer-neutral handoff validation, and explicit replay/physics
   firewalls. The accepted 90-degree physical statepoint and non-flux response
   exporter remain pending.
+
+## 2026-08-28 — Original-repository recovery and pre-mesh topology hardening
+
+- Serial/root-owned: repository ownership was reasserted at
+  `FusionSandwich/parastell`, worktree
+  `D:\parastell-worktrees\magnet-radiation-valid-baseline-and-instrumentation`,
+  descended from required SHA `dd3c2c5`. The root alone retains accepted-H5M
+  selection authority.
+- Safe parallel work: one read-only reviewer adversarially audited the new
+  pre-mesh OCC certificate. It found incidence, manifold, external-role,
+  periodic-area, and seam-occurrence gaps; root corrected them in the
+  principal worktree and retained post-mesh/native/OpenMC gates separately.
+- Scheduler/local jobs: none. No Docker geometry, Bateman geometry, OpenMC,
+  activation, or downstream transport job was launched.
+- Shared-state risks: `wistell-d-openmc` and `DPA_workflow` are out of scope for
+  this implementation. The no-imprint H5M remains quarantined. Any remote
+  successor requires a fresh create-only root, exact process-absence check,
+  current physical-core and memory ceilings, and independent terminal review.

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from datetime import datetime, timezone
 import hashlib
+from importlib.metadata import PackageNotFoundError, version
 import json
 import math
 import os
 from pathlib import Path
+import sys
 import time
 
 
@@ -63,6 +66,9 @@ REQUIRED_THREAD_ENVIRONMENT = {
 }
 VOLUME_RELATIVE_TOLERANCE = 1.0e-7
 VOLUME_ABSOLUTE_TOLERANCE_CM3 = 1.0e-3
+PERIODIC_PLANE_TOLERANCE_CM = 1.0e-5
+PERIODIC_AREA_RELATIVE_TOLERANCE = 1.0e-6
+PERIODIC_AREA_ABSOLUTE_TOLERANCE_CM2 = 1.0e-3
 
 
 def sha256_file(path: Path) -> str:
@@ -72,6 +78,22 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _runtime_identity() -> dict:
+    packages = {}
+    for name in ("cadquery", "cad_to_dagmc", "gmsh", "numpy", "pymoab"):
+        try:
+            packages[name] = version(name)
+        except PackageNotFoundError:
+            packages[name] = "NOT_DISTRIBUTION_DISCOVERABLE"
+    executable = Path(sys.executable).resolve()
+    return {
+        "python_executable": str(executable),
+        "python_sha256": sha256_file(executable),
+        "python_version": sys.version,
+        "packages": packages,
+    }
 
 
 def _expected_volumes(manifest: dict) -> dict[str, float]:
@@ -221,6 +243,365 @@ def _fragment_one_to_one(gmsh, ordered_volumes):
     return fragmented
 
 
+def _audit_fragmented_surface_topology(gmsh, fragmented):
+    """Audit pre-mesh OCC incidence and per-volume shell manifoldness.
+
+    A successful OCC BooleanFragments call is not sufficient evidence that the
+    downstream mesh or H5M is valid. This bounded pre-mesh gate cross-checks
+    upward/downward incidence, rejects exposed internal radial faces, and
+    requires connected, edge-closed shells before meshing begins. Native H5M
+    and OpenMC gates remain mandatory.
+    """
+    volume_tags = [int(tag) for dimension, tag in fragmented if dimension == 3]
+    if len(volume_tags) != len(COMPONENT_ORDER) or len(
+        set(volume_tags)
+    ) != len(volume_tags):
+        raise RuntimeError(
+            "fragmented volume order is incomplete or ambiguous"
+        )
+    component_by_volume = {
+        tag: COMPONENT_ORDER[index] for index, tag in enumerate(volume_tags)
+    }
+    component_index = {
+        component: index for index, component in enumerate(COMPONENT_ORDER)
+    }
+    surfaces = sorted(
+        (int(dimension), int(tag))
+        for dimension, tag in gmsh.model.getEntities(2)
+    )
+    if not surfaces:
+        raise RuntimeError("fragmented model contains no surfaces")
+
+    surface_curves = {}
+    surface_oriented_curves = {}
+    for dimension, surface_tag in surfaces:
+        boundaries = gmsh.model.getBoundary(
+            [(dimension, surface_tag)],
+            combined=False,
+            oriented=True,
+            recursive=False,
+        )
+        oriented_curves = [
+            int(tag)
+            for boundary_dimension, tag in boundaries
+            if int(boundary_dimension) == 1
+        ]
+        curves = sorted(abs(tag) for tag in oriented_curves)
+        if not curves:
+            raise RuntimeError(f"surface {surface_tag} has no boundary curves")
+        surface_curves[surface_tag] = curves
+        surface_oriented_curves[surface_tag] = oriented_curves
+
+    rows = []
+    observed_interfaces = set()
+    periodic_external_by_component = {
+        component: set() for component in COMPONENT_ORDER
+    }
+    nonperiodic_external_by_component = {
+        component: 0 for component in COMPONENT_ORDER
+    }
+    for dimension, surface_tag in surfaces:
+        upward, _ = gmsh.model.getAdjacencies(dimension, surface_tag)
+        owner_tags = sorted({int(tag) for tag in upward})
+        if not owner_tags or len(owner_tags) > 2:
+            raise RuntimeError(
+                f"surface {surface_tag} has {len(owner_tags)} owning volumes"
+            )
+        unknown = sorted(set(owner_tags) - set(component_by_volume))
+        if unknown:
+            raise RuntimeError(
+                f"surface {surface_tag} has unknown owning volumes {unknown}"
+            )
+        area = float(gmsh.model.occ.getMass(dimension, surface_tag))
+        if not math.isfinite(area) or area <= 0.0:
+            raise RuntimeError(
+                f"surface {surface_tag} has non-positive or non-finite area"
+            )
+        owners = [component_by_volume[tag] for tag in owner_tags]
+        bounds = [
+            float(value)
+            for value in gmsh.model.getBoundingBox(dimension, surface_tag)
+        ]
+        if len(bounds) != 6 or not all(
+            math.isfinite(value) for value in bounds
+        ):
+            raise RuntimeError(f"surface {surface_tag} has invalid bounds")
+        x_min, y_min, _, x_max, y_max, _ = bounds
+        periodic_plane = None
+        if max(abs(y_min), abs(y_max)) <= PERIODIC_PLANE_TOLERANCE_CM:
+            periodic_plane = "phi_0"
+        elif max(abs(x_min), abs(x_max)) <= PERIODIC_PLANE_TOLERANCE_CM:
+            periodic_plane = "phi_90"
+        role = "external_boundary"
+        if len(owners) == 2:
+            owner_indices = sorted(component_index[name] for name in owners)
+            if owner_indices[1] - owner_indices[0] != 1:
+                raise RuntimeError(
+                    f"surface {surface_tag} joins nonadjacent components "
+                    f"{owners}"
+                )
+            interface = tuple(
+                COMPONENT_ORDER[index] for index in owner_indices
+            )
+            observed_interfaces.add(interface)
+            role = "shared_material_interface"
+        else:
+            owner = owners[0]
+            if periodic_plane is None:
+                nonperiodic_external_by_component[owner] += 1
+                if owner != COMPONENT_ORDER[-1]:
+                    raise RuntimeError(
+                        f"component {owner} has nonperiodic external surface "
+                        f"{surface_tag}"
+                    )
+            else:
+                periodic_external_by_component[owner].add(periodic_plane)
+        rows.append(
+            {
+                "surface_tag": surface_tag,
+                "owner_volume_tags": owner_tags,
+                "owner_components": owners,
+                "owner_multiplicity": len(owner_tags),
+                "area_cm2": area,
+                "bounding_box_cm": bounds,
+                "periodic_plane": periodic_plane,
+                "role": role,
+            }
+        )
+
+    expected_interfaces = {
+        (COMPONENT_ORDER[index], COMPONENT_ORDER[index + 1])
+        for index in range(len(COMPONENT_ORDER) - 1)
+    }
+    missing = sorted(expected_interfaces - observed_interfaces)
+    unexpected = sorted(observed_interfaces - expected_interfaces)
+    if missing or unexpected:
+        raise RuntimeError(
+            "fragmented radial interfaces are incomplete: "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    missing_periodic_planes = {
+        component: sorted({"phi_0", "phi_90"} - planes)
+        for component, planes in periodic_external_by_component.items()
+        if planes != {"phi_0", "phi_90"}
+    }
+    if missing_periodic_planes:
+        raise RuntimeError(
+            "fragmented volumes do not expose both periodic end planes: "
+            f"{missing_periodic_planes}"
+        )
+    periodic_area_evidence = {}
+    for component in COMPONENT_ORDER:
+        plane_areas = {
+            plane: sum(
+                row["area_cm2"]
+                for row in rows
+                if row["owner_components"] == [component]
+                and row["periodic_plane"] == plane
+            )
+            for plane in ("phi_0", "phi_90")
+        }
+        matched = math.isclose(
+            plane_areas["phi_0"],
+            plane_areas["phi_90"],
+            rel_tol=PERIODIC_AREA_RELATIVE_TOLERANCE,
+            abs_tol=PERIODIC_AREA_ABSOLUTE_TOLERANCE_CM2,
+        )
+        if not matched:
+            raise RuntimeError(
+                f"component {component} periodic end areas differ: "
+                f"{plane_areas}"
+            )
+        periodic_area_evidence[component] = {
+            **plane_areas,
+            "relative_tolerance": PERIODIC_AREA_RELATIVE_TOLERANCE,
+            "absolute_tolerance_cm2": (PERIODIC_AREA_ABSOLUTE_TOLERANCE_CM2),
+            "pass": True,
+        }
+    if nonperiodic_external_by_component[COMPONENT_ORDER[-1]] < 1:
+        raise RuntimeError("outer magnet envelope has no external surface")
+
+    surfaces_by_tag = {row["surface_tag"]: row for row in rows}
+    shell_evidence = []
+    for volume_tag in volume_tags:
+        component = component_by_volume[volume_tag]
+        boundaries = gmsh.model.getBoundary(
+            [(3, volume_tag)],
+            combined=False,
+            oriented=True,
+            recursive=False,
+        )
+        oriented_boundary_surfaces = [
+            int(tag) for dimension, tag in boundaries if int(dimension) == 2
+        ]
+        boundary_surfaces = sorted(
+            abs(tag) for tag in oriented_boundary_surfaces
+        )
+        if len(boundary_surfaces) != len(set(boundary_surfaces)):
+            raise RuntimeError(
+                f"component {component} has duplicate boundary surfaces"
+            )
+        adjacency_surfaces = sorted(
+            row["surface_tag"]
+            for row in rows
+            if volume_tag in row["owner_volume_tags"]
+        )
+        if boundary_surfaces != adjacency_surfaces:
+            raise RuntimeError(
+                f"component {component} boundary/adjacency surfaces differ"
+            )
+        curve_counts, curve_orientation_sums = _curve_manifold_evidence(
+            oriented_boundary_surfaces, surface_oriented_curves
+        )
+        connected = _surface_set_is_connected(
+            boundary_surfaces, surface_curves
+        )
+        if not connected:
+            raise RuntimeError(f"component {component} shell is disconnected")
+        shell_evidence.append(
+            {
+                "component": component,
+                "volume_tag": volume_tag,
+                "surface_count": len(boundary_surfaces),
+                "curve_count": len(curve_counts),
+                "edge_multiplicity_two": True,
+                "oriented_edge_cancellation": all(
+                    value == 0 for value in curve_orientation_sums.values()
+                ),
+                "connected": True,
+            }
+        )
+
+    interface_evidence = []
+    for left, right in sorted(expected_interfaces):
+        interface_surfaces = sorted(
+            row["surface_tag"]
+            for row in rows
+            if set(row["owner_components"]) == {left, right}
+        )
+        if not _surface_set_is_connected(interface_surfaces, surface_curves):
+            raise RuntimeError(f"interface {left}/{right} is disconnected")
+        interface_evidence.append(
+            {
+                "components": [left, right],
+                "surface_count": len(interface_surfaces),
+                "area_cm2": sum(
+                    surfaces_by_tag[tag]["area_cm2"]
+                    for tag in interface_surfaces
+                ),
+                "connected": True,
+            }
+        )
+    magnet_external_surfaces = sorted(
+        row["surface_tag"]
+        for row in rows
+        if row["owner_components"] == [COMPONENT_ORDER[-1]]
+        and row["periodic_plane"] is None
+    )
+    if not _surface_set_is_connected(magnet_external_surfaces, surface_curves):
+        raise RuntimeError("outer magnet envelope is disconnected")
+    interface_counts = {
+        f"{left}__{right}": sum(
+            row["owner_components"] == [left, right]
+            or row["owner_components"] == [right, left]
+            for row in rows
+        )
+        for left, right in sorted(expected_interfaces)
+    }
+    return {
+        "status": "PREMESH_OCC_INCIDENCE_AND_MANIFOLD_PASS",
+        "volume_count": len(volume_tags),
+        "surface_count": len(rows),
+        "external_surface_count": sum(
+            row["owner_multiplicity"] == 1 for row in rows
+        ),
+        "shared_surface_count": sum(
+            row["owner_multiplicity"] == 2 for row in rows
+        ),
+        "expected_radial_interfaces": [
+            list(pair) for pair in sorted(expected_interfaces)
+        ],
+        "interface_surface_counts": interface_counts,
+        "periodic_external_planes": {
+            component: sorted(planes)
+            for component, planes in periodic_external_by_component.items()
+        },
+        "periodic_end_area_pairs": periodic_area_evidence,
+        "nonperiodic_external_surface_counts": (
+            nonperiodic_external_by_component
+        ),
+        "volume_shells": shell_evidence,
+        "interfaces": interface_evidence,
+        "outer_magnet_envelope": {
+            "surface_tags": magnet_external_surfaces,
+            "surface_count": len(magnet_external_surfaces),
+            "area_cm2": sum(
+                surfaces_by_tag[tag]["area_cm2"]
+                for tag in magnet_external_surfaces
+            ),
+            "connected": True,
+        },
+        "limitations": [
+            "does_not_qualify_surface_mesh_nodes_or_elements",
+            "does_not_qualify_DAGMC_surface_senses_or_watertightness",
+            "does_not_qualify_overlap_or_OpenMC_navigation",
+        ],
+        "surfaces": rows,
+    }
+
+
+def _surface_set_is_connected(surface_tags, surface_curves):
+    """Return whether surfaces form one component through shared curves."""
+    if not surface_tags:
+        return False
+    remaining = set(surface_tags)
+    visited = {remaining.pop()}
+    while remaining:
+        visited_curves = {
+            curve for tag in visited for curve in surface_curves[tag]
+        }
+        neighbors = {
+            tag
+            for tag in remaining
+            if visited_curves.intersection(surface_curves[tag])
+        }
+        if not neighbors:
+            return False
+        visited.update(neighbors)
+        remaining.difference_update(neighbors)
+    return True
+
+
+def _curve_manifold_evidence(oriented_surface_tags, surface_oriented_curves):
+    """Require two oppositely oriented curve uses in a volume shell."""
+    counts = Counter()
+    orientation_sums = Counter()
+    for signed_surface_tag in oriented_surface_tags:
+        surface_sign = 1 if signed_surface_tag > 0 else -1
+        surface_tag = abs(signed_surface_tag)
+        for signed_curve_tag in surface_oriented_curves[surface_tag]:
+            curve_tag = abs(signed_curve_tag)
+            curve_sign = 1 if signed_curve_tag > 0 else -1
+            counts[curve_tag] += 1
+            orientation_sums[curve_tag] += surface_sign * curve_sign
+    bad_counts = {
+        str(curve): count
+        for curve, count in sorted(counts.items())
+        if count != 2
+    }
+    bad_orientation = {
+        str(curve): value
+        for curve, value in sorted(orientation_sums.items())
+        if value != 0
+    }
+    if bad_counts or bad_orientation:
+        raise RuntimeError(
+            "shell curve manifold failed: "
+            f"multiplicity={bad_counts}, orientation={bad_orientation}"
+        )
+    return counts, orientation_sums
+
+
 def export(args: argparse.Namespace) -> None:
     source_root = Path(args.source_root).resolve()
     output_root = Path(args.output_root).resolve()
@@ -316,6 +697,37 @@ def export(args: argparse.Namespace) -> None:
             raise RuntimeError(
                 "imprinting changed a component physical volume"
             )
+        topology_evidence = _audit_fragmented_surface_topology(
+            gmsh, fragmented
+        )
+        premesh_receipt = {
+            "schema": "wistell_d.direct90_premesh_topology/v1.0.0",
+            "status": "PREMESH_OCC_MANIFOLD_PASS_MESH_PENDING",
+            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "transport_eligible": False,
+            "source_manifest_sha256": REFERENCE_MANIFEST_SHA256,
+            "producer_sha256": sha256_file(Path(__file__).resolve()),
+            "runtime": _runtime_identity(),
+            "topology_controls": {
+                "periodic_plane_tolerance_cm": (PERIODIC_PLANE_TOLERANCE_CM),
+                "periodic_area_relative_tolerance": (
+                    PERIODIC_AREA_RELATIVE_TOLERANCE
+                ),
+                "periodic_area_absolute_tolerance_cm2": (
+                    PERIODIC_AREA_ABSOLUTE_TOLERANCE_CM2
+                ),
+            },
+            "source_artifacts": source_artifacts,
+            "import_assignment": import_evidence,
+            "fragment_assignment": fragment_evidence,
+            "topology": topology_evidence,
+            "required_successor_gate": "GMSH_SURFACE_MESH",
+        }
+        with (output_root / "PREMESH_TOPOLOGY.json").open(
+            "x", encoding="utf-8"
+        ) as stream:
+            json.dump(premesh_receipt, stream, indent=2, sort_keys=True)
+            stream.write("\n")
         cad_to_dagmc.set_sizes_for_mesh(
             gmsh,
             min_mesh_size=args.min_mesh_size_cm,
@@ -368,6 +780,11 @@ def export(args: argparse.Namespace) -> None:
         "source_artifacts": source_artifacts,
         "import_assignment": import_evidence,
         "fragment_assignment": fragment_evidence,
+        "premesh_topology": {
+            "path": str(output_root / "PREMESH_TOPOLOGY.json"),
+            "sha256": sha256_file(output_root / "PREMESH_TOPOLOGY.json"),
+            "status": topology_evidence["status"],
+        },
         "h5m": {
             "path": str(h5m_path),
             "bytes": h5m_path.stat().st_size,
