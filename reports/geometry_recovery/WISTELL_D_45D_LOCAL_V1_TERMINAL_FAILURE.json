@@ -1,0 +1,22 @@
+{
+  "schema": "wistell_d.local_source_cad_attempt_failure/v1.0.0",
+  "attempt_id": "source-cad-45d-61x121-v1",
+  "classification": "FAIL_CLOSED_MEMORY_FLOOR_DURING_COMPLETE_PAIRWISE_AUDIT",
+  "selectable": false,
+  "reusable_as_accepted_geometry": false,
+  "artifact_root": "D:\\parastell-artifacts\\prompt7r-wistell90-20260828\\source-cad-45d-61x121-v1",
+  "geometry_inputs_changed": false,
+  "geometry_export_completed": true,
+  "exported_file_count_before_stop": 11,
+  "exported_bytes_before_stop": 1677232126,
+  "acceptance_receipt_present": false,
+  "process_id": 5212,
+  "stop_was_operator_initiated": true,
+  "minimum_observed_free_ram_bytes": 585973760,
+  "declared_free_ram_floor_bytes": 2147483648,
+  "failure_phase": "complete 36-pair OpenCascade intersection-volume audit",
+  "successor_rule": "Use a fresh create-only v2 root and a streaming one-pair-at-a-time audit; do not reuse or relabel v1.",
+  "openmc_started": false,
+  "dagmc_meshing_started": false,
+  "production_transport_started": false
+}

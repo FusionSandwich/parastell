@@ -31,6 +31,78 @@ from scripts.wistell_d_geometry_lane import (
 )
 
 
+def test_streaming_step_pairwise_audit_matches_complete_contract(tmp_path):
+    from scripts.wistell_d_geometry_lane import streaming_step_pairwise_audit
+
+    names = ("a", "b", "c")
+    values = {"a": 1.0, "b": 2.0, "c": 3.0}
+    loaded = []
+
+    class Shape:
+        def __init__(self, name):
+            self.name = name
+
+        def intersect(self, other):
+            class Intersection:
+                def isNull(self):
+                    return False
+
+                def Volume(self):
+                    return (
+                        0.0 if {self_name, other_name} != {"a", "c"} else 0.25
+                    )
+
+            self_name = self.name
+            other_name = other.name
+            return Intersection()
+
+    def loader(path):
+        loaded.append(path.name)
+        return Shape(path.stem)
+
+    report = streaming_step_pairwise_audit(
+        tmp_path, names, tolerance_cm3=1.0e-5, loader=loader
+    )
+
+    assert loaded == [
+        "a.step",
+        "b.step",
+        "a.step",
+        "c.step",
+        "b.step",
+        "c.step",
+    ]
+    assert report["expected_pair_count"] == 3
+    assert report["evaluated_pair_count"] == 3
+    assert report["boolean_failure_count"] == 0
+    assert report["overlap_count"] == 1
+    assert report["nonadjacent_overlap_count"] == 1
+    assert report["execution"] == "streaming_one_step_pair_at_a_time"
+    assert report["native_memory_isolation"] == "one_subprocess_per_pair"
+
+
+def test_streaming_step_pairwise_audit_isolates_real_step_pairs(tmp_path):
+    import cadquery as cq
+
+    from scripts.wistell_d_geometry_lane import streaming_step_pairwise_audit
+
+    cq.exporters.export(
+        cq.Workplane("XY").box(1, 1, 1), str(tmp_path / "a.step")
+    )
+    cq.exporters.export(
+        cq.Workplane("XY").box(1, 1, 1).translate((2, 0, 0)),
+        str(tmp_path / "b.step"),
+    )
+    report = streaming_step_pairwise_audit(
+        tmp_path, ("a", "b"), tolerance_cm3=1.0e-5
+    )
+
+    assert report["evaluated_pair_count"] == 1
+    assert report["boolean_failure_count"] == 0
+    assert report["overlap_count"] == 0
+    assert report["pairs"][0]["intersection_volume_cm3"] == 0.0
+
+
 def _geometry_build_config() -> dict:
     return {
         "schema": "parastell.geometry_build_config/v1.0.0",

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from collections import OrderedDict
 from datetime import datetime, timezone
+import gc
 import hashlib
 import json
 import math
@@ -389,6 +390,126 @@ def load_step_components(root: Path, names: tuple[str, ...]) -> OrderedDict:
     )
 
 
+def streaming_step_pairwise_audit(
+    root: Path,
+    names: tuple[str, ...],
+    *,
+    tolerance_cm3: float,
+    loader: Any | None = None,
+) -> dict[str, Any]:
+    """Audit every STEP pair without retaining the full assembly in memory.
+
+    Loading all high-resolution WISTELL-D shapes and every OpenCascade Boolean
+    intermediate at once can exhaust a 32 GiB workstation.  This routine keeps
+    the scientific test identical to :func:`complete_pairwise_audit`, but loads
+    and releases exactly one unordered pair at a time.
+    """
+    if tolerance_cm3 < 0.0 or not math.isfinite(tolerance_cm3):
+        raise ValueError("overlap tolerance must be finite and nonnegative")
+    if len(names) < 2:
+        raise ValueError("at least two components are required")
+    pairs: list[dict[str, Any]] = []
+    for left_index, left_name in enumerate(names[:-1]):
+        for right_index, right_name in enumerate(
+            names[left_index + 1 :], start=left_index + 1
+        ):
+            left = None
+            right = None
+            try:
+                if loader is None:
+                    command = [
+                        sys.executable,
+                        str(Path(__file__).resolve()),
+                        "audit-step-pair",
+                        "--left",
+                        str(root / f"{left_name}.step"),
+                        "--right",
+                        str(root / f"{right_name}.step"),
+                    ]
+                    completed = subprocess.run(
+                        command,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if completed.returncode != 0:
+                        detail = (
+                            completed.stderr.strip()
+                            or completed.stdout.strip()
+                        )
+                        raise RuntimeError(
+                            f"pair subprocess exited {completed.returncode}: {detail}"
+                        )
+                    child = json.loads(completed.stdout)
+                    volume = float(child["intersection_volume_cm3"])
+                else:
+                    left = loader(root / f"{left_name}.step")
+                    right = loader(root / f"{right_name}.step")
+                    volume = float(intersection_volume(left, right))
+                if not math.isfinite(volume) or volume < 0.0:
+                    raise ValueError(
+                        "intersection volume must be finite and nonnegative"
+                    )
+                error = None
+            except Exception as exc:  # fail closed and retain the exact error
+                volume = None
+                error = f"{type(exc).__name__}: {exc}"
+            finally:
+                del left, right
+                gc.collect()
+            pairs.append(
+                {
+                    "left": left_name,
+                    "right": right_name,
+                    "left_index": left_index,
+                    "right_index": right_index,
+                    "adjacent_in_radial_stack": right_index == left_index + 1,
+                    "intersection_volume_cm3": volume,
+                    "boolean_error": error,
+                    "overlap": volume is not None and volume > tolerance_cm3,
+                }
+            )
+
+    expected = len(names) * (len(names) - 1) // 2
+    return {
+        "component_order": list(names),
+        "component_count": len(names),
+        "expected_pair_count": expected,
+        "evaluated_pair_count": len(pairs),
+        "tolerance_cm3": tolerance_cm3,
+        "execution": "streaming_one_step_pair_at_a_time",
+        "native_memory_isolation": "one_subprocess_per_pair",
+        "boolean_failure_count": sum(
+            row["boolean_error"] is not None for row in pairs
+        ),
+        "overlap_count": sum(row["overlap"] for row in pairs),
+        "nonadjacent_overlap_count": sum(
+            row["overlap"] and not row["adjacent_in_radial_stack"]
+            for row in pairs
+        ),
+        "pairs": pairs,
+    }
+
+
+def audit_step_pair(args: argparse.Namespace) -> None:
+    """Evaluate one STEP/STEP intersection in an isolated process."""
+    left_path = Path(args.left).resolve()
+    right_path = Path(args.right).resolve()
+    left = cq.importers.importStep(str(left_path)).val()
+    right = cq.importers.importStep(str(right_path)).val()
+    volume = intersection_volume(left, right)
+    print(
+        json.dumps(
+            {
+                "left": str(left_path),
+                "right": str(right_path),
+                "intersection_volume_cm3": volume,
+            },
+            allow_nan=False,
+        )
+    )
+
+
 def artifact_rows(root: Path, files: Mapping[str, Path]) -> dict[str, Any]:
     rows = {}
     for role, path in files.items():
@@ -420,8 +541,13 @@ def audit_existing_31x61(args: argparse.Namespace) -> None:
     metrics = {
         name: shape_metrics(shape) for name, shape in components.items()
     }
-    pairwise = complete_pairwise_audit(
-        components, intersection_volume, tolerance_cm3=args.tolerance_cm3
+    # Retain only scalar geometry evidence before the memory-bounded audit.
+    del combined, components, stellarator
+    gc.collect()
+    pairwise = streaming_step_pairwise_audit(
+        output_root,
+        EXPECTED_LAYER_ORDER,
+        tolerance_cm3=args.tolerance_cm3,
     )
     nonzero = [row for row in pairwise["pairs"] if row["overlap"]]
     payload = {
@@ -2707,6 +2833,11 @@ def parse_args() -> argparse.Namespace:
         "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
     )
     reject.set_defaults(function=audit_existing_31x61)
+
+    one_pair = subparsers.add_parser("audit-step-pair")
+    one_pair.add_argument("--left", required=True)
+    one_pair.add_argument("--right", required=True)
+    one_pair.set_defaults(function=audit_step_pair)
 
     build = subparsers.add_parser("build-45")
     build.add_argument("--input-root", required=True)
