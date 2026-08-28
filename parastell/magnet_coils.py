@@ -1,4 +1,5 @@
 import argparse
+import math
 from pathlib import Path
 from abc import ABC
 
@@ -442,18 +443,17 @@ class MagnetSetFromFilaments(MagnetSet):
         (Internal function not intended to be called externally)
         """
 
-        # Compute lower and upper bounds of toroidal extent within tolerance
-        lower_bound = 2 * np.pi - tol
-        upper_bound = self._toroidal_extent + tol
-
-        # Create filter determining whether each coil lies within model's
-        # toroidal extent
-        filtered_filaments = [
-            filament
-            for filament in self.filaments
-            if filament.in_toroidal_extent(lower_bound, upper_bound)
-        ]
-        self.filaments = filtered_filaments
+        # A full-torus request must bypass the branch-cut interval. Passing
+        # (2*pi - tol, 2*pi + tol) to the wrapped predicate describes only a
+        # narrow seam neighbourhood, not a full revolution.
+        if not np.isclose(self._toroidal_extent, 2 * np.pi):
+            lower_bound = 2 * np.pi - tol
+            upper_bound = self._toroidal_extent + tol
+            self.filaments = [
+                filament
+                for filament in self.filaments
+                if filament.in_toroidal_extent(lower_bound, upper_bound)
+            ]
 
         # Sort coils by center-of-mass toroidal angle and overwrite stored list
         self.filaments = self.sort_filaments_toroidally()
@@ -855,23 +855,59 @@ class Filament(object):
             in_toroidal_extent (bool): flag to indicate whether coil lies
                 within toroidal bounds.
         """
-        # Compute toroidal angle of each point in filament
+        # A span of one full revolution includes every filament.  Check the
+        # unnormalised bounds first because normalising 0 and 2*pi maps both
+        # to zero and would otherwise make a full-period request ambiguous.
+        full_revolution = 2 * np.pi
+        if abs(upper_bound - lower_bound) >= full_revolution:
+            return True
+
+        # Compute toroidal angle of each point in filament.
         toroidal_angles = np.arctan2(self.coords[:, 1], self.coords[:, 0])
-        # Ensure angles are positive
-        toroidal_angles = (toroidal_angles + 2 * np.pi) % (2 * np.pi)
-        # Compute bounds of toroidal extent of filament
-        min_tor_ang = np.min(toroidal_angles)
-        max_tor_ang = np.max(toroidal_angles)
+        toroidal_angles %= full_revolution
+        lower_bound %= full_revolution
+        upper_bound %= full_revolution
 
-        # Determine if filament toroidal extent overlaps with that of model
-        if (min_tor_ang >= lower_bound or min_tor_ang <= upper_bound) or (
-            max_tor_ang >= lower_bound or max_tor_ang <= upper_bound
-        ):
-            in_toroidal_extent = True
+        # A non-wrapped interval uses intersection (and), while an interval
+        # crossing the 0/2*pi branch cut is the union of its two pieces (or).
+        # The previous implementation used ``or`` in both cases, which made
+        # ordinary sectors accept almost every filament.
+        if lower_bound <= upper_bound:
+            within = (toroidal_angles >= lower_bound) & (
+                toroidal_angles <= upper_bound
+            )
+            interval_start = lower_bound
+            interval_end = upper_bound
         else:
-            in_toroidal_extent = False
+            within = (toroidal_angles >= lower_bound) | (
+                toroidal_angles <= upper_bound
+            )
+            interval_start = lower_bound
+            interval_end = upper_bound + full_revolution
+        if np.any(within):
+            return True
 
-        return in_toroidal_extent
+        # Retain sparsely sampled filaments whose continuous angular segments
+        # cross the selected interval even when neither sampled endpoint lies
+        # inside it. CAD clipping later determines the exact retained solid.
+        unwrapped = np.unwrap(toroidal_angles)
+        for start, end in zip(unwrapped[:-1], unwrapped[1:]):
+            segment_start, segment_end = sorted((start, end))
+            first_shift = math.floor(
+                (segment_start - interval_end) / full_revolution
+            )
+            last_shift = math.ceil(
+                (segment_end - interval_start) / full_revolution
+            )
+            for shift in range(first_shift, last_shift + 1):
+                shifted_start = interval_start + shift * full_revolution
+                shifted_end = interval_end + shift * full_revolution
+                if (
+                    segment_start <= shifted_end
+                    and segment_end >= shifted_start
+                ):
+                    return True
+        return False
 
 
 class MagnetCoil(object):

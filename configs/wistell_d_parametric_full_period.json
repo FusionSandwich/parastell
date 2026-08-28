@@ -1,0 +1,126 @@
+{
+  "schema": "parastell.parametric_geometry_plan/v1.0.0",
+  "model_id": "wistell-d-nwl-baseline-full-period-80x90",
+  "device": "WISTELL-D",
+  "inputs": {
+    "vmec": {
+      "path": "inputs/wout_wistell-d.nc",
+      "sha256": "9231969001203a8133255ee0a275bf552b114cc12524dda0608ab2f12047f7ac"
+    },
+    "coils": {
+      "path": "inputs/coils.wistell-d",
+      "sha256": "7748369407d28a70f35b5c4a7c0ab860495a08fd0030002112ea933fe570159b"
+    },
+    "resolved_thickness": {
+      "path": "models/nwl_baseline_90deg_80x90/thickness_arrays_cm.npz",
+      "sha256": "46ab174ee0ca077bb7b835f50f13dbbd9abf16e198f77ebf8d2a9c5ebf4d7461"
+    }
+  },
+  "sector": {
+    "mode": "full_periods",
+    "period_count": 1,
+    "start_degrees": 0.0,
+    "n_field_periods": 4,
+    "stellarator_symmetric": true,
+    "cad_grid": [80, 90]
+  },
+  "wall_s": 1.0,
+  "chamber_material": "Vacuum",
+  "layers": [
+    {
+      "name": "first_wall",
+      "material": "first_wall",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "first_wall"
+      }
+    },
+    {
+      "name": "breeder",
+      "material": "breeder",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "breeder"
+      }
+    },
+    {
+      "name": "back_wall",
+      "material": "back_wall",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "back_wall"
+      }
+    },
+    {
+      "name": "high_temperature_shield",
+      "material": "high_temperature_shield",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "hts"
+      }
+    },
+    {
+      "name": "vacuum_vessel",
+      "material": "vacuum_vessel",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "vacuum_vessel"
+      }
+    },
+    {
+      "name": "low_temperature_shield",
+      "material": "low_temperature_shield",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "lts"
+      }
+    },
+    {
+      "name": "vacuum_gap",
+      "material": "Vacuum",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "gap"
+      }
+    },
+    {
+      "name": "magnet_envelope",
+      "material": "magnet_envelope",
+      "thickness": {
+        "kind": "array",
+        "input": "resolved_thickness",
+        "array_key": "magnets"
+      }
+    }
+  ],
+  "magnets": {
+    "representation": "radial_envelope",
+    "layer": "magnet_envelope"
+  },
+  "source_mesh": {
+    "enabled": true,
+    "radial_points": 11,
+    "poloidal_points": 81,
+    "toroidal_points": 61
+  },
+  "runtime": {
+    "kind": "docker",
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "network": "none",
+    "cpus": 4,
+    "memory_bytes": 12884901888
+  },
+  "safety": {
+    "ports": false,
+    "post_build_transforms": false,
+    "imported_physical_solids": false,
+    "create_only": true
+  }
+}

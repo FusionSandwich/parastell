@@ -296,3 +296,26 @@
   this implementation. The no-imprint H5M remains quarantined. Any remote
   successor requires a fresh create-only root, exact process-absence check,
   current physical-core and memory ceilings, and independent terminal review.
+
+## 2026-08-28 — Device-neutral parametric geometry infrastructure
+
+- Serial/root-owned: define the generic geometry schema, retain physical-model
+  selection authority, validate the concrete WISTELL-D profile against its
+  hash-bound live inputs, and integrate any accepted review changes.
+- Safe parallel work: a read-only architecture reviewer mapped hard-coded
+  WISTELL-D assumptions and identified the existing filament angular-selector
+  defect. Root reviewed and implemented the device-neutral plan and the core
+  fix; no other agent edited this worktree.
+- Scheduler/local jobs: no geometry, DAGMC, OpenMC, depletion, activation, or
+  downstream transport job was launched. Verification was limited to Python
+  validation/tests and bounded, network-disabled use of the already-local
+  ParaStell Docker image.
+- Shared-artifact risks: private device files remain outside Git; configurations
+  contain only relative paths and expected hashes. The source-CAD builder is
+  create-only and cannot mark output transport-eligible. Existing quarantined
+  H5M files remain quarantined.
+- Result: arbitrary VMEC `nfp`, constant/array radial builds, continuous or
+  swept-filament magnets, source-mesh definitions, immutable Docker execution,
+  and input/output receipts now share one fail-closed API. The concrete
+  WISTELL-D plan resolves to one full 90-degree period and passes live input,
+  VMEC metadata, shape, positivity, and seam-closure validation.

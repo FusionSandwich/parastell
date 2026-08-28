@@ -158,6 +158,64 @@ def test_filament_not_crossing_mp(filament_not_crossing_mp):
     assert filament_not_crossing_mp.get_obmp_index() == ob_mp_idx_exp
 
 
+@pytest.mark.parametrize(
+    "angles_degrees, lower_degrees, upper_degrees, expected",
+    [
+        ([20.0, 30.0], 0.0, 90.0, True),
+        ([120.0, 130.0], 0.0, 90.0, False),
+        ([350.0, 355.0], 340.0, 20.0, True),
+        ([5.0, 10.0], 340.0, 20.0, True),
+        ([180.0, 190.0], 340.0, 20.0, False),
+        ([180.0, 190.0], 0.0, 360.0, True),
+    ],
+)
+def test_filament_toroidal_extent_interval_logic(
+    angles_degrees, lower_degrees, upper_degrees, expected
+):
+    """Ordinary and branch-cut sectors select only intersecting filaments."""
+    angles = np.deg2rad(angles_degrees)
+    coords = np.column_stack(
+        (np.cos(angles), np.sin(angles), np.zeros(len(angles)))
+    )
+    filament = magnet_coils.Filament(coords)
+    assert (
+        filament.in_toroidal_extent(
+            np.deg2rad(lower_degrees), np.deg2rad(upper_degrees)
+        )
+        is expected
+    )
+
+
+def test_full_torus_filter_preserves_all_filaments():
+    """The actual MagnetSet caller must not turn 360 degrees into a seam."""
+    filaments = []
+    for angle in np.deg2rad([15.0, 135.0, 255.0]):
+        coords = np.array(
+            [
+                [np.cos(angle), np.sin(angle), -1.0],
+                [np.cos(angle), np.sin(angle), 1.0],
+            ]
+        )
+        filaments.append(magnet_coils.Filament(coords))
+    magnet_set = magnet_coils.MagnetSetFromFilaments.__new__(
+        magnet_coils.MagnetSetFromFilaments
+    )
+    magnet_set.filaments = filaments
+    magnet_set._toroidal_extent = 2 * np.pi
+    magnet_set._filter_filaments(tol=np.deg2rad(0.1))
+    assert len(magnet_set.filaments) == 3
+
+
+def test_sparse_filament_segment_crossing_sector_is_retained():
+    """A crossing segment is conservative even when both vertices are out."""
+    angles = np.deg2rad([350.0, 100.0])
+    coords = np.column_stack(
+        (np.cos(angles), np.sin(angles), np.zeros(len(angles)))
+    )
+    filament = magnet_coils.Filament(coords)
+    assert filament.in_toroidal_extent(0.0, np.deg2rad(90.0)) is True
+
+
 def test_single_coil(single_coil):
     """Tests whether a MagnetCoil object can be generated with valid CAD, by
     testing if:
