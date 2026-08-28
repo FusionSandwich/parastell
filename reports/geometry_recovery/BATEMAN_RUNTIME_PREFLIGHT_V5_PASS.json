@@ -1,0 +1,51 @@
+{
+  "schema": "wistell_d.bateman_runtime_preflight/v1.0.0",
+  "attempt_id": "prompt7r-runtime-preflight-v5-20260828T140500Z",
+  "status": "PASS",
+  "selectable": true,
+  "host": "poly-bateman",
+  "source_revision_at_launch": "48e6681a92b42386e7cc006eb7744375221b4b7b",
+  "resources": {
+    "logical_threads": 256,
+    "policy_limit_threads": 64,
+    "requested_threads": 1,
+    "reserved_threads_before_launch": 0,
+    "observed_unreserved_threads_before_launch": 0,
+    "mem_available_kib": 2087033872,
+    "home_filesystem_free_bytes": 76475182088192
+  },
+  "remote_root": "/home/apollon/josma/codex-runs/prompt7r-runtime-preflight-v5-20260828T140500Z",
+  "implementation": {
+    "sha256": "efbcf2ad85b6f459dd495344d717405881b510c17cbcc73d98fd0a89fa8156ba",
+    "bytes": 1958
+  },
+  "terminal_log": {
+    "sha256": "a356e46c9d35eeef818d586cadbec834b62015fac48908b5d11611600fa84fc5",
+    "bytes": 2075
+  },
+  "runtime": {
+    "python_executable": "/home/apollon/josma/data/transport/bin/python3.11",
+    "python_sha256": "63770468d7041b46aa7fc01ad9a17b4e616dbbb7d613f5470e1cdc5359c83a86",
+    "python_version": "3.11.15",
+    "cadquery": "2.8.0",
+    "cad_to_dagmc": "0.11.5",
+    "gmsh": "4.15.2",
+    "OCP": "7.9.3.1",
+    "h5py": "3.16.0",
+    "numpy": "1.26.4",
+    "pymoab_import": "PASS"
+  },
+  "terminal_cleanup": {
+    "processes_reaped": true,
+    "lease_reaped": true,
+    "active_leases_after_cleanup": 0,
+    "reserved_threads_after_cleanup": 0,
+    "observed_unreserved_threads_after_cleanup": 0
+  },
+  "scientific_geometry_started": false,
+  "decision": {
+    "imprinted_dagmc_geometry_only_allowed": true,
+    "openmc_on_bateman_allowed": false,
+    "automatic_successor_allowed": false
+  }
+}
