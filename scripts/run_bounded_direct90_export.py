@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - available on the Bateman Linux host
 
 SCHEMA = "wistell_d.direct90_export_terminal/v1.1.0"
 WALLTIME_SECONDS = 21_600
+TOTAL_ATTEMPT_SECONDS = 22_000
 TERMINATION_GRACE_SECONDS = 30
 REQUESTED_THREADS = 32
 POLICY_TOTAL_THREADS = 256
@@ -33,6 +34,11 @@ POLICY_LIMIT_THREADS = 64
 EXPECTED_LEASE_ROOT = Path("/home/apollon/josma/.codex/ssh-poly-core-budget")
 SIGTERM = getattr(signal, "SIGTERM", 15)
 SIGKILL = getattr(signal, "SIGKILL", 9)
+SIGALRM = getattr(signal, "SIGALRM", None)
+
+
+def _total_attempt_timeout(_signum: int, _frame: Any) -> None:
+    raise TimeoutError("total direct-90 attempt walltime exceeded")
 
 
 def sha256_file(path: Path) -> str:
@@ -199,6 +205,10 @@ def run(args: argparse.Namespace) -> int:
     reaping = None
     bindings: dict[str, Any] = {}
     command: list[str] = []
+    previous_alarm_handler = None
+    if SIGALRM is not None:
+        previous_alarm_handler = signal.signal(SIGALRM, _total_attempt_timeout)
+        signal.alarm(TOTAL_ATTEMPT_SECONDS)
     try:
         wrapper = Path(__file__).resolve()
         if sha256_file(wrapper) != args.expected_wrapper_sha256:
@@ -262,6 +272,7 @@ def run(args: argparse.Namespace) -> int:
             "source_steps": step_evidence,
             "thread_environment": environment,
             "walltime_seconds": WALLTIME_SECONDS,
+            "total_attempt_walltime_seconds": TOTAL_ATTEMPT_SECONDS,
             "termination_grace_seconds": TERMINATION_GRACE_SECONDS,
         }
         command = [
@@ -299,7 +310,19 @@ def run(args: argparse.Namespace) -> int:
     except Exception as exc:  # preserve an honest wrapper/launch failure
         if not _child_reaped(process):
             reaping = _terminate(process)
+        if isinstance(exc, TimeoutError):
+            return_code = 124
+            terminal_status = (
+                "TOTAL_ATTEMPT_TIMEOUT_REAPED_NO_AUTOMATIC_SUCCESSOR"
+                if _child_reaped(process)
+                else "TOTAL_ATTEMPT_TIMEOUT_REAP_INCOMPLETE"
+            )
         error = f"{type(exc).__name__}: {exc}"
+
+    if SIGALRM is not None:
+        signal.alarm(0)
+        if previous_alarm_handler is not None:
+            signal.signal(SIGALRM, previous_alarm_handler)
 
     maximum_rss_kib = (
         int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
