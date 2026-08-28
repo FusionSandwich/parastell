@@ -84,6 +84,34 @@ def test_streaming_step_pairwise_audit_matches_complete_contract(tmp_path):
     assert report["native_memory_isolation"] == "one_subprocess_per_pair"
 
 
+def test_streaming_pair_audit_persists_create_only_progress(tmp_path):
+    from scripts.wistell_d_geometry_lane import streaming_step_pairwise_audit
+
+    progress = tmp_path / "progress"
+    report = streaming_step_pairwise_audit(
+        tmp_path,
+        ("a", "b", "c"),
+        tolerance_cm3=1.0e-5,
+        loader=lambda path: path.stem,
+        progress_dir=progress,
+    )
+    assert len(list(progress.glob("pair_[0-9][0-9]_*.json"))) == 3
+    assert (
+        json.loads(
+            (progress / "PAIR_AUDIT_SUMMARY.json").read_text(encoding="utf-8")
+        )
+        == report
+    )
+    with pytest.raises(FileExistsError, match="create-only pair progress"):
+        streaming_step_pairwise_audit(
+            tmp_path,
+            ("a", "b"),
+            tolerance_cm3=1.0e-5,
+            loader=lambda path: path.stem,
+            progress_dir=progress,
+        )
+
+
 def test_streaming_step_pairwise_audit_isolates_real_step_pairs(tmp_path):
     import cadquery as cq
 

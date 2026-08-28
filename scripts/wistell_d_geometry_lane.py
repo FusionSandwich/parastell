@@ -788,6 +788,7 @@ def streaming_step_pairwise_audit(
     pair_timeout_seconds: float = 1800.0,
     adjacent_only: bool = False,
     loader: Any | None = None,
+    progress_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Audit every STEP pair without retaining the full assembly in memory.
 
@@ -802,6 +803,13 @@ def streaming_step_pairwise_audit(
         raise ValueError("at least two components are required")
     if pair_timeout_seconds <= 0.0 or not math.isfinite(pair_timeout_seconds):
         raise ValueError("pair timeout must be finite and positive")
+    if progress_dir is not None:
+        progress_dir = Path(progress_dir).resolve()
+        if progress_dir.exists():
+            raise FileExistsError(
+                f"create-only pair progress root exists: {progress_dir}"
+            )
+        progress_dir.mkdir(parents=True)
     pairs: list[dict[str, Any]] = []
     for left_index, left_name in enumerate(names[:-1]):
         for right_index, right_name in enumerate(
@@ -854,23 +862,28 @@ def streaming_step_pairwise_audit(
             finally:
                 del left, right
                 gc.collect()
-            pairs.append(
-                {
-                    "left": left_name,
-                    "right": right_name,
-                    "left_index": left_index,
-                    "right_index": right_index,
-                    "adjacent_in_radial_stack": right_index == left_index + 1,
-                    "intersection_volume_cm3": volume,
-                    "boolean_error": error,
-                    "overlap": volume is not None and volume > tolerance_cm3,
-                }
-            )
+            row = {
+                "left": left_name,
+                "right": right_name,
+                "left_index": left_index,
+                "right_index": right_index,
+                "adjacent_in_radial_stack": right_index == left_index + 1,
+                "intersection_volume_cm3": volume,
+                "boolean_error": error,
+                "overlap": volume is not None and volume > tolerance_cm3,
+            }
+            pairs.append(row)
+            if progress_dir is not None:
+                write_json_create_only(
+                    progress_dir
+                    / f"pair_{len(pairs) - 1:02d}_{left_name}__{right_name}.json",
+                    row,
+                )
 
     expected = (
         len(names) - 1 if adjacent_only else len(names) * (len(names) - 1) // 2
     )
-    return {
+    report = {
         "component_order": list(names),
         "component_count": len(names),
         "expected_pair_count": expected,
@@ -894,6 +907,11 @@ def streaming_step_pairwise_audit(
         ),
         "pairs": pairs,
     }
+    if progress_dir is not None:
+        write_json_create_only(
+            progress_dir / "PAIR_AUDIT_SUMMARY.json", report
+        )
+    return report
 
 
 def require_adjacent_pair_acceptance(report: Mapping[str, Any]) -> None:
@@ -1452,6 +1470,7 @@ def build_90_direct(args: argparse.Namespace) -> None:
         tolerance_cm3=args.tolerance_cm3,
         pair_timeout_seconds=args.pair_timeout_seconds,
         adjacent_only=True,
+        progress_dir=output_root / "adjacent_pair_audit_progress",
     )
     require_adjacent_pair_acceptance(pairwise)
     input_after = verify_source_set(input_root)
