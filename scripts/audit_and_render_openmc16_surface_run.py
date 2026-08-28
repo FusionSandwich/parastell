@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 import numpy as np
@@ -77,13 +78,13 @@ def _facet_catalog(envelopes) -> dict[str, np.ndarray]:
     if not rows:
         raise ValueError("no DAGMC envelopes were extracted")
     output = {
-        "facet_id": np.concatenate(
+        "canonical_facet_id": np.concatenate(
             [_unicode_safe(row["canonical_facet_id"]) for row in rows]
         ),
         "surface_id": np.concatenate(
             [np.asarray(row["surface_id"], dtype=np.int64) for row in rows]
         ),
-        "vertices_global_cm": np.concatenate(
+        "triangle_vertices_global_cm": np.concatenate(
             [
                 np.asarray(row["triangle_vertices_global_cm"], dtype=float)
                 for row in rows
@@ -96,7 +97,9 @@ def _facet_catalog(envelopes) -> dict[str, np.ndarray]:
             ]
         ),
     }
-    if len(output["facet_id"]) != len(set(output["facet_id"].tolist())):
+    if len(output["canonical_facet_id"]) != len(
+        set(output["canonical_facet_id"].tolist())
+    ):
         raise ValueError("combined canonical facet IDs are not unique")
     return output
 
@@ -114,7 +117,12 @@ def main() -> None:
     parser.add_argument("output_directory", type=Path)
     parser.add_argument("surface_sources", nargs="+", type=Path)
     parser.add_argument("--geometry-label", required=True)
+    parser.add_argument("--producer-repository-commit", required=True)
     args = parser.parse_args()
+
+    producer_commit = args.producer_repository_commit.lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", producer_commit):
+        raise ValueError("producer repository commit must be a full Git SHA")
 
     output = args.output_directory.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -161,7 +169,7 @@ def main() -> None:
         "statepoint_path": str(Path(artifacts.statepoint_path)),
         "statepoint_sha256": _sha256(Path(artifacts.statepoint_path)),
     }
-    phase_space, phase_manifest = read_openmc16_surface_sources(
+    phase_space, _ = read_openmc16_surface_sources(
         artifacts.surface_source_paths,
         source_histories=histories,
         history_binding=history_binding,
@@ -173,7 +181,13 @@ def main() -> None:
     catalog = _facet_catalog(envelopes)
     localized, localization_audit = localize_surface_crossings(
         phase_space,
-        {**catalog, "normal_source": "dagmc_forward_reverse_topology"},
+        {
+            "facet_id": catalog["canonical_facet_id"],
+            "surface_id": catalog["surface_id"],
+            "vertices_global_cm": catalog["triangle_vertices_global_cm"],
+            "outward_normal_global": catalog["outward_normal_global"],
+            "normal_source": "dagmc_forward_reverse_topology",
+        },
     )
 
     localized_path = output / "LOCALIZED_SURFACE_PHASE_SPACE.npz"
@@ -193,20 +207,33 @@ def main() -> None:
         },
     )
 
-    bank_rows = [
-        {"path": row["path"], "sha256": row["sha256"]}
-        for row in strict["surface_source_files"]
-    ]
-    render_audit = {
-        "schema": "parastell.openmc16_surface_run_audit/v1.0.0",
-        "status": "COMPLETE_CROSSING_BANK",
-        "geometry_label": args.geometry_label,
-        "geometry": {
-            "path": str(Path(artifacts.dagmc_path)),
-            "sha256": strict["dagmc"]["sha256"],
+    figure_manifest = write_phase_space_figures(
+        strict_path,
+        output / "figures",
+        expected_strict_audit_sha256=_sha256(strict_path),
+        envelope_request_path=args.envelope_requests.resolve(strict=True),
+        expected_envelope_request_sha256=_sha256(
+            args.envelope_requests.resolve(strict=True)
+        ),
+        localized_records_path=localized_path,
+        expected_localized_records_sha256=_sha256(localized_path),
+        facet_catalog_path=catalog_path,
+        expected_facet_catalog_sha256=_sha256(catalog_path),
+        geometry_label=args.geometry_label,
+        status="BOUNDED_TEST_ONLY",
+    )
+    final_receipt = {
+        "schema": "parastell.surface_phase_space_evidence_bundle/v1.0.0",
+        "status": "PASS",
+        "claim": "BOUNDED_TEST_ONLY",
+        "strict_surface_run_audit": {
+            "path": str(strict_path),
+            "sha256": _sha256(strict_path),
         },
-        "source_banks": bank_rows,
-        "phase_space_manifest": phase_manifest,
+        "envelope_requests": {
+            "path": str(args.envelope_requests.resolve(strict=True)),
+            "sha256": _sha256(args.envelope_requests.resolve(strict=True)),
+        },
         "localized_records": {
             "path": str(localized_path),
             "sha256": _sha256(localized_path),
@@ -219,43 +246,29 @@ def main() -> None:
             "path": str(topology_path),
             "sha256": _sha256(topology_path),
         },
-        "strict_surface_run_audit": {
-            "path": str(strict_path),
-            "sha256": _sha256(strict_path),
-        },
-    }
-    render_audit["localization_topology_binding"] = {
-        "geometry_sha256": strict["dagmc"]["sha256"],
-        "source_bank_sha256s": [row["sha256"] for row in bank_rows],
-        "source_histories": histories,
-        "settings_payload_sha256": _sha256(Path(artifacts.model_xml_path)),
-        "statepoint_sha256": _sha256(Path(artifacts.statepoint_path)),
-        "localized_records_sha256": _sha256(localized_path),
-        "facet_catalog_sha256": _sha256(catalog_path),
-        "topology_manifest_sha256": _sha256(topology_path),
-    }
-    render_audit_path = output / "VERIFIED_FIGURE_INPUT_AUDIT.json"
-    _write_json_create_only(render_audit_path, render_audit)
-    figure_manifest = write_phase_space_figures(
-        render_audit_path,
-        output / "figures",
-        expected_run_audit_sha256=_sha256(render_audit_path),
-        status="BOUNDED_TEST_ONLY",
-    )
-    final_receipt = {
-        "schema": "parastell.surface_phase_space_evidence_bundle/v1.0.0",
-        "status": "PASS",
-        "claim": "BOUNDED_TEST_ONLY",
-        "strict_surface_run_audit": {
-            "path": str(strict_path),
-            "sha256": _sha256(strict_path),
-        },
-        "verified_figure_input_audit": {
-            "path": str(render_audit_path),
-            "sha256": _sha256(render_audit_path),
-        },
         "figure_manifest": figure_manifest,
         "native_phase_limitations": strict["native_phase_limitations"],
+        "producer": {
+            "repository_commit": producer_commit,
+            "scripts": [
+                {
+                    "path": str(Path(__file__).resolve()),
+                    "sha256": _sha256(Path(__file__).resolve()),
+                },
+                {
+                    "path": str(
+                        Path(
+                            write_phase_space_figures.__code__.co_filename
+                        ).resolve()
+                    ),
+                    "sha256": _sha256(
+                        Path(
+                            write_phase_space_figures.__code__.co_filename
+                        ).resolve()
+                    ),
+                },
+            ],
+        },
     }
     receipt_path = output / "SURFACE_PHASE_SPACE_EVIDENCE_RECEIPT.json"
     _write_json_create_only(receipt_path, final_receipt)
