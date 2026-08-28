@@ -139,11 +139,14 @@ class TallyInventory:
     surface_flux: tuple[str, ...]
     volume_flux: tuple[str, ...]
     reactions: str | None
+    nuclide_reactions: tuple[str, ...]
     production: tuple[str, ...]
     heating: tuple[str, ...]
     total_heating: str | None = None
     local_mesh_flux: tuple[str, ...] = ()
     local_mesh_heating: tuple[str, ...] = ()
+    local_mesh_damage: tuple[str, ...] = ()
+    local_mesh_gas: tuple[str, ...] = ()
     damage_energy: str | None = None
     gas_production: str | None = None
     profile: str = "full_diagnostics"
@@ -173,6 +176,7 @@ def add_envelope_tallies(
     tally_profile: str = "full_diagnostics",
     local_mesh_filters_by_cell: Mapping[int, Any] | None = None,
     supported_responses: Sequence[str] | None = None,
+    nuclide_mt_requests: Mapping[str, Sequence[str | int]] | None = None,
 ) -> TallyInventory:
     """Attach independent current, flux, reaction, production, and heating tallies."""
     require_capabilities()
@@ -217,10 +221,13 @@ def add_envelope_tallies(
         "surface_flux": [],
         "volume_flux": [],
         "reactions": None,
+        "nuclide_reactions": [],
         "production": [],
         "heating": [],
         "local_mesh_flux": [],
         "local_mesh_heating": [],
+        "local_mesh_damage": [],
+        "local_mesh_gas": [],
     }
     for particle, edges in (
         ("neutron", neutron_edges_eV),
@@ -340,6 +347,40 @@ def add_envelope_tallies(
         "reaction_families", "reactions" in enabled
     )
 
+    if nuclide_mt_requests and "reactions" not in enabled:
+        raise ValueError(
+            "nuclide/MT requests require a profile with reaction tallies"
+        )
+    for nuclide, requested_reactions in sorted(
+        (nuclide_mt_requests or {}).items()
+    ):
+        nuclide_name = str(nuclide).strip()
+        reactions_for_nuclide = tuple(requested_reactions)
+        if not nuclide_name or not reactions_for_nuclide:
+            raise ValueError("nuclide/MT requests cannot be empty")
+        safe_nuclide = "".join(
+            character if character.isalnum() else "_"
+            for character in nuclide_name
+        ).strip("_")
+        response_name = f"nuclide_mt:{nuclide_name}"
+        status = availability(response_name, True)
+        response_report[response_name] = status
+        if not status["available"]:
+            continue
+        reaction = openmc.Tally(
+            name=f"pstl_magnet_{safe_nuclide}_mt_reactions"
+        )
+        reaction.filters = [
+            openmc.CellFilter(cells),
+            openmc.ParticleFilter(["neutron"]),
+            openmc.EnergyFilter(neutron_edges_eV),
+            openmc.ReactionFilter(reactions_for_nuclide),
+        ]
+        reaction.nuclides = [nuclide_name]
+        reaction.scores = ["events"]
+        tallies.append(reaction)
+        inventory["nuclide_reactions"].append(reaction.name)
+
     damage_name = None
     damage_status = availability("damage-energy", "damage" in enabled)
     response_report["damage-energy"] = damage_status
@@ -353,6 +394,20 @@ def add_envelope_tallies(
         damage.scores = ["damage-energy"]
         tallies.append(damage)
         damage_name = damage.name
+        for cell, mesh_filter in sorted(
+            (local_mesh_filters_by_cell or {}).items()
+        ):
+            local_damage = openmc.Tally(
+                name=f"pstl_magnet_{int(cell)}_neutron_local_mesh_damage_energy"
+            )
+            local_damage.filters = [
+                mesh_filter,
+                openmc.ParticleFilter(["neutron"]),
+                openmc.EnergyFilter(neutron_edges_eV),
+            ]
+            local_damage.scores = ["damage-energy"]
+            tallies.append(local_damage)
+            inventory["local_mesh_damage"].append(local_damage.name)
 
     gas_name = None
     gas_scores = [
@@ -372,6 +427,20 @@ def add_envelope_tallies(
         gas.scores = gas_scores
         tallies.append(gas)
         gas_name = gas.name
+        for cell, mesh_filter in sorted(
+            (local_mesh_filters_by_cell or {}).items()
+        ):
+            local_gas = openmc.Tally(
+                name=f"pstl_magnet_{int(cell)}_neutron_local_mesh_gas"
+            )
+            local_gas.filters = [
+                mesh_filter,
+                openmc.ParticleFilter(["neutron"]),
+                openmc.EnergyFilter(neutron_edges_eV),
+            ]
+            local_gas.scores = gas_scores
+            tallies.append(local_gas)
+            inventory["local_mesh_gas"].append(local_gas.name)
 
     production_requested = "production" in enabled
     for produced in produced_particles:
@@ -402,11 +471,14 @@ def add_envelope_tallies(
         surface_flux=tuple(inventory["surface_flux"]),
         volume_flux=tuple(inventory["volume_flux"]),
         reactions=reactions_name,
+        nuclide_reactions=tuple(inventory["nuclide_reactions"]),
         production=tuple(inventory["production"]),
         heating=tuple(inventory["heating"]),
         total_heating=total_heating.name,
         local_mesh_flux=tuple(inventory["local_mesh_flux"]),
         local_mesh_heating=tuple(inventory["local_mesh_heating"]),
+        local_mesh_damage=tuple(inventory["local_mesh_damage"]),
+        local_mesh_gas=tuple(inventory["local_mesh_gas"]),
         damage_energy=damage_name,
         gas_production=gas_name,
         profile=tally_profile,

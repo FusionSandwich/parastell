@@ -64,7 +64,10 @@ def test_activation_ready_profile_configures_every_downstream_observable(
             "produce:neutron",
             "produce:electron",
             "produce:positron",
+            "nuclide_mt:W184",
         ],
+        nuclide_mt_requests={"W184": [2, 102]},
+        local_mesh_filters_by_cell={9: object()},
     )
     by_name = {tally.name: tally for tally in model.tallies}
     assert set(inventory.volume_flux) == {
@@ -81,8 +84,22 @@ def test_activation_ready_profile_configures_every_downstream_observable(
         "He4-production",
     ]
     assert inventory.reactions == "pstl_magnet_neutron_reactions"
+    assert inventory.nuclide_reactions == ("pstl_magnet_W184_mt_reactions",)
+    assert by_name[inventory.nuclide_reactions[0]].nuclides == ["W184"]
+    assert by_name[inventory.nuclide_reactions[0]].filters[-1].bins == (
+        2,
+        102,
+    )
     assert len(inventory.heating) == 2
     assert inventory.total_heating == "pstl_magnet_total_heating"
+    assert len(inventory.local_mesh_flux) == 2
+    assert len(inventory.local_mesh_heating) == 2
+    assert inventory.local_mesh_damage == (
+        "pstl_magnet_9_neutron_local_mesh_damage_energy",
+    )
+    assert inventory.local_mesh_gas == (
+        "pstl_magnet_9_neutron_local_mesh_gas",
+    )
     assert {
         "pstl_magnet_production_photon",
         "pstl_magnet_production_neutron",
@@ -113,6 +130,7 @@ def test_unavailable_nuclear_data_response_is_missing_not_zero(monkeypatch):
     assert inventory.damage_energy is None
     assert inventory.gas_production is None
     assert inventory.production == ()
+    assert inventory.nuclide_reactions == ()
     assert inventory.response_availability["damage-energy"] == {
         "status": "UNAVAILABLE_IN_CONFIGURED_NUCLEAR_DATA",
         "available": False,

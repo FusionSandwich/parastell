@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from parastell.downstream_response_export import (
+    build_downstream_exports,
+    write_downstream_exports,
+)
 from parastell.radiation_consumer_handoff import (
     PHASE_SPACE_FIELDS,
     RadiationHandoffError,
@@ -291,6 +295,57 @@ def test_every_material_domain_requires_a_neutron_scalar_spectrum():
     )
     with pytest.raises(RadiationHandoffError, match="every material domain"):
         validate_radiation_consumer_handoff(bundle)
+
+
+def test_downstream_export_adds_material_identity_and_preserves_ownership(
+    tmp_path,
+):
+    bundle = _bundle()
+    bundle["materials"][0].update(
+        {
+            "density_g_cm3": 6.3,
+            "temperature_K": 600.0,
+            "composition_basis": "atom_fraction",
+            "isotopes": {"B10": 0.2, "B11": 0.8},
+        }
+    )
+    exports = build_downstream_exports(
+        bundle,
+        ownership_contribution_id="wistell-d:magnet-0000:run-1",
+        delayed_photon_source_id="wistell-d:magnet-0000:delayed-1",
+    )
+    assert exports["status"] == "IMPORT_INPUTS_VALIDATED"
+    assert exports["spectra_pka"][0]["material"]["isotopes"] == {
+        "B10": 0.2,
+        "B11": 0.8,
+    }
+    assert (
+        exports["magnet_boundary_replay"][
+            "source_rate_may_be_applied_more_than_once"
+        ]
+        is False
+    )
+    paths = write_downstream_exports(tmp_path / "exports", exports)
+    assert len(paths) == 5
+    assert all(path.is_file() for path in paths)
+
+
+def test_downstream_export_rejects_prompt_delayed_ownership_collision():
+    bundle = _bundle()
+    bundle["materials"][0].update(
+        {
+            "density_g_cm3": 6.3,
+            "temperature_K": 600.0,
+            "composition_basis": "atom_fraction",
+            "isotopes": {"B10": 0.2, "B11": 0.8},
+        }
+    )
+    with pytest.raises(ValueError, match="collide"):
+        build_downstream_exports(
+            bundle,
+            ownership_contribution_id="run-1",
+            delayed_photon_source_id="run-1:prompt-boundary",
+        )
 
 
 def test_reaction_rate_requires_nuclide_and_reaction_identity():

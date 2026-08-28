@@ -11,8 +11,15 @@
     "damage_energy_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
     "gas_production_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
     "reaction_family_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
+    "nuclide_mt_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
     "particle_production_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
-    "non_flux_statepoint_export": "PENDING",
+    "local_mesh_flux_heating_damage_gas": "IMPLEMENTED_AND_UNIT_TESTED",
+    "declarative_response_plan": "IMPLEMENTED_AND_UNIT_TESTED",
+    "arbitrary_magnet_id_selected_case_wiring": "IMPLEMENTED_AND_UNIT_TESTED",
+    "generic_openmc16_statepoint_export": "IMPLEMENTED_AND_UNIT_TESTED",
+    "material_identity_adapters": "IMPLEMENTED_AND_UNIT_TESTED",
+    "spectra_pka_activation_reaction_replay_converters": "IMPLEMENTED_AND_UNIT_TESTED",
+    "consumer_import_of_physical_smoke_artifact": "BLOCKED_GEOMETRY_GATE",
     "accepted_90_degree_physical_statepoint": "BLOCKED_GEOMETRY_GATE"
   },
   "scientific_firewalls": {

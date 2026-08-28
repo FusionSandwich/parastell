@@ -25,6 +25,30 @@ OpenMC-replay, and deterministic local-model adapters.
 - `openmc16_volume_results.py` now reads a cell/particle/energy flux tally from
   an OpenMC 0.16.0 statepoint, preserves the energy-bin integral, and divides
   track length only by an independently audited cell volume.
+- `transport_response_plan.py` is now the solver-neutral response inventory.
+  It covers neutron and photon scalar flux, surface current and correlated
+  phase space, neutron/photon/local-mesh heating, damage energy, H/He
+  production, reaction families, nuclide-specific MT rates, and secondary
+  particle production. Its proof level cannot advance from `DECLARED` to
+  `WIRED` unless a complete surface-bank configuration and unique tally names
+  are present.
+- `selected_case_instrumentation.py` wires that inventory to arbitrary declared
+  `magnet_id` to OpenMC-cell mappings. It does not assume WISTELL-D entity IDs,
+  alter the H5M, or authorize a transport run.
+- `openmc16_response_results.py` generically reads every filter, nuclide,
+  score, first moment, and standard deviation for OpenMC 0.16 tally results.
+  It converts cell-filtered results into portable domain estimators and marks
+  missing tallies and unavailable covariance explicitly rather than exporting
+  zeros.
+- `material_identity.py` reads public fusion-material-db JSON and OpenMC
+  materials XML without a PyNE dependency. Mass-fraction versus atom-fraction
+  basis, density, temperature, isotope fractions, citations, and source hashes
+  remain explicit.
+- `downstream_response_export.py` and
+  `scripts/export_downstream_radiation_inputs.py` generate deterministic JSON
+  inputs for SPECTRA-PKA, activation, isotope/MT response matrices, and local
+  OpenMC/MCNP/Geant4/OpenSn/RADIANT boundary replay. They prevent source-rate
+  double application and prompt/delayed source-ID collisions.
 - `radiation_consumer_handoff.py` validates a solver-neutral bundle containing
   geometry/source/statepoint/data provenance, material identities, volume
   estimators, the canonical correlated boundary bank, and explicit consumer
@@ -84,9 +108,9 @@ order or clusters.
 2. Run a deliberately small coupled neutron/photon OpenMC smoke calculation on
    that accepted H5M and export all configured volume responses. Statistical
    classification will remain `WORKFLOW_SMOKE_ONLY`.
-3. Add generic statepoint extraction for heating, damage, gas, reaction, and
-   particle-production tallies; the tally definitions exist, but only the
-   scalar-spectrum exporter is currently complete on this branch.
+3. Convert one accepted physical smoke statepoint with the generic extractor
+   and import its generated JSON in the real consumer packages. Unit fixtures
+   pass, but a geometry-bound OpenMC statepoint does not yet exist.
 4. In an isolated `DPA_workflow` branch, implement the branched schedule schema
    and update consumers to accept ParaStell boundary schema v2.2 without
    discarding facet, barycentric, topology, local-frame, or provenance fields.
@@ -99,12 +123,15 @@ global magnet is authorized by this status.
 ## Verification
 
 - Focused downstream/activation suite: 42 passed.
-- Broad host-supported suite: 378 passed, 5 skipped, 5 failed only because the
+- Broad host-supported suite: 431 passed, 5 skipped, 5 failed only because the
   host has incompatible optional `pydagmc`/`cad_to_dagmc` APIs; six additional
   legacy test modules cannot collect because host Python lacks PyMOAB, Gmsh,
   or OpenMC. No dependency environment was installed or modified.
 - Changed Python files pass Black, compileall, and `git diff --check`; compact
   JSON documents parse successfully.
+- The added response-plan, material-adapter, selected-case wiring, generic
+  statepoint-reader, surface-bank, and downstream-export focused suite passes
+  37 tests.
 - Independent read-only QA initially found statepoint/version/history,
   estimator-volume, bank-completeness, and schedule-receipt trust gaps. After
   correction it returned `PASS` with no remaining blocker/high findings.

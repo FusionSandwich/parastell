@@ -1,0 +1,32 @@
+{
+  "case_id": "replace-with-device-and-run-id",
+  "magnet_ids": [
+    "magnet-0000"
+  ],
+  "energy_axes_eV": {
+    "neutron": [
+      0.0,
+      100000.0,
+      1000000.0,
+      20000000.0
+    ],
+    "photon": [
+      0.0,
+      100000.0,
+      1000000.0,
+      20000000.0
+    ]
+  },
+  "nuclide_mt_requests": {
+    "B10": [
+      107
+    ],
+    "W184": [
+      2,
+      102
+    ]
+  },
+  "surface_count": 1,
+  "local_mesh_bins_per_magnet": 0,
+  "reaction_family_count": 6
+}

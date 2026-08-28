@@ -120,15 +120,7 @@ def apply_openmc16_surface_instrumentation(
 
     import openmc
 
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(
-            f"expected OpenMC 0.16.0, found {openmc.__version__}"
-        )
-    if spec.get("schema") != "parastell.surface_source_instrumentation/v1.0.0":
-        raise ValueError("unknown surface instrumentation schema")
-    model.settings.surf_source_write = dict(spec["settings"])
-    if "photon" in spec["particles"]:
-        model.settings.photon_transport = True
+    configure_openmc16_surface_bank(model, spec)
     tallies = model.tallies if model.tallies is not None else openmc.Tallies()
     existing_names = {tally.name for tally in tallies}
     created = []
@@ -149,3 +141,22 @@ def apply_openmc16_surface_instrumentation(
         created.append(name)
     model.tallies = tallies
     return tuple(created)
+
+
+def configure_openmc16_surface_bank(model, spec: Mapping) -> None:
+    """Configure the crossing bank without creating duplicate current tallies."""
+    import openmc
+
+    if openmc.__version__ != "0.16.0":
+        raise RuntimeError(
+            f"expected OpenMC 0.16.0, found {openmc.__version__}"
+        )
+    if spec.get("schema") != "parastell.surface_source_instrumentation/v1.0.0":
+        raise ValueError("unknown surface instrumentation schema")
+    required = {"surface_ids", "max_particles", "max_source_files"}
+    settings = spec.get("settings")
+    if not isinstance(settings, Mapping) or set(settings) != required:
+        raise ValueError("surface source settings are incomplete")
+    model.settings.surf_source_write = dict(settings)
+    if "photon" in spec.get("particles", ()):
+        model.settings.photon_transport = True
