@@ -1,0 +1,35 @@
+{
+  "schema": "parastell.bateman_geometry_attempt/v1.0.0",
+  "attempt_id": "prompt7r-direct90-imprinted-coarse-v3-20260828T160000Z",
+  "classification": "FAIL_CLOSED_PRE_PYTHON_LEASE_DISCOVERY_QUOTING",
+  "selectable": false,
+  "reusable": false,
+  "remote_root": "/home/apollon/josma/codex-runs/prompt7r-direct90-imprinted-coarse-v3-20260828T160000Z",
+  "launch": {
+    "ssh_poly_lease": "c398dfd9ed333eda38177ff9d45c6803",
+    "session_pid": 1199417,
+    "requested_threads": 32,
+    "policy_total_threads": 256,
+    "policy_limit_threads": 64,
+    "nonce": "3ba1fa1624e342b5b93c093a6cda2a04"
+  },
+  "terminal_evidence": {
+    "error": "bash: line 1: $4: unbound variable",
+    "stage": "shell lease-token discovery before Python wrapper",
+    "log_sha256": "c9760857bd00863fbd871ded4c86f05379456018e1cee9af69ce4a05d974097b",
+    "log_size_bytes": 190,
+    "session_pid_gone": true,
+    "lease_reaped": true
+  },
+  "outputs": {
+    "python_wrapper_started": false,
+    "cad_import_started": false,
+    "gmsh_started": false,
+    "result_root_present": false,
+    "dagmc_h5m_present": false,
+    "terminal_wrapper_receipt_present": false,
+    "openmc_started": false
+  },
+  "remediation": "Lease discovery moved into the hash-bound Python wrapper, where the current session must match exactly one ssh-poly lease. The shell AWK adapter is retired.",
+  "automatic_successor_launched": false
+}

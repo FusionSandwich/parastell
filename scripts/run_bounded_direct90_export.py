@@ -42,6 +42,63 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _proc_start_time(proc_root: Path, pid: int) -> int | None:
+    try:
+        text = (proc_root / str(pid) / "stat").read_text(encoding="utf-8")
+        remainder = text[text.rindex(")") + 2 :].split()
+        return int(remainder[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _discover_lease(
+    root: Path | None = None,
+    *,
+    session_id: int | None = None,
+    proc_root: Path = Path("/proc"),
+    timeout_seconds: float = 5.0,
+    poll_seconds: float = 0.05,
+) -> dict[str, Any]:
+    lease_root = root or (Path.home() / ".codex" / "ssh-poly-core-budget")
+    sid = os.getsid(0) if session_id is None else int(session_id)
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        matches = []
+        for path in lease_root.glob("*.lease"):
+            fields = path.read_text(encoding="utf-8").split()
+            if len(fields) != 4 or not all(
+                field.isdigit() for field in fields
+            ):
+                continue
+            cores, pid, start_time, lease_sid = map(int, fields)
+            if (
+                cores == REQUESTED_THREADS
+                and lease_sid == sid
+                and _proc_start_time(proc_root, pid) == start_time
+            ):
+                matches.append(
+                    {
+                        "lease_id": path.stem,
+                        "cores": cores,
+                        "pid": pid,
+                        "start_time": start_time,
+                        "session_id": lease_sid,
+                    }
+                )
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"multiple live ssh-poly leases match session {sid}: {matches}"
+            )
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"timed out waiting for one live {REQUESTED_THREADS}-core "
+                f"ssh-poly lease for session {sid}"
+            )
+        time.sleep(poll_seconds)
+
+
 def _load_exporter(path: Path) -> Any:
     spec = importlib.util.spec_from_file_location(
         "frozen_direct90_exporter", path
@@ -168,7 +225,10 @@ def run(args: argparse.Namespace) -> int:
         }
         if environment != module.REQUIRED_THREAD_ENVIRONMENT:
             raise ValueError("frozen thread environment mismatch")
-        if not args.attempt_id or not args.nonce or not args.lease_id:
+        if args.lease_id != "AUTO_DISCOVER":
+            raise ValueError("explicit ssh-poly lease IDs are forbidden")
+        lease = _discover_lease()
+        if not args.attempt_id or not args.nonce:
             raise ValueError(
                 "attempt, nonce, and lease identities are required"
             )
@@ -176,7 +236,8 @@ def run(args: argparse.Namespace) -> int:
             "attempt_id": args.attempt_id,
             "nonce": args.nonce,
             "host": socket.gethostname(),
-            "lease_id": args.lease_id,
+            "lease": lease,
+            "lease_discovery": "matched_live_current_session_lease",
             "policy_total_threads": args.policy_total_threads,
             "policy_limit_threads": args.policy_limit_threads,
             "requested_threads": args.requested_threads,

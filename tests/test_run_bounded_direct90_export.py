@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from scripts.run_bounded_direct90_export import run
+from scripts.run_bounded_direct90_export import _discover_lease, run
 
 
 def _sha(path):
@@ -36,7 +36,7 @@ def _case(tmp_path):
         argparse.Namespace(
             attempt_id="attempt-v3",
             nonce="nonce-v3",
-            lease_id="lease-v3",
+            lease_id="AUTO_DISCOVER",
             exporter=exporter,
             expected_exporter_sha256=_sha(exporter),
             expected_wrapper_sha256=_sha(wrapper),
@@ -74,6 +74,16 @@ def _patch_preflight(monkeypatch, wrapper):
                 "_validated_step_artifacts": staticmethod(lambda value: {}),
             },
         ),
+    )
+    monkeypatch.setattr(
+        "scripts.run_bounded_direct90_export._discover_lease",
+        lambda: {
+            "lease_id": "lease-v3",
+            "cores": 32,
+            "pid": 99,
+            "start_time": 123,
+            "session_id": 99,
+        },
     )
 
 
@@ -221,3 +231,72 @@ def test_runner_rejects_existing_receipt_before_launch(tmp_path, monkeypatch):
     )
     with pytest.raises(FileExistsError, match="create-only"):
         run(args)
+
+
+def _write_proc_stat(proc_root, pid, start_time):
+    path = proc_root / str(pid)
+    path.mkdir(parents=True)
+    fields = ["S"] + ["0"] * 18 + [str(start_time)]
+    (path / "stat").write_text(
+        f"{pid} (guarded command) " + " ".join(fields) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_lease_discovery_matches_exact_live_session(tmp_path):
+    leases = tmp_path / "leases"
+    leases.mkdir()
+    proc = tmp_path / "proc"
+    _write_proc_stat(proc, 101, 201)
+    (leases / "other.lease").write_text("4 100 200 300\n", encoding="utf-8")
+    (leases / "exact.lease").write_text("32 101 201 301\n", encoding="utf-8")
+    assert _discover_lease(
+        leases, session_id=301, proc_root=proc, timeout_seconds=0
+    ) == {
+        "lease_id": "exact",
+        "cores": 32,
+        "pid": 101,
+        "start_time": 201,
+        "session_id": 301,
+    }
+
+
+def test_lease_discovery_rejects_ambiguous_session(tmp_path):
+    leases = tmp_path / "leases"
+    leases.mkdir()
+    proc = tmp_path / "proc"
+    _write_proc_stat(proc, 101, 201)
+    _write_proc_stat(proc, 102, 202)
+    (leases / "one.lease").write_text("32 101 201 301\n", encoding="utf-8")
+    (leases / "two.lease").write_text("32 102 202 301\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="multiple live"):
+        _discover_lease(
+            leases, session_id=301, proc_root=proc, timeout_seconds=0
+        )
+
+
+@pytest.mark.parametrize(
+    "lease_text",
+    ["malformed\n", "1 101 201 301\n", "32 101 999 301\n"],
+)
+def test_lease_discovery_rejects_malformed_wrong_core_and_stale_pid(
+    tmp_path, lease_text
+):
+    leases = tmp_path / "leases"
+    leases.mkdir()
+    proc = tmp_path / "proc"
+    _write_proc_stat(proc, 101, 201)
+    (leases / "candidate.lease").write_text(lease_text, encoding="utf-8")
+    with pytest.raises(RuntimeError, match="timed out"):
+        _discover_lease(
+            leases, session_id=301, proc_root=proc, timeout_seconds=0
+        )
+
+
+def test_runner_rejects_explicit_lease_bypass(tmp_path, monkeypatch):
+    args, wrapper = _case(tmp_path)
+    _patch_preflight(monkeypatch, wrapper)
+    args.lease_id = "unverified-explicit-token"
+    assert run(args) == 125
+    value = json.loads(args.terminal_receipt.read_text(encoding="utf-8"))
+    assert "explicit ssh-poly lease IDs are forbidden" in value["error"]
