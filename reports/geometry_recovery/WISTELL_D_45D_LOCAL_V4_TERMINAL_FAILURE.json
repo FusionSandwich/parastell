@@ -1,0 +1,28 @@
+{
+  "schema": "wistell_d.local_attempt_terminal_failure/v1.0.0",
+  "generated_utc": "2026-08-28T05:09:56.3082483Z",
+  "classification": "FAIL_CLOSED_SHARED_HOST_MEMORY_HEADROOM_WITHDRAWN",
+  "selectable": false,
+  "attempt": {
+    "root": "D:/parastell-artifacts/prompt7r-wistell90-20260828/source-cad-45d-61x121-v4",
+    "pid": 16556,
+    "launch_commit": "68897ad64ea4519bed729ef75b419ecac99f4e66",
+    "launch_script_sha256": "e8e9d64d14bd65544174cc2d81f754e11a5d26e3610097b55d99adc94ea71bbd",
+    "terminal_action": "operator_stopped_exact_pid_before_STEP_export_and_acceptance"
+  },
+  "reason": {
+    "finding": "an_unrelated_scratch_CAD_audit_grew_to_about_12_GiB_while_v4_was_constructing",
+    "free_host_ram_at_stop_gib": 4.73,
+    "known_v4_future_peak_not_yet_reached": true,
+    "scientific_geometry_failure_observed": false
+  },
+  "partial_artifacts": [
+    {
+      "path": "canonical_thickness_arrays_cm.npz",
+      "bytes": 31024,
+      "sha256": "97bb293bb32d4a99950bfb75c21886ec0f63aaa41965b4b1a022dc737643ade8"
+    }
+  ],
+  "successors_launched": false,
+  "disposition": "preserve_create_only_attempt_as_nonselectable_resource_coordination_evidence"
+}
