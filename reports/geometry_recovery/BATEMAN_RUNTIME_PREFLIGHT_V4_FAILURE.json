@@ -1,0 +1,34 @@
+{
+  "schema": "wistell_d.bateman_runtime_preflight/v1.0.0",
+  "attempt_id": "prompt7r-runtime-preflight-v4-20260828T133439Z",
+  "status": "FAIL_CLOSED_WRAPPER_SHELL_INCOMPATIBLE",
+  "selectable": false,
+  "host": "poly-bateman",
+  "source_revision": "638bb778c45b1b36bcb5a925eafa129dc50018e0",
+  "config_sha256": "61ceba24b2d61b61430e020b328e07aeb2964a8063e79d2b4255def6bc4b6cb1",
+  "resource_observation": {
+    "logical_threads": 256,
+    "policy_limit_threads": 64,
+    "reserved_threads_before_attempt": 0,
+    "observed_unreserved_threads_before_attempt": 0,
+    "available_threads_before_attempt": 64,
+    "mem_available_kib": 2087096484,
+    "home_filesystem_free_bytes": 76475129659392
+  },
+  "remote_root": "/home/apollon/josma/codex-runs/prompt7r-runtime-preflight-v4-20260828T133439Z",
+  "terminal_evidence": {
+    "log_text": "sh: 1: set: Illegal option -o pipefail",
+    "python_started": false,
+    "module_imports_started": false,
+    "scientific_geometry_started": false,
+    "lease_files_after_cleanup": [],
+    "remote_matching_processes_after_cleanup": 0
+  },
+  "decision": {
+    "quarantine_root": true,
+    "do_not_reuse": true,
+    "imprinted_dagmc_allowed": false,
+    "openmc_allowed": false,
+    "required_successor_change": "Invoke an explicit bash -lc wrapper inside the guarded command; use a fresh create-only preflight root and independently collect its terminal exit status before any geometry launch."
+  }
+}

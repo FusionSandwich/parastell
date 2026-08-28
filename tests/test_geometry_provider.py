@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from parastell.geometry_provider import (
+    DIRECT45_REFERENCE_MANIFEST_SHA256,
     DIRECT90_DOCKER_IMAGE_ID,
     DIRECT90_REFERENCE_MANIFEST_SHA256,
     DIRECT90_RUNTIME_RECEIPT_SHA256,
@@ -387,6 +389,9 @@ def _direct90_manifest(tmp_path: Path) -> dict:
         }
     )
     manifest.pop("complete_pairwise_audit")
+    manifest["components"] = {
+        name: {"volume_cm3": 2.0} for name in EXPECTED_LAYER_ORDER
+    }
     manifest["adjacent_pair_audit"] = {
         "audit_scope": "adjacent_radial_pairs_only",
         "component_count": 9,
@@ -472,6 +477,25 @@ def _direct90_manifest(tmp_path: Path) -> dict:
                 "candidate_volume_cm3": 1.0,
                 "relative_difference": 0.0,
                 "tolerance": 1.0e-7,
+            }
+            for name in EXPECTED_LAYER_ORDER
+        },
+    }
+    manifest["full_period_physical_measure"] = {
+        "pass": True,
+        "expected_ratio": 2.0,
+        "relative_tolerance": 0.025,
+        "half_period_reference_manifest": {
+            "path": str((tmp_path / "reference_45.json").resolve()),
+            "sha256": DIRECT45_REFERENCE_MANIFEST_SHA256,
+        },
+        "components": {
+            name: {
+                "pass": True,
+                "volume_45_cm3": 1.0,
+                "volume_90_cm3": 2.0,
+                "ratio": 2.0,
+                "relative_tolerance": 0.025,
             }
             for name in EXPECTED_LAYER_ORDER
         },
@@ -572,6 +596,7 @@ def test_manifest_rejects_90_degree_geometry_without_direct_parastell_build(
         "container_runtime",
         "cad_periodicity",
         "reference_volume_regression",
+        "full_period_physical_measure",
     ],
 )
 def test_direct90_manifest_requires_all_geometry_proofs(tmp_path, missing_key):
@@ -585,6 +610,42 @@ def test_direct90_manifest_requires_live_vmec_proof(tmp_path):
     manifest = _direct90_manifest(tmp_path)
     manifest["source"].pop("live_vmec_metadata")
     with pytest.raises(GeometryProvenanceError, match="live VMEC"):
+        validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_manifest_rejects_half_period_physical_measure(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    row = manifest["full_period_physical_measure"]["components"][
+        "magnet_envelope"
+    ]
+    row.update({"volume_90_cm3": 1.0, "ratio": 1.0, "pass": True})
+    with pytest.raises(GeometryProvenanceError, match="physical-measure"):
+        validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_manifest_rejects_forged_stored_volume_ratio(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    row = manifest["full_period_physical_measure"]["components"][
+        "magnet_envelope"
+    ]
+    row.update({"volume_45_cm3": 1.0, "volume_90_cm3": 1.0, "ratio": 2.0})
+    with pytest.raises(GeometryProvenanceError, match="physical-measure"):
+        validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_manifest_rejects_nonfinite_volume_evidence(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    manifest["full_period_physical_measure"]["components"]["breeder"][
+        "ratio"
+    ] = math.nan
+    with pytest.raises(GeometryProvenanceError, match="physical-measure"):
+        validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_manifest_binds_ratio_volume_to_component_volume(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    manifest["components"]["vacuum_vessel"]["volume_cm3"] = 3.0
+    with pytest.raises(GeometryProvenanceError, match="physical-measure"):
         validate_wistell_d_manifest(manifest)
 
 

@@ -38,6 +38,9 @@ DIRECT90_RUNTIME_RECEIPT_SHA256 = (
 DIRECT90_REFERENCE_MANIFEST_SHA256 = (
     "b6e723cdb9ac95d789a838abbf44590d210c4fdbe718c3b459777d38768e0499"
 )
+DIRECT45_REFERENCE_MANIFEST_SHA256 = (
+    "f330bbd06a0c8234a3b52932ee48e8dcdec7e2842c3d12a5c75d3052028920b4"
+)
 
 WISTELL_D_SOURCE_HASHES = {
     "wout_wistell-d.nc": (
@@ -102,6 +105,15 @@ def _is_git_sha(value: Any) -> bool:
     return len(text) == 40 and all(
         character in "0123456789abcdef" for character in text
     )
+
+
+def _finite_float(value: Any) -> float | None:
+    """Return a finite float, or ``None`` for malformed/non-finite input."""
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
 
 
 def sha256_file(path: str | Path) -> str:
@@ -745,6 +757,98 @@ def validate_wistell_d_manifest(
         ):
             raise GeometryProvenanceError(
                 "direct-90 reference-volume regression is incomplete"
+            )
+
+        physical_measure = manifest.get("full_period_physical_measure")
+        half_reference = (
+            physical_measure.get("half_period_reference_manifest")
+            if isinstance(physical_measure, Mapping)
+            else None
+        )
+        ratios = (
+            physical_measure.get("components")
+            if isinstance(physical_measure, Mapping)
+            else None
+        )
+        manifest_components = manifest.get("components")
+        physical_measure_rows_valid = True
+        if (
+            not isinstance(ratios, Mapping)
+            or set(ratios) != set(EXPECTED_LAYER_ORDER)
+            or not isinstance(manifest_components, Mapping)
+            or set(manifest_components) != set(EXPECTED_LAYER_ORDER)
+        ):
+            physical_measure_rows_valid = False
+        else:
+            for name in EXPECTED_LAYER_ORDER:
+                row = ratios[name]
+                component = manifest_components[name]
+                if not isinstance(row, Mapping) or not isinstance(
+                    component, Mapping
+                ):
+                    physical_measure_rows_valid = False
+                    break
+                volume_45 = _finite_float(row.get("volume_45_cm3"))
+                volume_90 = _finite_float(row.get("volume_90_cm3"))
+                stored_ratio = _finite_float(row.get("ratio"))
+                expected_ratio = _finite_float(row.get("expected_ratio", 2.0))
+                tolerance = _finite_float(row.get("relative_tolerance"))
+                component_volume = _finite_float(component.get("volume_cm3"))
+                if (
+                    row.get("pass") is not True
+                    or volume_45 is None
+                    or volume_45 <= 0.0
+                    or volume_90 is None
+                    or volume_90 <= 0.0
+                    or stored_ratio is None
+                    or stored_ratio <= 0.0
+                    or expected_ratio != 2.0
+                    or tolerance is None
+                    or tolerance <= 0.0
+                    or tolerance > 0.025
+                    or component_volume is None
+                    or component_volume <= 0.0
+                    or not math.isclose(
+                        stored_ratio,
+                        volume_90 / volume_45,
+                        rel_tol=1.0e-12,
+                        abs_tol=1.0e-12,
+                    )
+                    or not math.isclose(
+                        volume_90,
+                        component_volume,
+                        rel_tol=1.0e-12,
+                        abs_tol=1.0e-12,
+                    )
+                    or abs(stored_ratio / 2.0 - 1.0) > tolerance
+                ):
+                    physical_measure_rows_valid = False
+                    break
+        top_expected_ratio = _finite_float(
+            physical_measure.get("expected_ratio")
+            if isinstance(physical_measure, Mapping)
+            else None
+        )
+        top_tolerance = _finite_float(
+            physical_measure.get("relative_tolerance")
+            if isinstance(physical_measure, Mapping)
+            else None
+        )
+        if (
+            not isinstance(physical_measure, Mapping)
+            or physical_measure.get("pass") is not True
+            or top_expected_ratio != 2.0
+            or top_tolerance is None
+            or top_tolerance <= 0.0
+            or top_tolerance > 0.025
+            or not isinstance(half_reference, Mapping)
+            or half_reference.get("sha256")
+            != DIRECT45_REFERENCE_MANIFEST_SHA256
+            or not Path(str(half_reference.get("path", ""))).is_absolute()
+            or not physical_measure_rows_valid
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 full-period physical-measure proof is incomplete"
             )
     else:
         pairwise = manifest.get("complete_pairwise_audit")

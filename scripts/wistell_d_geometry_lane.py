@@ -1339,9 +1339,13 @@ def build_90_direct(args: argparse.Namespace) -> None:
         raise FileExistsError(f"create-only output root exists: {output_root}")
     runtime_receipt_path = Path(args.runtime_receipt).resolve()
     reference_manifest_path = Path(args.reference_manifest).resolve()
+    half_period_reference_manifest_path = Path(
+        args.half_period_reference_manifest
+    ).resolve()
     if (
         not runtime_receipt_path.is_file()
         or not reference_manifest_path.is_file()
+        or not half_period_reference_manifest_path.is_file()
     ):
         raise FileNotFoundError(
             "runtime receipt and reference manifest are required"
@@ -1429,6 +1433,9 @@ def build_90_direct(args: argparse.Namespace) -> None:
     reference_manifest = json.loads(
         reference_manifest_path.read_text(encoding="utf-8")
     )
+    half_period_reference_manifest = json.loads(
+        half_period_reference_manifest_path.read_text(encoding="utf-8")
+    )
     reference_aliases = {
         "high_temperature_shield": "hts",
         "low_temperature_shield": "lts",
@@ -1440,6 +1447,12 @@ def build_90_direct(args: argparse.Namespace) -> None:
         for row in reference_manifest.get("cad_validation", {}).get(
             "components", []
         )
+    }
+    half_period_reference_volumes = {
+        row["name"]: float(row["volume_cm3"])
+        for row in half_period_reference_manifest.get(
+            "cad_validation", {}
+        ).get("components", [])
     }
     volume_regression = {}
     for name, metrics in component_metrics.items():
@@ -1461,6 +1474,30 @@ def build_90_direct(args: argparse.Namespace) -> None:
     if not all(row["pass"] for row in volume_regression.values()):
         raise RuntimeError(
             f"direct-90 volume regression failed: {volume_regression}"
+        )
+    full_period_physical_measure = {}
+    for name, metrics in component_metrics.items():
+        reference_name = reference_aliases.get(name, name)
+        if reference_name not in half_period_reference_volumes:
+            raise ValueError(
+                f"45-degree reference volume is missing for {name}"
+            )
+        half_volume = half_period_reference_volumes[reference_name]
+        ratio = metrics["volume_cm3"] / half_volume
+        relative_to_two = abs(ratio / 2.0 - 1.0)
+        full_period_physical_measure[name] = {
+            "reference_name": reference_name,
+            "volume_45_cm3": half_volume,
+            "volume_90_cm3": metrics["volume_cm3"],
+            "ratio": ratio,
+            "expected_ratio": 2.0,
+            "relative_tolerance": 0.025,
+            "pass": relative_to_two <= 0.025,
+        }
+    if not all(row["pass"] for row in full_period_physical_measure.values()):
+        raise RuntimeError(
+            "direct-90 physical measure is not twice the validated half period: "
+            f"{full_period_physical_measure}"
         )
     del components, stellarator
     gc.collect()
@@ -1547,6 +1584,16 @@ def build_90_direct(args: argparse.Namespace) -> None:
                 "sha256": sha256_file(reference_manifest_path),
             },
             "components": volume_regression,
+            "pass": True,
+        },
+        "full_period_physical_measure": {
+            "half_period_reference_manifest": {
+                "path": str(half_period_reference_manifest_path),
+                "sha256": sha256_file(half_period_reference_manifest_path),
+            },
+            "expected_ratio": 2.0,
+            "relative_tolerance": 0.025,
+            "components": full_period_physical_measure,
             "pass": True,
         },
         "materials": {
@@ -3854,6 +3901,9 @@ def parse_args() -> argparse.Namespace:
     build_direct.add_argument("--container-image-id", required=True)
     build_direct.add_argument("--runtime-receipt", required=True)
     build_direct.add_argument("--reference-manifest", required=True)
+    build_direct.add_argument(
+        "--half-period-reference-manifest", required=True
+    )
     build_direct.add_argument(
         "--omit-combined-step",
         action="store_true",
