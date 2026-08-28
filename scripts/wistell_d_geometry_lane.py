@@ -667,6 +667,11 @@ def build_45(args: argparse.Namespace) -> None:
     output_root = Path(args.output_root).resolve()
     if output_root.exists():
         raise FileExistsError(f"create-only output root exists: {output_root}")
+    launch_identity = {
+        "git_head": git_head(Path.cwd()),
+        "script_path": str(Path(__file__).resolve()),
+        "script_sha256": sha256_file(Path(__file__).resolve()),
+    }
     config, config_path = load_geometry_configuration(args.config)
     construction = config["construction"]
     input_before = verify_source_set(input_root)
@@ -697,6 +702,7 @@ def build_45(args: argparse.Namespace) -> None:
             "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
             "generated_utc": utc_now(),
             "classification": "WISTELL_D_45D_61X121_CONSTRUCTION_PASS",
+            "launch_identity": launch_identity,
             "source": {
                 "lineage_root": str(input_root),
                 "lineage_commit": LINEAGE_COMMIT,
@@ -790,7 +796,9 @@ def build_45(args: argparse.Namespace) -> None:
         "classification": "WISTELL_D_45D_61X121_SOURCE_CAD_PASS",
         "lane": {
             "base_sha": LANE_BASE,
-            "head_sha_at_build": git_head(Path.cwd()),
+            "head_sha_at_build": launch_identity["git_head"],
+            "script_path_at_launch": launch_identity["script_path"],
+            "script_sha256_at_launch": launch_identity["script_sha256"],
         },
         "source": {
             "lineage_root": str(input_root),

@@ -1,0 +1,34 @@
+{
+  "schema": "wistell_d.local_attempt_terminal_failure/v1.0.0",
+  "generated_utc": "2026-08-28T05:06:52.3543126Z",
+  "classification": "FAIL_CLOSED_LAUNCH_IDENTITY_NOT_FROZEN_AT_PROCESS_START",
+  "selectable": false,
+  "attempt": {
+    "root": "D:/parastell-artifacts/prompt7r-wistell90-20260828/source-cad-45d-61x121-v3",
+    "pid": 24788,
+    "loaded_code_commit": "0a158c2",
+    "worktree_head_changed_during_run_to": "efc6cf3",
+    "terminal_action": "operator_stopped_exact_pid_before_STEP_export_and_acceptance"
+  },
+  "reason": {
+    "finding": "build_45_evaluated_git_head_when_writing_the_final_receipt_instead_of_freezing_it_at_launch",
+    "consequence": "the_receipt_would_have_bound_the_in_memory_v3_code_to_the_wrong_later_commit",
+    "scientific_geometry_failure_observed": false
+  },
+  "partial_artifacts": [
+    {
+      "path": "canonical_thickness_arrays_cm.npz",
+      "bytes": 31024,
+      "sha256": "97bb293bb32d4a99950bfb75c21886ec0f63aaa41965b4b1a022dc737643ade8"
+    }
+  ],
+  "absent_required_artifacts": [
+    "component STEP files",
+    "combined STEP",
+    "SOURCE_CAD_61X121_ACCEPTANCE.json",
+    "DAGMC H5M",
+    "OpenMC geometry-debug result"
+  ],
+  "successors_launched": false,
+  "disposition": "preserve_create_only_attempt_as_nonselectable_operational_evidence"
+}

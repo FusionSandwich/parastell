@@ -112,6 +112,10 @@ def test_build_45_uses_process_isolated_pairwise_audit():
     assert "streaming_step_pairwise_audit(" in source
     assert "pairwise = complete_pairwise_audit(" not in source
     assert "del combined, components, stellarator" in source
+    assert source.index("launch_identity =") < source.index(
+        "output_root.mkdir"
+    )
+    assert 'launch_identity["git_head"]' in source
 
 
 def _half_period_receipt() -> dict:
