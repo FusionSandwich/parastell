@@ -1,0 +1,46 @@
+{
+  "schema": "wistell_d.bateman_runtime_preflight/v1.0.0",
+  "generated_utc": "2026-08-28T07:12:00Z",
+  "status": "FAIL_CLOSED_LIVE_IMPORT_GATE_INCOMPLETE",
+  "selectable": false,
+  "host": "poly-bateman",
+  "resource_observation": {
+    "logical_threads": 256,
+    "policy_limit_threads": 64,
+    "reserved_threads_before_probe": 0,
+    "observed_unreserved_threads_before_probe": 1,
+    "available_threads_before_probe": 63,
+    "mem_total_kib": 2108047640,
+    "mem_available_kib": 2086837444,
+    "home_filesystem_free_bytes": 76543660392448
+  },
+  "probe": {
+    "python": "/home/apollon/josma/data/transport/bin/python",
+    "python_version": "3.11.15",
+    "requested_imports": [
+      "paramak",
+      "cad_to_dagmc",
+      "cadquery",
+      "gmsh",
+      "pymoab",
+      "parastell_damage"
+    ],
+    "terminal_condition": "bounded operator termination after approximately ten minutes in nfs_wait_bit_killable before the first module receipt completed",
+    "remote_processes_after_cleanup": 0,
+    "cpu_lease_created": false,
+    "remote_attempt_root_created": false,
+    "file_transfer_performed": false,
+    "scientific_job_launched": false
+  },
+  "cleanup": {
+    "remote_lease_files_after_cleanup": [],
+    "remote_ledger_lock_only": true,
+    "persistent_broker_stopped_after_socket_closed": true
+  },
+  "decision": {
+    "construct_only_allowed": false,
+    "imprinted_dagmc_allowed": false,
+    "openmc_allowed": false,
+    "next_action": "Repeat the live import gate only in a fresh explicitly coordinated window after the Bateman NFS/runtime path is responsive; do not launch from the historical v3 receipt alone."
+  }
+}

@@ -1378,9 +1378,12 @@ def build_90_direct(args: argparse.Namespace) -> None:
         raise RuntimeError(
             f"unexpected direct-90 component order: {component_names}"
         )
-    combined = cq.Compound.makeCompound(list(components.values()))
-    combined_path = output_root / "wistell_d_90d_80x90_direct.step"
-    cq.exporters.export(combined, str(combined_path))
+    combined_path = None
+    if not args.omit_combined_step:
+        combined = cq.Compound.makeCompound(list(components.values()))
+        combined_path = output_root / "wistell_d_90d_80x90_direct.step"
+        cq.exporters.export(combined, str(combined_path))
+        del combined
     component_metrics = {
         name: shape_metrics(shape) for name, shape in components.items()
     }
@@ -1441,7 +1444,7 @@ def build_90_direct(args: argparse.Namespace) -> None:
         raise RuntimeError(
             f"direct-90 volume regression failed: {volume_regression}"
         )
-    del combined, components, stellarator
+    del components, stellarator
     gc.collect()
     pairwise = streaming_step_pairwise_audit(
         output_root,
@@ -1454,19 +1457,18 @@ def build_90_direct(args: argparse.Namespace) -> None:
     input_after = verify_source_set(input_root)
     if input_before != input_after:
         raise RuntimeError("authoritative source set changed during CAD build")
-    artifacts = artifact_rows(
-        output_root,
-        {
-            "source_step": combined_path,
-            "geometry_configuration": config_path,
-            "resolved_thickness_arrays": output_root
-            / "resolved_thickness_arrays_cm.npz",
-            **{
-                f"component_step:{name}": output_root / f"{name}.step"
-                for name in component_names
-            },
+    artifact_sources = {
+        "geometry_configuration": config_path,
+        "resolved_thickness_arrays": output_root
+        / "resolved_thickness_arrays_cm.npz",
+        **{
+            f"component_step:{name}": output_root / f"{name}.step"
+            for name in component_names
         },
-    )
+    }
+    if combined_path is not None:
+        artifact_sources["source_step"] = combined_path
+    artifacts = artifact_rows(output_root, artifact_sources)
     payload = {
         "schema": WISTELL_D_ACCEPTANCE_SCHEMA,
         "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
@@ -1511,6 +1513,8 @@ def build_90_direct(args: argparse.Namespace) -> None:
             "magnet_representation": "continuous_30_cm_magnet_envelope",
             "global_explicit_coils": False,
             "component_order": list(component_names),
+            "complete_geometry_representation": "nine_component_step_set",
+            "combined_step_exported": combined_path is not None,
         },
         "thickness_validation": thickness,
         "components": component_metrics,
@@ -1577,7 +1581,10 @@ def build_90_direct(args: argparse.Namespace) -> None:
             {
                 "classification": payload["classification"],
                 "output": str(acceptance_path),
-                "source_step_sha256": artifacts["source_step"]["sha256"],
+                "source_step_sha256": artifacts.get("source_step", {}).get(
+                    "sha256"
+                ),
+                "component_step_count": len(component_names),
                 "elapsed_seconds": payload["elapsed_seconds"],
             },
             indent=2,
@@ -3828,6 +3835,11 @@ def parse_args() -> argparse.Namespace:
     build_direct.add_argument("--container-image-id", required=True)
     build_direct.add_argument("--runtime-receipt", required=True)
     build_direct.add_argument("--reference-manifest", required=True)
+    build_direct.add_argument(
+        "--omit-combined-step",
+        action="store_true",
+        help="seal the complete nine-component STEP set without allocating an optional combined compound",
+    )
     build_direct.add_argument(
         "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
     )

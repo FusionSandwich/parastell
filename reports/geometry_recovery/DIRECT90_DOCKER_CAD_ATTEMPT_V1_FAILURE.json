@@ -1,0 +1,42 @@
+{
+  "schema": "wistell_d.direct90_cad_attempt/v1.0.0",
+  "attempt_id": "prompt7r-direct90-cad-v1-20260828",
+  "status": "FAIL_CLOSED_HOST_RAM_FLOOR",
+  "selectable": false,
+  "source_revision": "1447d78aecc8174e001029e6ea8cfbd0fe7ccf07",
+  "container": {
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "network": "none",
+    "cpu_limit": 4,
+    "memory_limit_gib": 16,
+    "oom_killed": false,
+    "exit_code": 137,
+    "started_utc": "2026-08-28T06:42:40.780387306Z",
+    "finished_utc": "2026-08-28T06:57:23.142277188Z",
+    "maximum_observed_container_memory_gib": 6.064,
+    "stop_was_operator_resource_guard": true
+  },
+  "resource_guard": {
+    "declared_host_free_ram_floor_gib": 2.0,
+    "last_observation_before_stop_gib": 1.32,
+    "post_stop_free_ram_gib": 4.8
+  },
+  "partial_artifacts": {
+    "root": "D:/parastell-artifacts/prompt7r-wistell90-20260828/direct90-80x90-docker-v1/build",
+    "nine_component_step_files_complete": true,
+    "combined_step_bytes": 1041289481,
+    "combined_step_write_complete_before_stop": true,
+    "acceptance_manifest_present": false,
+    "pairwise_audit_complete": false,
+    "input_immutability_recheck_complete": false,
+    "artifact_hash_ledger_complete": false
+  },
+  "decision": {
+    "quarantine_partial_root": true,
+    "do_not_resume_or_relabel": true,
+    "openmc_allowed": false,
+    "dagmc_export_allowed_from_this_attempt": false,
+    "automatic_successor_allowed": false,
+    "required_redesign": "Avoid retaining and exporting the optional combined compound in the same high-memory process, or use the already validated component STEP set for the imprinted DAGMC stage after a fresh qualified runtime preflight."
+  }
+}

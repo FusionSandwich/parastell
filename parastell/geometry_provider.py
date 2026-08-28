@@ -521,6 +521,9 @@ def validate_wistell_d_manifest(
         != "direct_ParaStell_0_to_90_degrees"
         or model.get("derived_from_finished_45_degree_CAD") is not False
         or model.get("component_order") != list(EXPECTED_LAYER_ORDER)
+        or model.get("complete_geometry_representation")
+        != "nine_component_step_set"
+        or not isinstance(model.get("combined_step_exported"), bool)
     ):
         raise GeometryProvenanceError(
             "90-degree WISTELL-D geometry must be constructed directly by ParaStell"
@@ -770,6 +773,23 @@ def validate_wistell_d_manifest(
         ):
             raise GeometryProvenanceError(
                 f"artifact {role} has invalid SHA-256"
+            )
+    if extent == 90.0:
+        required_component_roles = {
+            f"component_step:{name}" for name in EXPECTED_LAYER_ORDER
+        }
+        actual_component_roles = {
+            role for role in artifacts if role.startswith("component_step:")
+        }
+        if actual_component_roles != required_component_roles:
+            raise GeometryProvenanceError(
+                "direct-90 manifest lacks the complete component STEP set"
+            )
+        if model.get("combined_step_exported") is not (
+            "source_step" in artifacts
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 combined STEP declaration contradicts its artifact set"
             )
 
 

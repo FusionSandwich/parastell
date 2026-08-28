@@ -219,6 +219,7 @@ def test_direct_90_builder_contains_no_finished_cad_transform_or_fuse():
     assert "streaming_step_pairwise_audit(" in source
     assert ".rotate(" not in source
     assert ".fuse(" not in source
+    assert "if not args.omit_combined_step:" in source
     assert '"derived_from_finished_45_degree_CAD": False' in source
     assert '"transport_eligible": False' in source
 
@@ -353,6 +354,8 @@ def _direct90_manifest(tmp_path: Path) -> dict:
             "construction_method": "direct_ParaStell_0_to_90_degrees",
             "derived_from_finished_45_degree_CAD": False,
             "component_order": list(EXPECTED_LAYER_ORDER),
+            "complete_geometry_representation": "nine_component_step_set",
+            "combined_step_exported": False,
         }
     )
     manifest.pop("complete_pairwise_audit")
@@ -444,6 +447,13 @@ def _direct90_manifest(tmp_path: Path) -> dict:
             }
             for name in EXPECTED_LAYER_ORDER
         },
+    }
+    manifest["artifacts"] = {
+        f"component_step:{name}": {
+            "path": str((tmp_path / f"{name}.step").resolve()),
+            "sha256": f"{index + 1:064x}",
+        }
+        for index, name in enumerate(EXPECTED_LAYER_ORDER)
     }
     return manifest
 
@@ -548,6 +558,35 @@ def test_direct90_manifest_requires_live_vmec_proof(tmp_path):
     manifest["source"].pop("live_vmec_metadata")
     with pytest.raises(GeometryProvenanceError, match="live VMEC"):
         validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_manifest_requires_all_nine_component_steps(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    manifest["artifacts"].pop("component_step:magnet_envelope")
+    with pytest.raises(GeometryProvenanceError, match="component STEP set"):
+        validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_manifest_rejects_extra_physical_component(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    manifest["artifacts"]["component_step:port"] = {
+        "path": str((tmp_path / "port.step").resolve()),
+        "sha256": "f" * 64,
+    }
+    with pytest.raises(GeometryProvenanceError, match="component STEP set"):
+        validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_combined_step_declaration_is_biconditional(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    manifest["artifacts"]["source_step"] = {
+        "path": str((tmp_path / "combined.step").resolve()),
+        "sha256": "e" * 64,
+    }
+    with pytest.raises(GeometryProvenanceError, match="contradicts"):
+        validate_wistell_d_manifest(manifest)
+    manifest["model"]["combined_step_exported"] = True
+    validate_wistell_d_manifest(manifest)
 
 
 def test_manifest_rejects_example_path_and_has_no_fallback(tmp_path):
