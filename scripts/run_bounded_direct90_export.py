@@ -55,15 +55,18 @@ def _proc_start_time(proc_root: Path, pid: int) -> int | None:
 def _discover_lease(
     root: Path | None = None,
     *,
+    guard_pid: int | None = None,
     session_id: int | None = None,
     proc_root: Path = Path("/proc"),
     timeout_seconds: float = 5.0,
     poll_seconds: float = 0.05,
+    maximum_polls: int = 101,
 ) -> dict[str, Any]:
     lease_root = root or (Path.home() / ".codex" / "ssh-poly-core-budget")
-    sid = os.getsid(0) if session_id is None else int(session_id)
+    guard = os.getppid() if guard_pid is None else int(guard_pid)
+    sid = os.getsid(guard) if session_id is None else int(session_id)
     deadline = time.monotonic() + timeout_seconds
-    while True:
+    for poll_index in range(maximum_polls):
         matches = []
         for path in lease_root.glob("*.lease"):
             fields = path.read_text(encoding="utf-8").split()
@@ -71,17 +74,18 @@ def _discover_lease(
                 field.isdigit() for field in fields
             ):
                 continue
-            cores, pid, start_time, lease_sid = map(int, fields)
+            cores, lease_pid, start_time, lease_sid = map(int, fields)
             if (
                 cores == REQUESTED_THREADS
+                and lease_pid == guard
                 and lease_sid == sid
-                and _proc_start_time(proc_root, pid) == start_time
+                and _proc_start_time(proc_root, lease_pid) == start_time
             ):
                 matches.append(
                     {
                         "lease_id": path.stem,
                         "cores": cores,
-                        "pid": pid,
+                        "pid": lease_pid,
                         "start_time": start_time,
                         "session_id": lease_sid,
                     }
@@ -92,12 +96,13 @@ def _discover_lease(
             raise RuntimeError(
                 f"multiple live ssh-poly leases match session {sid}: {matches}"
             )
-        if time.monotonic() >= deadline:
+        if time.monotonic() >= deadline or poll_index + 1 >= maximum_polls:
             raise RuntimeError(
                 f"timed out waiting for one live {REQUESTED_THREADS}-core "
-                f"ssh-poly lease for session {sid}"
+                f"ssh-poly lease for guard PID {guard}, session {sid}"
             )
         time.sleep(poll_seconds)
+    raise AssertionError("unreachable lease-discovery loop exit")
 
 
 def _load_exporter(path: Path) -> Any:
@@ -211,6 +216,12 @@ def run(args: argparse.Namespace) -> int:
             or args.policy_limit_threads != POLICY_LIMIT_THREADS
         ):
             raise ValueError("ssh-poly policy binding mismatch")
+        if args.lease_id != "AUTO_DISCOVER":
+            raise ValueError("explicit ssh-poly lease IDs are forbidden")
+        lease_root = args.lease_root.resolve()
+        if lease_root != EXPECTED_LEASE_ROOT:
+            raise ValueError("unexpected ssh-poly lease root")
+        lease = _discover_lease(lease_root)
         module = _load_exporter(exporter)
         manifest = source_root / "manifest.json"
         if sha256_file(manifest) != module.REFERENCE_MANIFEST_SHA256:
@@ -226,12 +237,6 @@ def run(args: argparse.Namespace) -> int:
         }
         if environment != module.REQUIRED_THREAD_ENVIRONMENT:
             raise ValueError("frozen thread environment mismatch")
-        if args.lease_id != "AUTO_DISCOVER":
-            raise ValueError("explicit ssh-poly lease IDs are forbidden")
-        lease_root = args.lease_root.resolve()
-        if lease_root != EXPECTED_LEASE_ROOT:
-            raise ValueError("unexpected ssh-poly lease root")
-        lease = _discover_lease(lease_root)
         if not args.attempt_id or not args.nonce:
             raise ValueError(
                 "attempt, nonce, and lease identities are required"

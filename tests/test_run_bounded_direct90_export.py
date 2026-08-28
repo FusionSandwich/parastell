@@ -256,7 +256,11 @@ def test_lease_discovery_matches_exact_live_session(tmp_path):
     (leases / "other.lease").write_text("4 100 200 300\n", encoding="utf-8")
     (leases / "exact.lease").write_text("32 101 201 301\n", encoding="utf-8")
     assert _discover_lease(
-        leases, session_id=301, proc_root=proc, timeout_seconds=0
+        leases,
+        guard_pid=101,
+        session_id=301,
+        proc_root=proc,
+        timeout_seconds=0,
     ) == {
         "lease_id": "exact",
         "cores": 32,
@@ -271,12 +275,15 @@ def test_lease_discovery_rejects_ambiguous_session(tmp_path):
     leases.mkdir()
     proc = tmp_path / "proc"
     _write_proc_stat(proc, 101, 201)
-    _write_proc_stat(proc, 102, 202)
     (leases / "one.lease").write_text("32 101 201 301\n", encoding="utf-8")
-    (leases / "two.lease").write_text("32 102 202 301\n", encoding="utf-8")
+    (leases / "two.lease").write_text("32 101 201 301\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="multiple live"):
         _discover_lease(
-            leases, session_id=301, proc_root=proc, timeout_seconds=0
+            leases,
+            guard_pid=101,
+            session_id=301,
+            proc_root=proc,
+            timeout_seconds=0,
         )
 
 
@@ -294,7 +301,11 @@ def test_lease_discovery_rejects_malformed_wrong_core_and_stale_pid(
     (leases / "candidate.lease").write_text(lease_text, encoding="utf-8")
     with pytest.raises(RuntimeError, match="timed out"):
         _discover_lease(
-            leases, session_id=301, proc_root=proc, timeout_seconds=0
+            leases,
+            guard_pid=101,
+            session_id=301,
+            proc_root=proc,
+            timeout_seconds=0,
         )
 
 
