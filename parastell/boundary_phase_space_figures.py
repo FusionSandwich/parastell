@@ -394,7 +394,7 @@ def _particle_labels(values: np.ndarray) -> np.ndarray:
     return np.asarray(labels)
 
 
-def write_phase_space_figures(
+def _write_phase_space_figures(
     records: Mapping[str, Any],
     output_directory: str | Path,
     *,
@@ -402,8 +402,10 @@ def write_phase_space_figures(
     geometry_sha256: str,
     source_bank_sha256: str,
     phase_space_manifest: Mapping[str, Any],
+    source_bank_sha256s: list[str] | None = None,
     facet_catalog: Mapping[str, Any] | None = None,
     topology_manifest_sha256: str | None = None,
+    run_audit_sha256: str | None = None,
     grazing_tolerance: float = 1.0e-8,
     status: str = "BOUNDED_TEST_ONLY",
 ) -> dict[str, Any]:
@@ -593,9 +595,15 @@ def write_phase_space_figures(
         "geometry_label": geometry_label,
         "geometry_sha256": geometry_sha256,
         "source_bank_sha256": source_bank_sha256,
+        "source_bank_sha256s": (
+            [source_bank_sha256]
+            if source_bank_sha256s is None
+            else source_bank_sha256s
+        ),
         "phase_space_history_binding": phase_space_manifest["history_binding"],
         "facet_catalog_overlay": facet_triangles is not None,
         "topology_manifest_sha256": topology_hash,
+        "surface_run_audit_sha256": run_audit_sha256,
         "surface_current": current_summary,
         "status": status,
         "grazing_tolerance": grazing_tolerance,
@@ -612,3 +620,227 @@ def write_phase_space_figures(
     )
     manifest["manifest_sha256"] = _sha256(manifest_path)
     return manifest
+
+
+def _resolved_verified_path(row: Mapping[str, Any], label: str) -> Path:
+    if not isinstance(row, Mapping):
+        raise ValueError(f"{label} binding must be a mapping")
+    path = Path(str(row.get("path", ""))).resolve()
+    expected = _sha256_text(row.get("sha256"), f"{label} sha256")
+    if not path.is_file() or _sha256(path) != expected:
+        raise ValueError(f"{label} path/hash binding failed")
+    return path
+
+
+def _load_npz_mapping(path: Path) -> dict[str, np.ndarray]:
+    with np.load(path, allow_pickle=False) as archive:
+        return {name: archive[name] for name in archive.files}
+
+
+def _verify_localized_rows_against_catalog(
+    records: Mapping[str, np.ndarray], catalog: Mapping[str, np.ndarray]
+) -> None:
+    required_catalog = {
+        "facet_id",
+        "surface_id",
+        "vertices_global_cm",
+        "outward_normal_global",
+    }
+    missing = required_catalog - set(catalog)
+    if missing:
+        raise ValueError(f"facet catalog omits {sorted(missing)}")
+    facet_ids = np.asarray(catalog["facet_id"]).astype(str)
+    if len(facet_ids) != len(set(facet_ids)):
+        raise ValueError("facet catalog IDs are not unique")
+    lookup = {value: index for index, value in enumerate(facet_ids)}
+    catalog_surfaces = np.asarray(catalog["surface_id"], dtype=np.int64)
+    triangles = np.asarray(catalog["vertices_global_cm"], dtype=float)
+    normals = np.asarray(catalog["outward_normal_global"], dtype=float)
+    if (
+        catalog_surfaces.shape != (len(facet_ids),)
+        or triangles.shape != (len(facet_ids), 3, 3)
+        or normals.shape != (len(facet_ids), 3)
+    ):
+        raise ValueError("facet catalog columns are misaligned")
+
+    positions = np.asarray(records["position_global_cm"], dtype=float)
+    directions = np.asarray(records["direction_global"], dtype=float)
+    record_surfaces = np.asarray(records["surface_id"], dtype=np.int64)
+    record_facets = np.asarray(records["facet_id"]).astype(str)
+    barycentric = np.asarray(records["barycentric_coordinates"], dtype=float)
+    record_normals = np.asarray(records["outward_normal_global"], dtype=float)
+    local_positions = np.asarray(records["position_local_cm"], dtype=float)
+    local_directions = np.asarray(records["direction_local"], dtype=float)
+    frames = np.asarray(records["local_frame_global"], dtype=float)
+    for record_index, facet_id in enumerate(record_facets):
+        if facet_id not in lookup:
+            raise ValueError("localized row names an unknown facet")
+        facet_index = lookup[facet_id]
+        if record_surfaces[record_index] != catalog_surfaces[facet_index]:
+            raise ValueError("localized facet/surface identity mismatch")
+        reconstructed = (
+            barycentric[record_index, :, None] * triangles[facet_index]
+        ).sum(axis=0)
+        if not np.allclose(
+            reconstructed, positions[record_index], atol=1.0e-8, rtol=0.0
+        ):
+            raise ValueError("localized barycentric reconstruction mismatch")
+        if not np.allclose(
+            record_normals[record_index],
+            normals[facet_index],
+            atol=1.0e-10,
+            rtol=0.0,
+        ):
+            raise ValueError("localized outward normal mismatch")
+        frame = frames[record_index]
+        if frame.shape != (3, 3) or not np.allclose(
+            np.cross(frame[0], frame[1]), frame[2], atol=1.0e-10, rtol=0.0
+        ):
+            raise ValueError("localized frame is not right handed")
+        if not np.allclose(
+            frame[2], record_normals[record_index], atol=1.0e-10, rtol=0.0
+        ):
+            raise ValueError("localized frame normal mismatch")
+        if not np.allclose(
+            local_directions[record_index],
+            frame @ directions[record_index],
+            atol=1.0e-10,
+            rtol=0.0,
+        ):
+            raise ValueError("localized direction roundtrip mismatch")
+        if not np.allclose(
+            local_positions[record_index],
+            frame @ (positions[record_index] - triangles[facet_index, 0]),
+            atol=1.0e-8,
+            rtol=0.0,
+        ):
+            raise ValueError("localized position roundtrip mismatch")
+
+
+def write_phase_space_figures(
+    run_audit_path: str | Path,
+    output_directory: str | Path,
+    *,
+    expected_run_audit_sha256: str,
+    grazing_tolerance: float = 1.0e-8,
+    status: str = "BOUNDED_TEST_ONLY",
+) -> dict[str, Any]:
+    """Render only from a hash-bound COMPLETE surface-run audit artifact."""
+
+    audit_path = Path(run_audit_path).resolve()
+    expected_audit_hash = _sha256_text(
+        expected_run_audit_sha256, "expected_run_audit_sha256"
+    )
+    if not audit_path.is_file() or _sha256(audit_path) != expected_audit_hash:
+        raise ValueError("surface-run audit file/hash binding failed")
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    if audit.get("schema") != "parastell.openmc16_surface_run_audit/v1.0.0":
+        raise ValueError("unsupported surface-run audit schema")
+    if audit.get("status") != "COMPLETE_CROSSING_BANK":
+        raise ValueError("surface-run audit is not COMPLETE_CROSSING_BANK")
+
+    geometry_path = _resolved_verified_path(audit.get("geometry"), "geometry")
+    geometry_hash = _sha256(geometry_path)
+    bank_rows = audit.get("source_banks")
+    if not isinstance(bank_rows, list) or not bank_rows:
+        raise ValueError("surface-run audit has no source-bank bindings")
+    bank_paths = [
+        _resolved_verified_path(row, f"source bank {index}")
+        for index, row in enumerate(bank_rows)
+    ]
+    bank_hashes = [_sha256(path) for path in bank_paths]
+
+    phase_manifest = audit.get("phase_space_manifest")
+    histories = _bound_source_histories(phase_manifest)
+    source_rows = phase_manifest.get("source_files")
+    if not isinstance(source_rows, list):
+        raise ValueError("phase manifest omits source file bindings")
+    if [
+        str(row.get("sha256", "")).lower() for row in source_rows
+    ] != bank_hashes:
+        raise ValueError("phase manifest source banks disagree with run audit")
+    binding = phase_manifest["history_binding"]
+    settings_path = _resolved_verified_path(
+        {
+            "path": binding.get("settings_payload_path"),
+            "sha256": binding.get("settings_payload_sha256"),
+        },
+        "settings payload",
+    )
+    statepoint_path = _resolved_verified_path(
+        {
+            "path": binding.get("statepoint_path"),
+            "sha256": binding.get("statepoint_sha256"),
+        },
+        "statepoint",
+    )
+
+    localized_path = _resolved_verified_path(
+        audit.get("localized_records"), "localized records"
+    )
+    catalog_path = _resolved_verified_path(
+        audit.get("facet_catalog"), "facet catalog"
+    )
+    topology_path = _resolved_verified_path(
+        audit.get("topology_manifest"), "topology manifest"
+    )
+    localized_hash = _sha256(localized_path)
+    catalog_hash = _sha256(catalog_path)
+    topology_hash = _sha256(topology_path)
+    localization_binding = audit.get("localization_topology_binding")
+    expected_localization_binding = {
+        "geometry_sha256": geometry_hash,
+        "source_bank_sha256s": bank_hashes,
+        "source_histories": histories,
+        "settings_payload_sha256": _sha256(settings_path),
+        "statepoint_sha256": _sha256(statepoint_path),
+        "localized_records_sha256": localized_hash,
+        "facet_catalog_sha256": catalog_hash,
+        "topology_manifest_sha256": topology_hash,
+    }
+    if localization_binding != expected_localization_binding:
+        raise ValueError("localization_topology_binding is inconsistent")
+
+    records = _load_npz_mapping(localized_path)
+    required_localized = {
+        "position_global_cm",
+        "direction_global",
+        "energy_eV",
+        "time_s",
+        "openmc_weight",
+        "weight_per_source_history",
+        "particle_pdg",
+        "surface_id",
+        "facet_id",
+        "barycentric_coordinates",
+        "outward_normal_global",
+        "mu",
+        "position_local_cm",
+        "direction_local",
+        "local_frame_global",
+    }
+    missing = required_localized - set(records)
+    if missing:
+        raise ValueError(f"localized record table omits {sorted(missing)}")
+    catalog = _load_npz_mapping(catalog_path)
+    _verify_localized_rows_against_catalog(records, catalog)
+    catalog["normal_source"] = "dagmc_forward_reverse_topology"
+    catalog["topology_manifest_sha256"] = topology_hash
+
+    geometry_label = str(audit.get("geometry_label", "")).strip()
+    if not geometry_label:
+        raise ValueError("surface-run audit omits geometry_label")
+    return _write_phase_space_figures(
+        records,
+        output_directory,
+        geometry_label=geometry_label,
+        geometry_sha256=geometry_hash,
+        source_bank_sha256=bank_hashes[0],
+        source_bank_sha256s=bank_hashes,
+        phase_space_manifest=phase_manifest,
+        facet_catalog=catalog,
+        topology_manifest_sha256=topology_hash,
+        run_audit_sha256=expected_audit_hash,
+        grazing_tolerance=grazing_tolerance,
+        status=status,
+    )
