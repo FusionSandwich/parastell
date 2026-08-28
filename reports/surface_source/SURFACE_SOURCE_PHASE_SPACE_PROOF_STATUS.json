@@ -54,5 +54,10 @@
     {"field": "position_local_cm", "origin": "right-handed facet-local frame", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
     {"field": "direction_local", "origin": "right-handed facet-local frame", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"}
   ],
-  "acceptance_rule": "No geometry is qualified from these mechanism proofs alone. Each candidate still requires a closed selected envelope, exact requested surface IDs, complete non-truncated bank accounting, facet round trips on every retained record, same-run bank/tally integrity, and zero OpenMC lost/navigation errors."
+  "acceptance_rule": "No geometry is qualified from these mechanism proofs alone. Each candidate still requires a closed selected envelope, exact requested surface IDs, complete non-truncated bank accounting, facet round trips on every retained record, same-run bank/tally integrity, and zero OpenMC lost/navigation errors.",
+  "native_openmc16_limitations": {
+    "parent_history_id": "NOT_STORED; record file/index identity is retained, but ancestry between multiple crossings from one transport history cannot be reconstructed from the native bank",
+    "polarization": "NOT_REPRESENTED_BY_OPENMC16_SOURCEPARTICLE",
+    "impact": "Neither field is required to replay the scalar neutron/photon phase-space source requested here; any future requirement for cross-record family correlations must use separate collision/history instrumentation."
+  }
 }

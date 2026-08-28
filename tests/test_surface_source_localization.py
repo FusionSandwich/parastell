@@ -61,3 +61,26 @@ def test_topology_normal_source_and_containment_fail_closed():
     outside = {**phase, "position_global_cm": np.asarray([[2, 2, 0]])}
     with pytest.raises(ValueError, match="not contained"):
         localize_surface_crossings(outside, _catalog())
+
+
+def test_noncoplanar_shared_edge_is_rejected_as_ambiguous():
+    phase = {
+        "position_global_cm": np.asarray([[0.25, 0.0, 0.0]]),
+        "direction_global": np.asarray([[0, 0, -1.0]]),
+        "surface_id": np.asarray([7]),
+    }
+    catalog = {
+        "facet_id": ["xy", "xz"],
+        "surface_id": [7, 7],
+        "vertices_global_cm": np.asarray(
+            [
+                [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+                [[0, 0, 0], [1, 0, 0], [0, 0, -1]],
+            ],
+            dtype=float,
+        ),
+        "outward_normal_global": np.asarray([[0, 0, 1], [0, 1, 0]]),
+        "normal_source": "dagmc_forward_reverse_topology",
+    }
+    with pytest.raises(ValueError, match="ambiguous noncoplanar facet edge"):
+        localize_surface_crossings(phase, catalog)

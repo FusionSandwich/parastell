@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
+import xml.etree.ElementTree as ET
 
 import h5py
 import numpy as np
@@ -53,10 +54,116 @@ def _positive_integer(value: int, name: str) -> int:
     return int(value)
 
 
+def _verify_history_binding(
+    history_binding: Mapping[str, object], histories: int
+) -> dict:
+    kind = history_binding.get("kind")
+    if kind == "serializer_fixture":
+        declared = _positive_integer(
+            history_binding.get("source_histories"), "bound source_histories"
+        )
+        fixture_id = str(history_binding.get("fixture_id", "")).strip()
+        if declared != histories or not fixture_id:
+            raise ValueError(
+                "serializer fixture history binding is inconsistent"
+            )
+        return {
+            "kind": kind,
+            "fixture_id": fixture_id,
+            "source_histories": declared,
+        }
+    if kind != "fixed_source_run":
+        raise ValueError("unknown history_binding kind")
+
+    run_id = str(history_binding.get("run_id", "")).strip()
+    settings_path = Path(
+        str(history_binding.get("settings_payload_path", ""))
+    ).resolve()
+    statepoint_path = Path(
+        str(history_binding.get("statepoint_path", ""))
+    ).resolve()
+    if (
+        not run_id
+        or not settings_path.is_file()
+        or not statepoint_path.is_file()
+    ):
+        raise ValueError(
+            "fixed-source history binding paths/run_id are invalid"
+        )
+    settings_hash = _sha256(settings_path)
+    statepoint_hash = _sha256(statepoint_path)
+    if (
+        settings_hash
+        != str(history_binding.get("settings_payload_sha256", "")).lower()
+        or statepoint_hash
+        != str(history_binding.get("statepoint_sha256", "")).lower()
+    ):
+        raise ValueError("fixed-source history binding hash mismatch")
+
+    root = ET.parse(settings_path).getroot()
+    settings = root if root.tag == "settings" else root.find("settings")
+    if settings is None:
+        raise ValueError("settings payload has no settings element")
+    particles = _positive_integer(
+        int(settings.findtext("particles", "0")), "settings particles"
+    )
+    batches = _positive_integer(
+        int(settings.findtext("batches", "0")), "settings batches"
+    )
+    seed = _positive_integer(
+        int(settings.findtext("seed", "0")), "settings seed"
+    )
+    if histories != particles * batches:
+        raise ValueError(
+            "source_histories disagrees with fixed-source particles times batches"
+        )
+    with h5py.File(statepoint_path, "r") as statepoint:
+        filetype = statepoint.attrs.get("filetype")
+        if isinstance(filetype, (bytes, np.bytes_)):
+            filetype = bytes(filetype).decode()
+        version = tuple(
+            np.asarray(
+                statepoint.attrs.get("openmc_version", ()), dtype=int
+            ).tolist()
+        )
+        run_mode = statepoint["run_mode"][()]
+        if isinstance(run_mode, (bytes, np.bytes_)):
+            run_mode = bytes(run_mode).decode()
+        state_values = {
+            "particles": int(statepoint["n_particles"][()]),
+            "batches": int(statepoint["n_batches"][()]),
+            "seed": int(statepoint["seed"][()]),
+        }
+    if (
+        filetype != "statepoint"
+        or version != (0, 16, 0)
+        or run_mode != "fixed source"
+        or state_values
+        != {"particles": particles, "batches": batches, "seed": seed}
+    ):
+        raise ValueError(
+            "statepoint disagrees with exact OpenMC 0.16 settings"
+        )
+    return {
+        "kind": kind,
+        "run_id": run_id,
+        "source_histories": histories,
+        "particles_per_batch": particles,
+        "batches": batches,
+        "seed": seed,
+        "settings_payload_path": str(settings_path),
+        "settings_payload_sha256": settings_hash,
+        "statepoint_path": str(statepoint_path),
+        "statepoint_sha256": statepoint_hash,
+        "openmc_version": "0.16.0",
+    }
+
+
 def read_openmc16_surface_sources(
     paths: Sequence[str | Path],
     *,
     source_histories: int,
+    history_binding: Mapping[str, object],
     requested_surface_ids: Iterable[int] | None = None,
     direction_tolerance: float = 1.0e-12,
 ) -> tuple[dict[str, np.ndarray], dict]:
@@ -68,6 +175,11 @@ def read_openmc16_surface_sources(
     """
 
     histories = _positive_integer(source_histories, "source_histories")
+    if not isinstance(history_binding, Mapping):
+        raise ValueError("history_binding is required")
+    verified_history_binding = _verify_history_binding(
+        history_binding, histories
+    )
     source_paths = tuple(Path(path).resolve() for path in paths)
     if not source_paths:
         raise ValueError("at least one surface-source bank is required")
@@ -103,6 +215,11 @@ def read_openmc16_surface_sources(
             if file_format_version.shape != (2,):
                 raise ValueError(
                     f"{path} omits its OpenMC source format version"
+                )
+            if tuple(file_format_version.tolist()) != (18, 2):
+                raise ValueError(
+                    f"{path} has unsupported OpenMC source format "
+                    f"{file_format_version.tolist()}"
                 )
             if "source_bank" not in source:
                 raise ValueError(f"{path} has no source_bank dataset")
@@ -190,6 +307,7 @@ def read_openmc16_surface_sources(
         "schema": "parastell.openmc16_surface_phase_space/v1.0.0",
         "openmc_surface_bank_fields_required": list(OPENMC16_PHASE_FIELDS),
         "source_histories": histories,
+        "history_binding": verified_history_binding,
         "requested_surface_ids": (
             None if requested is None else sorted(requested)
         ),
@@ -210,5 +328,13 @@ def read_openmc16_surface_sources(
             "position_local_cm",
             "direction_local",
         ],
+        "native_field_limitations": {
+            "parent_history_id": (
+                "not stored by the OpenMC 0.16 native surface-source format; "
+                "source_file_index plus source_record_index provide stable "
+                "record identity but not cross-record ancestry"
+            ),
+            "polarization": "not represented by OpenMC 0.16 SourceParticle",
+        },
     }
     return columns, manifest

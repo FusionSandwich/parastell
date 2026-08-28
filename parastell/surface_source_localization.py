@@ -146,6 +146,31 @@ def localize_surface_crossings(
                 f"record {record_index} is not contained by a facet on "
                 f"surface {surface_id}"
             )
+        if len(matches) > 1:
+            matched_indices = [item[1] for item in matches]
+            reference_index = matched_indices[0]
+            reference_normal = normals[reference_index]
+            reference_origin = triangles[reference_index, 0]
+            for matched_index in matched_indices[1:]:
+                same_normal = (
+                    np.dot(reference_normal, normals[matched_index])
+                    >= 1.0 - 1.0e-10
+                )
+                same_plane = (
+                    abs(
+                        np.dot(
+                            triangles[matched_index, 0] - reference_origin,
+                            reference_normal,
+                        )
+                    )
+                    <= residual_tolerance_cm
+                )
+                if not (same_normal and same_plane):
+                    raise ValueError(
+                        f"record {record_index} lies on an ambiguous "
+                        "noncoplanar facet edge; native hit-facet identity "
+                        "is unavailable"
+                    )
         matches.sort(key=lambda item: (item[0], str(facet_ids[item[1]])))
         residual, facet_index, barycentric, reconstructed = matches[0]
         if np.linalg.norm(reconstructed - point) > residual_tolerance_cm:

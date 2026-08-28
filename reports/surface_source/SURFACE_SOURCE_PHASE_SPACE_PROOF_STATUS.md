@@ -28,5 +28,12 @@ requires a closed envelope, exact requested surface IDs, a demonstrably complete
 non-truncated bank, successful localization of every retained record, same-run
 bank/tally integrity, and zero lost or navigation-error particles.
 
+One native-format limitation is explicit: OpenMC 0.16 does not store a parent
+history ID or polarization in `SourceParticle`. File/index record identity is
+retained, but ancestry between multiple crossings from one transport history
+cannot be reconstructed. This does not prevent replay of the requested scalar
+neutron/photon phase-space measure; a future requirement for cross-record family
+correlations would need separate history or collision instrumentation.
+
 Machine-readable details and exact external receipt hashes are in
 `SURFACE_SOURCE_PHASE_SPACE_PROOF_STATUS.json`.
