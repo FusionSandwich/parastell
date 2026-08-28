@@ -36,11 +36,13 @@ from parastell.geometry_provider import (
     WISTELL_D_ACCEPTANCE_SCHEMA,
     WISTELL_D_GEOMETRY_INPUT_MODE,
     WISTELL_D_SOURCE_HASHES,
+    canonical_json_sha256,
     canonical_patch_instances,
     complete_pairwise_audit,
     derive_wistell_d_transforms,
     require_complete_pairwise_acceptance,
     sha256_file,
+    validate_wistell_d_manifest,
 )
 
 
@@ -587,7 +589,12 @@ def build_45(args: argparse.Namespace) -> None:
             ).items()
         },
         "canonical_patch_map": canonical_patch_instances(),
-        "local_frames": {},
+        "local_frames": {
+            "status": "PENDING_M2_QUALIFICATION",
+            "frame_count": 0,
+            "frames": [],
+            "accepted_for_prompt02": False,
+        },
         "artifacts": artifacts,
         "elapsed_seconds": time.time() - started,
     }
@@ -898,6 +905,53 @@ def local_engineering_frame(
     }
 
 
+def qualify_engineering_frame(
+    frame: Mapping[str, Any],
+    instance_linear: np.ndarray,
+    *,
+    frame_id: str,
+) -> dict[str, Any]:
+    qualified = dict(frame)
+    for key in (
+        "origin_cm",
+        "toroidal_unit",
+        "poloidal_unit",
+        "radially_outward_unit",
+    ):
+        qualified[key] = (
+            np.asarray(qualified[key], dtype=float) @ instance_linear.T
+        ).tolist()
+    basis = np.column_stack(
+        (
+            qualified["toroidal_unit"],
+            qualified["poloidal_unit"],
+            qualified["radially_outward_unit"],
+        )
+    )
+    origin = np.asarray(qualified["origin_cm"], dtype=float)
+    forward = np.eye(4)
+    forward[:3, :3] = basis
+    forward[:3, 3] = origin
+    inverse = np.eye(4)
+    inverse[:3, :3] = basis.T
+    inverse[:3, 3] = -basis.T @ origin
+    qualified.update(
+        {
+            "local_engineering_frame_id": frame_id,
+            "frame_kind": "ORTHONORMAL_MAGNET_ALIGNED_TOROIDAL_POLOIDAL_RADIAL",
+            "tape_twist_resolved": False,
+            "forward_transform": forward.tolist(),
+            "inverse_transform": inverse.tolist(),
+            "forward_inverse_closure_inf_norm": float(
+                np.linalg.norm(forward @ inverse - np.eye(4), ord=np.inf)
+            ),
+            "basis_columns_determinant": float(np.linalg.det(basis)),
+        }
+    )
+    qualified["frame_fingerprint_sha256"] = canonical_json_sha256(qualified)
+    return qualified
+
+
 def cad_face_inventory(
     step_path: Path,
     inner: np.ndarray,
@@ -1095,16 +1149,39 @@ def build_m2_contract(args: argparse.Namespace) -> None:
                 outer_area = float(
                     sum(outer_cell_area[cell] for cell in cells)
                 )
-                frame = local_engineering_frame(inner, outer, row, column)
-                for key in (
-                    "origin_cm",
-                    "toroidal_unit",
-                    "poloidal_unit",
-                    "radially_outward_unit",
-                ):
-                    frame[key] = (
-                        np.asarray(frame[key]) @ instance_linear.T
-                    ).tolist()
+                frame_id = (
+                    f"LEF:{instance_id}:t{toroidal_control:02d}:"
+                    f"p{poloidal_control:02d}"
+                )
+                frame = qualify_engineering_frame(
+                    local_engineering_frame(inner, outer, row, column),
+                    instance_linear,
+                    frame_id=frame_id,
+                )
+                instance_facet_offset = (
+                    0
+                    if instance_id == "canonical"
+                    else len(facets_45["areas_cm2"])
+                )
+                inner_facet_ids = [
+                    instance_facet_offset
+                    + 2 * (cell[0] * (SOURCE_CAD_GRID[1] - 1) + cell[1])
+                    + triangle_id
+                    for cell in cells
+                    for triangle_id in (0, 1)
+                ]
+                outer_facet_ids = [
+                    instance_facet_offset
+                    + len(inner_table["areas_cm2"])
+                    + 2 * (cell[0] * (SOURCE_CAD_GRID[1] - 1) + cell[1])
+                    + triangle_id
+                    for cell in cells
+                    for triangle_id in (0, 1)
+                ]
+                canonical_45_patch_id = (
+                    f"M2:canonical:location:t{toroidal_control:02d}:"
+                    f"p{poloidal_control:02d}"
+                )
                 alias_rows.append(
                     {
                         "alias_index": alias_index,
@@ -1115,6 +1192,12 @@ def build_m2_contract(args: argparse.Namespace) -> None:
                         "source_cad_grid": [row, column],
                         "toroidal_degrees_45d": 3.0 * toroidal_control,
                         "poloidal_degrees": 12.0 * poloidal_control,
+                        "canonical_45_patch_id": canonical_45_patch_id,
+                        "local_engineering_frame_id": frame_id,
+                        "frame_kind": frame["frame_kind"],
+                        "tape_twist_resolved": frame["tape_twist_resolved"],
+                        "forward_transform": frame["forward_transform"],
+                        "inverse_transform": frame["inverse_transform"],
                         "magnet_inner_coordinate_cm": (
                             inner[row, column] @ instance_linear.T
                         ).tolist(),
@@ -1130,6 +1213,7 @@ def build_m2_contract(args: argparse.Namespace) -> None:
                             "source_cad_cells": [list(cell) for cell in cells],
                             "area_cm2": inner_area,
                             "outward_sense": "toward_vacuum_gap",
+                            "global_90_facet_ids": inner_facet_ids,
                         },
                         "outer_patch": {
                             "patch_id": (
@@ -1139,6 +1223,7 @@ def build_m2_contract(args: argparse.Namespace) -> None:
                             "source_cad_cells": [list(cell) for cell in cells],
                             "area_cm2": outer_area,
                             "outward_sense": "away_from_magnet_envelope",
+                            "global_90_facet_ids": outer_facet_ids,
                         },
                     }
                 )
@@ -1158,18 +1243,6 @@ def build_m2_contract(args: argparse.Namespace) -> None:
             )
 
     mapping_path = output_root / "CANONICAL_452_M2_MAPPING.json"
-    write_json_create_only(
-        mapping_path,
-        {
-            "schema": "wistell_d.canonical_452_m2_mapping/v1.0.0",
-            "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
-            "canonical_control_count": N_CONTROL_POINTS,
-            "symmetry_instance_count": 2,
-            "records": mapping,
-            "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
-        },
-    )
-
     source_step = source_root / "magnet_envelope.step"
     derived_step = derived_root / "magnet_envelope.step"
     cad_faces_45 = cad_face_inventory(
@@ -1182,11 +1255,217 @@ def build_m2_contract(args: argparse.Namespace) -> None:
     cad_faces_90 = cad_face_inventory(
         derived_step, full_inner, full_outer, extent_degrees=90.0
     )
+    surface_ids_by_role = {
+        "winding_pack": sorted(
+            row["cad_face_id"]
+            for row in cad_faces_90
+            if row["role"] == "MAGNET_ENVELOPE_INNER_PHYSICAL_BOUNDARY"
+        ),
+        "outer_casing": sorted(
+            row["cad_face_id"]
+            for row in cad_faces_90
+            if row["role"] == "MAGNET_ENVELOPE_OUTER_PHYSICAL_BOUNDARY"
+        ),
+    }
+    if any(not ids for ids in surface_ids_by_role.values()):
+        raise RuntimeError(
+            "90-degree CAD face inventory lacks an M2 physical role"
+        )
+    facets_90_sha256 = sha256_file(facets_90_path)
+    local_frame_rows = []
+    product_rows = []
+    for record in mapping:
+        for alias in record["aliases"]:
+            inner_patch = alias["inner_patch"]
+            outer_patch = alias["outer_patch"]
+            inner_patch["global_90_surface_ids"] = surface_ids_by_role[
+                "winding_pack"
+            ]
+            outer_patch["global_90_surface_ids"] = surface_ids_by_role[
+                "outer_casing"
+            ]
+            global_surface_ids = sorted(
+                set(
+                    inner_patch["global_90_surface_ids"]
+                    + outer_patch["global_90_surface_ids"]
+                )
+            )
+            global_facet_ids = sorted(
+                inner_patch["global_90_facet_ids"]
+                + outer_patch["global_90_facet_ids"]
+            )
+            frame = alias["engineering_frame"]
+            local_frame_rows.append(
+                {
+                    "canonical_control_point_id": record[
+                        "canonical_control_id"
+                    ],
+                    "canonical_45_patch_id": alias["canonical_45_patch_id"],
+                    "symmetry_instance_id": record["symmetry_instance_id"],
+                    "transform_id": record["transform_id"],
+                    "global_90_surface_ids": global_surface_ids,
+                    "global_90_facet_ids": global_facet_ids,
+                    "local_engineering_frame_id": alias[
+                        "local_engineering_frame_id"
+                    ],
+                    "forward_transform": alias["forward_transform"],
+                    "inverse_transform": alias["inverse_transform"],
+                    "frame_kind": alias["frame_kind"],
+                    "tape_twist_resolved": alias["tape_twist_resolved"],
+                    "frame_fingerprint_sha256": frame[
+                        "frame_fingerprint_sha256"
+                    ],
+                }
+            )
+            for component_role, patch, normal_sign in (
+                ("winding_pack", inner_patch, -1.0),
+                ("outer_casing", outer_patch, 1.0),
+            ):
+                role_payload = {
+                    "component_role": component_role,
+                    "physical_model": "continuous_homogenized_magnet_envelope",
+                    "exact_coil_or_tape_surface": False,
+                    "canonical_control_point_id": record[
+                        "canonical_control_id"
+                    ],
+                    "canonical_45_patch_id": alias["canonical_45_patch_id"],
+                    "patch_id": patch["patch_id"],
+                    "symmetry_instance_id": record["symmetry_instance_id"],
+                    "transform_id": record["transform_id"],
+                    "area_cm2": patch["area_cm2"],
+                    "outward_normal": (
+                        normal_sign
+                        * np.asarray(
+                            frame["radially_outward_unit"], dtype=float
+                        )
+                    ).tolist(),
+                    "local_engineering_frame_id": alias[
+                        "local_engineering_frame_id"
+                    ],
+                    "engineering_frame": frame,
+                    "global_90_surface_ids": patch["global_90_surface_ids"],
+                    "global_90_facet_ids": patch["global_90_facet_ids"],
+                    "tape_twist_resolved": False,
+                }
+                role_payload["facet_fingerprint_sha256"] = (
+                    canonical_json_sha256(
+                        {
+                            "m2_physical_facets_90d_sha256": facets_90_sha256,
+                            "global_90_facet_ids": patch[
+                                "global_90_facet_ids"
+                            ],
+                        }
+                    )
+                )
+                role_payload["patch_fingerprint_sha256"] = (
+                    canonical_json_sha256(role_payload)
+                )
+                product_rows.append(role_payload)
+
+    write_json_create_only(
+        mapping_path,
+        {
+            "schema": "wistell_d.canonical_452_m2_mapping/v1.1.0",
+            "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+            "canonical_control_count": N_CONTROL_POINTS,
+            "symmetry_instance_count": 2,
+            "records": mapping,
+            "local_frames": {
+                "status": "PASS",
+                "frame_count": len(local_frame_rows),
+                "frames": local_frame_rows,
+            },
+            "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        },
+    )
+    product_inventory_path = (
+        output_root / "PROMPT02_GEOMETRY_PRODUCT_INVENTORY.json"
+    )
+    write_json_create_only(
+        product_inventory_path,
+        {
+            "schema": "wistell_d.prompt02_geometry_product_inventory/v1.0.0",
+            "generated_utc": utc_now(),
+            "classification": "P2G5_GEOMETRY_PATCH_CATALOG_PASS",
+            "representation": "continuous_homogenized_magnet_envelope",
+            "exact_component_roles": ["outer_casing", "winding_pack"],
+            "tape_twist_resolved": False,
+            "role_semantics": {
+                "outer_casing": (
+                    "logical engineering role on the physical outer boundary of "
+                    "the homogenized envelope"
+                ),
+                "winding_pack": (
+                    "logical engineering role on the physical inner boundary of "
+                    "the homogenized envelope; not an exact tape or coil surface"
+                ),
+            },
+            "patch_count": len(product_rows),
+            "patches": product_rows,
+            "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        },
+    )
+    prompt02_acceptance_paths = {}
+    for extent_label, raw_manifest, raw_path, allowed_instances in (
+        ("45D", source_manifest, source_acceptance, {"canonical"}),
+        (
+            "90D",
+            derived_manifest,
+            derived_acceptance,
+            {"canonical", "mate"},
+        ),
+    ):
+        accepted_frames = [
+            row
+            for row in local_frame_rows
+            if row["symmetry_instance_id"] in allowed_instances
+        ]
+        frame_contract = {
+            "status": "PASS",
+            "accepted_for_prompt02": True,
+            "frame_count": len(accepted_frames),
+            "selected_patch_scope": "ALL_CANONICAL_452_NWL_CONTROL_PATCH_ALIASES",
+            "frames": accepted_frames,
+        }
+        qualified_manifest = {
+            **raw_manifest,
+            "generated_utc": utc_now(),
+            "local_frames": frame_contract,
+            "prompt02_producer_gate": {
+                "P2G2_local_engineering_frames": "PASS",
+                "canonical_control_count": N_CONTROL_POINTS,
+                "canonical_452_identity_preserved": True,
+                "exact_45_to_90_transform_preserved": True,
+                "tape_twist_resolved": False,
+                "representation": "continuous_homogenized_magnet_envelope",
+            },
+            "artifacts": {
+                **raw_manifest["artifacts"],
+                **artifact_rows(
+                    output_root,
+                    {
+                        "raw_cad_acceptance": raw_path,
+                        "m2_mapping": mapping_path,
+                        "prompt02_geometry_product_inventory": (
+                            product_inventory_path
+                        ),
+                    },
+                ),
+            },
+        }
+        qualified_path = (
+            output_root / f"PROMPT02_{extent_label}_CAD_ACCEPTANCE.json"
+        )
+        write_json_create_only(qualified_path, qualified_manifest)
+        prompt02_acceptance_paths[extent_label] = qualified_path
     artifact_files = {
         "physical_facets_45d": facets_45_path,
         "physical_facets_90d": facets_90_path,
         "excluded_symmetry_cut_facets": cuts_path,
         "canonical_452_mapping": mapping_path,
+        "prompt02_geometry_product_inventory": product_inventory_path,
+        "prompt02_45d_cad_acceptance": prompt02_acceptance_paths["45D"],
+        "prompt02_90d_cad_acceptance": prompt02_acceptance_paths["90D"],
         "source_acceptance": source_acceptance,
         "derived_acceptance": derived_acceptance,
         "transform_receipt": transform_path,
@@ -1249,6 +1528,12 @@ def build_m2_contract(args: argparse.Namespace) -> None:
             "record_count": len(mapping),
             "instance_ids": ["canonical", "mate"],
             "mapping_path": str(mapping_path),
+            "local_frame_count": len(local_frame_rows),
+        },
+        "prompt02_product_inventory": {
+            "roles": ["outer_casing", "winding_pack"],
+            "patch_count": len(product_rows),
+            "tape_twist_resolved": False,
         },
         "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
         "artifacts": artifact_rows(output_root, artifact_files),
@@ -1561,7 +1846,12 @@ def derive_90(args: argparse.Namespace) -> None:
         "canonical_patch_map": canonical_patch_instances(
             instance_ids=("canonical", "mate")
         ),
-        "local_frames": {},
+        "local_frames": {
+            "status": "PENDING_M2_QUALIFICATION",
+            "frame_count": 0,
+            "frames": [],
+            "accepted_for_prompt02": False,
+        },
         "artifacts": artifacts,
         "elapsed_seconds": time.time() - started,
     }
@@ -1574,6 +1864,620 @@ def derive_90(args: argparse.Namespace) -> None:
                 "output": str(acceptance_path),
                 "step_sha256": artifacts["source_step"]["sha256"],
                 "elapsed_seconds": payload["elapsed_seconds"],
+            },
+            indent=2,
+        )
+    )
+
+
+def mesh_cad_to_dagmc(args: argparse.Namespace) -> None:
+    source_root = Path(args.source_root).resolve()
+    output_root = Path(args.output_root).resolve()
+    if output_root.exists():
+        raise FileExistsError(f"create-only output root exists: {output_root}")
+    manifest_names = (
+        "SOURCE_CAD_61X121_ACCEPTANCE.json",
+        "SOURCE_CAD_90D_ACCEPTANCE.json",
+    )
+    manifest_paths = [source_root / name for name in manifest_names]
+    existing = [path for path in manifest_paths if path.is_file()]
+    if len(existing) != 1:
+        raise ValueError(
+            "source root must contain exactly one CAD acceptance manifest"
+        )
+    manifest_path = existing[0]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected_classification = {
+        manifest_names[0]: "WISTELL_D_45D_61X121_SOURCE_CAD_PASS",
+        manifest_names[1]: "WISTELL_D_90D_TRANSPORT_SOURCE_CAD_PASS",
+    }[manifest_path.name]
+    if manifest.get("classification") != expected_classification:
+        raise ValueError(
+            "CAD acceptance classification is not eligible for meshing"
+        )
+    if manifest.get("geometry_input_mode") != WISTELL_D_GEOMETRY_INPUT_MODE:
+        raise ValueError("CAD acceptance has the wrong geometry input mode")
+    if manifest.get("model", {}).get("source_cad_grid") != list(
+        SOURCE_CAD_GRID
+    ):
+        raise ValueError(
+            "CAD acceptance is not based on the 61x121 source CAD"
+        )
+
+    import cad_to_dagmc
+    import pydagmc
+
+    output_root.mkdir(parents=True)
+    names = tuple(manifest["model"]["component_order"])
+    components = load_step_components(source_root, names)
+    geometry = cq.Compound.makeCompound(list(components.values()))
+    material_tags = [manifest["materials"][name] for name in names]
+    h5m_path = (
+        output_root
+        / f"wistell_d_{int(manifest['model']['toroidal_extent_degrees'])}d_{args.label}.h5m"
+    )
+    started = time.time()
+    gmsh_object = cad_to_dagmc.init_gmsh()
+    try:
+        _, volumes = cad_to_dagmc.get_volumes(
+            gmsh_object, geometry, method="in memory"
+        )
+        if len(volumes) != len(names):
+            raise RuntimeError(
+                f"CAD-to-DAGMC imported {len(volumes)} volumes; expected {len(names)}"
+            )
+        cad_to_dagmc.set_sizes_for_mesh(
+            gmsh_object,
+            min_mesh_size=args.min_mesh_size_cm,
+            max_mesh_size=args.max_mesh_size_cm,
+            mesh_algorithm=args.algorithm,
+        )
+        gmsh_object.model.mesh.generate(dim=2)
+        vertices, triangles_by_solid_and_by_face = (
+            cad_to_dagmc.mesh_to_vertices_and_triangles(volumes)
+        )
+    finally:
+        gmsh_object.finalize()
+    cad_to_dagmc.vertices_to_h5m(
+        vertices,
+        triangles_by_solid_and_by_face,
+        material_tags,
+        h5m_filename=h5m_path,
+    )
+
+    model = pydagmc.Model(str(h5m_path))
+    surface_rows = []
+    for surface in model.surfaces:
+        senses = [
+            None if volume is None else int(volume.id)
+            for volume in surface.senses
+        ]
+        surface_rows.append(
+            {
+                "surface_id": int(surface.id),
+                "triangle_count": int(surface.num_triangles),
+                "area_cm2": float(surface.area),
+                "sense_volume_ids": senses,
+                "parent_volume_ids": sorted(
+                    int(volume.id) for volume in surface.volumes
+                ),
+            }
+        )
+    volume_rows = []
+    for volume in model.volumes:
+        volume_rows.append(
+            {
+                "volume_id": int(volume.id),
+                "material": volume.material,
+                "surface_ids": sorted(
+                    int(surface.id) for surface in volume.surfaces
+                ),
+                "triangle_reference_count": int(volume.num_triangles),
+            }
+        )
+    topology = {
+        "volume_count": len(model.volumes),
+        "surface_count": len(model.surfaces),
+        "group_names": sorted(model.group_names),
+        "volumes_without_material": [
+            int(volume.id) for volume in model.volumes_without_material
+        ],
+        "zero_triangle_surface_ids": [
+            row["surface_id"]
+            for row in surface_rows
+            if row["triangle_count"] <= 0
+        ],
+        "missing_sense_surface_ids": [
+            row["surface_id"]
+            for row in surface_rows
+            if row["sense_volume_ids"] == [None, None]
+        ],
+        "surface_triangle_count": int(
+            sum(row["triangle_count"] for row in surface_rows)
+        ),
+        "surface_area_cm2": float(
+            sum(row["area_cm2"] for row in surface_rows)
+        ),
+    }
+    topology_pass = (
+        topology["volume_count"] == len(names)
+        and not topology["volumes_without_material"]
+        and not topology["zero_triangle_surface_ids"]
+        and not topology["missing_sense_surface_ids"]
+        and sum(len(volumes) for volumes in model.volumes_by_material.values())
+        == len(names)
+    )
+    if not topology_pass:
+        raise RuntimeError(f"DAGMC topology failed: {topology}")
+    payload = {
+        "schema": "wistell_d.dagmc_qualification/v1.0.0",
+        "generated_utc": utc_now(),
+        "classification": "DAGMC_H5M_TOPOLOGY_PASS_OPENMC_DEBUG_PENDING",
+        "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+        "extent_degrees": manifest["model"]["toroidal_extent_degrees"],
+        "faceting_label": args.label,
+        "faceting": {
+            "backend": "cad_to_dagmc",
+            "min_mesh_size_cm": args.min_mesh_size_cm,
+            "max_mesh_size_cm": args.max_mesh_size_cm,
+            "gmsh_algorithm": args.algorithm,
+            "source_cad_grid": list(SOURCE_CAD_GRID),
+        },
+        "source_cad_acceptance": {
+            "path": str(manifest_path),
+            "sha256": sha256_file(manifest_path),
+        },
+        "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        "topology": topology,
+        "surfaces": surface_rows,
+        "volumes": volume_rows,
+        "openmc_geometry_debug": {
+            "status": "BLOCKED",
+            "reason": (
+                "Bateman geometry-only policy forbids OpenMC transport and the "
+                "authorized local runtime has no OpenMC installation"
+            ),
+            "two_seed_debug_run_performed": False,
+        },
+        "artifacts": artifact_rows(output_root, {"dagmc_h5m": h5m_path}),
+        "elapsed_seconds": time.time() - started,
+    }
+    write_json_create_only(output_root / "DAGMC_QUALIFICATION.json", payload)
+    print(
+        json.dumps(
+            {
+                "classification": payload["classification"],
+                "output": str(output_root / "DAGMC_QUALIFICATION.json"),
+                "h5m_sha256": payload["artifacts"]["dagmc_h5m"]["sha256"],
+            },
+            indent=2,
+        )
+    )
+
+
+def load_mesh_qualification(
+    root: Path, *, extent_degrees: float, label: str
+) -> tuple[dict[str, Any], Path]:
+    receipt_path = root / "DAGMC_QUALIFICATION.json"
+    if not receipt_path.is_file():
+        raise FileNotFoundError(receipt_path)
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if receipt.get("classification") != (
+        "DAGMC_H5M_TOPOLOGY_PASS_OPENMC_DEBUG_PENDING"
+    ):
+        raise ValueError(f"DAGMC topology is not accepted: {receipt_path}")
+    if not math.isclose(
+        float(receipt.get("extent_degrees", math.nan)),
+        extent_degrees,
+        abs_tol=1.0e-12,
+    ):
+        raise ValueError(f"DAGMC extent mismatch: {receipt_path}")
+    if receipt.get("faceting_label") != label:
+        raise ValueError(f"DAGMC faceting-label mismatch: {receipt_path}")
+    h5m_files = list(root.glob("*.h5m"))
+    if len(h5m_files) != 1:
+        raise ValueError(f"expected exactly one H5M in {root}")
+    h5m_path = h5m_files[0].resolve()
+    expected_hash = receipt["artifacts"]["dagmc_h5m"]["sha256"]
+    if sha256_file(h5m_path) != expected_hash:
+        raise ValueError(f"DAGMC H5M hash mismatch: {h5m_path}")
+    return receipt, h5m_path
+
+
+def component_clearance_inventory(
+    root: Path,
+    manifest: Mapping[str, Any],
+    *,
+    minimum_nonadjacent_clearance_cm: float,
+    interface_gap_tolerance_cm: float,
+) -> dict[str, Any]:
+    names = tuple(manifest["model"]["component_order"])
+    if names != EXPECTED_LAYER_ORDER:
+        raise ValueError("clearance audit component order is not canonical")
+    pairwise = manifest["complete_pairwise_audit"]
+    require_complete_pairwise_acceptance(pairwise)
+    components = load_step_components(root, names)
+    rows = []
+    failures = []
+    for left_index, left_name in enumerate(names[:-1]):
+        for right_index, right_name in enumerate(
+            names[left_index + 1 :], start=left_index + 1
+        ):
+            adjacent = right_index == left_index + 1
+            try:
+                distance = float(
+                    components[left_name].distance(components[right_name])
+                )
+                if not math.isfinite(distance) or distance < 0.0:
+                    raise ValueError(
+                        "CAD distance must be finite and nonnegative"
+                    )
+                error = None
+            except Exception as exc:
+                distance = None
+                error = f"{type(exc).__name__}: {exc}"
+            if error is not None:
+                status = "BOOLEAN_FAILURE"
+            elif adjacent and distance > interface_gap_tolerance_cm:
+                status = "ADJACENT_INTERFACE_GAP_FAILURE"
+            elif not adjacent and distance < minimum_nonadjacent_clearance_cm:
+                status = "NONADJACENT_CLEARANCE_FAILURE"
+            else:
+                status = "PASS"
+            row = {
+                "left": left_name,
+                "right": right_name,
+                "left_index": left_index,
+                "right_index": right_index,
+                "adjacent_in_radial_stack": adjacent,
+                "minimum_distance_cm": distance,
+                "distance_boolean_error": error,
+                "required_max_interface_gap_cm": (
+                    interface_gap_tolerance_cm if adjacent else None
+                ),
+                "required_minimum_clearance_cm": (
+                    None if adjacent else minimum_nonadjacent_clearance_cm
+                ),
+                "status": status,
+            }
+            rows.append(row)
+            if status != "PASS":
+                failures.append(row)
+    nonadjacent_distances = [
+        row["minimum_distance_cm"]
+        for row in rows
+        if not row["adjacent_in_radial_stack"]
+        and row["minimum_distance_cm"] is not None
+    ]
+    return {
+        "component_order": list(names),
+        "expected_pair_count": len(names) * (len(names) - 1) // 2,
+        "evaluated_pair_count": len(rows),
+        "distance_boolean_failure_count": sum(
+            row["distance_boolean_error"] is not None for row in rows
+        ),
+        "overlap_boolean_failure_count": pairwise["boolean_failure_count"],
+        "overlap_count": pairwise["overlap_count"],
+        "minimum_nonadjacent_clearance_cm": min(nonadjacent_distances),
+        "required_minimum_nonadjacent_clearance_cm": (
+            minimum_nonadjacent_clearance_cm
+        ),
+        "required_maximum_adjacent_interface_gap_cm": (
+            interface_gap_tolerance_cm
+        ),
+        "failure_count": len(failures),
+        "pairs": rows,
+    }
+
+
+def audit_prompt02_clearance(args: argparse.Namespace) -> None:
+    source_root = Path(args.source_root).resolve()
+    derived_root = Path(args.derived_root).resolve()
+    output = Path(args.output).resolve()
+    source_manifest_path = source_root / "SOURCE_CAD_61X121_ACCEPTANCE.json"
+    derived_manifest_path = derived_root / "SOURCE_CAD_90D_ACCEPTANCE.json"
+    transform_path = Path(args.transform_receipt).resolve()
+    source_manifest = json.loads(
+        source_manifest_path.read_text(encoding="utf-8")
+    )
+    derived_manifest = json.loads(
+        derived_manifest_path.read_text(encoding="utf-8")
+    )
+    if source_manifest.get("classification") != (
+        "WISTELL_D_45D_61X121_SOURCE_CAD_PASS"
+    ):
+        raise ValueError("45-degree CAD is not accepted")
+    if derived_manifest.get("classification") != (
+        "WISTELL_D_90D_TRANSPORT_SOURCE_CAD_PASS"
+    ):
+        raise ValueError("90-degree CAD is not accepted")
+    transform = json.loads(transform_path.read_text(encoding="utf-8"))
+    if transform.get("classification") != (
+        "WISTELL_D_EXACT_HALF_PERIOD_TRANSFORM_PASS"
+    ):
+        raise ValueError("exact symmetry transform is not accepted")
+
+    mesh_roots = {
+        "45d_selected": Path(args.source_selected_mesh_root).resolve(),
+        "45d_refined": Path(args.source_refined_mesh_root).resolve(),
+        "90d_selected": Path(args.derived_selected_mesh_root).resolve(),
+        "90d_refined": Path(args.derived_refined_mesh_root).resolve(),
+    }
+    mesh_artifacts = {}
+    for role, root in mesh_roots.items():
+        extent = 45.0 if role.startswith("45d") else 90.0
+        label = "selected" if role.endswith("selected") else "refined"
+        receipt, h5m_path = load_mesh_qualification(
+            root, extent_degrees=extent, label=label
+        )
+        mesh_artifacts[f"{role}_h5m"] = h5m_path
+        mesh_artifacts[f"{role}_qualification"] = (
+            root / "DAGMC_QUALIFICATION.json"
+        )
+        if receipt["topology"]["volume_count"] != len(EXPECTED_LAYER_ORDER):
+            raise ValueError(f"wrong DAGMC volume count for {role}")
+
+    clearance = {
+        "45d": component_clearance_inventory(
+            source_root,
+            source_manifest,
+            minimum_nonadjacent_clearance_cm=(
+                args.minimum_nonadjacent_clearance_cm
+            ),
+            interface_gap_tolerance_cm=args.interface_gap_tolerance_cm,
+        ),
+        "90d": component_clearance_inventory(
+            derived_root,
+            derived_manifest,
+            minimum_nonadjacent_clearance_cm=(
+                args.minimum_nonadjacent_clearance_cm
+            ),
+            interface_gap_tolerance_cm=args.interface_gap_tolerance_cm,
+        ),
+    }
+    seam = derived_manifest["seam_validation"]
+    seam_pass = (
+        seam["positive_volume_overlap_count"] == 0
+        and seam["gap_or_disconnected_component_count"] == 0
+        and all(row["joined_valid_brep"] for row in seam["component_results"])
+        and all(
+            math.isclose(
+                row["volume_scale_90d_over_45d"],
+                2.0,
+                rel_tol=2.0e-8,
+                abs_tol=1.0e-8,
+            )
+            for row in seam["component_results"]
+        )
+    )
+    gate_pass = (
+        seam_pass
+        and all(row["failure_count"] == 0 for row in clearance.values())
+        and all(
+            row["distance_boolean_failure_count"] == 0
+            and row["overlap_boolean_failure_count"] == 0
+            and row["overlap_count"] == 0
+            for row in clearance.values()
+        )
+    )
+    payload = {
+        "schema": "wistell_d.prompt02_geometry_clearance/v1.0.0",
+        "generated_utc": utc_now(),
+        "classification": (
+            "P2G3_ALL_PAIR_CLEARANCE_AND_SEAM_PASS"
+            if gate_pass
+            else "P2G3_ALL_PAIR_CLEARANCE_AND_SEAM_BLOCKED"
+        ),
+        "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+        "all_pair_clearance": clearance,
+        "boolean_failure_count": sum(
+            row["distance_boolean_failure_count"]
+            + row["overlap_boolean_failure_count"]
+            for row in clearance.values()
+        ),
+        "overlap_count": sum(
+            row["overlap_count"] for row in clearance.values()
+        ),
+        "seam_validation": {
+            "status": "PASS" if seam_pass else "BLOCKED",
+            "shared_seam_degrees": seam["shared_seam_degrees"],
+            "operation": seam["operation"],
+            "positive_volume_overlap_count": seam[
+                "positive_volume_overlap_count"
+            ],
+            "gap_or_disconnected_component_count": seam[
+                "gap_or_disconnected_component_count"
+            ],
+            "component_results": seam["component_results"],
+            "transform_id": "half_period_mate",
+            "transform_sha256": sha256_file(transform_path),
+        },
+        "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        "accepted_artifacts": artifact_rows(
+            output.parent,
+            {
+                "45d_combined_step": (
+                    source_root / "wistell_d_45d_61x121_source_cad.step"
+                ),
+                "90d_combined_step": (
+                    derived_root / "wistell_d_90d_symmetry_derived.step"
+                ),
+                "45d_cad_acceptance": source_manifest_path,
+                "90d_cad_acceptance": derived_manifest_path,
+                "transform_receipt": transform_path,
+                **mesh_artifacts,
+            },
+        ),
+    }
+    if not gate_pass:
+        raise RuntimeError(json.dumps(payload, indent=2))
+    write_json_create_only(output, payload)
+    print(
+        json.dumps(
+            {
+                "classification": payload["classification"],
+                "output": str(output),
+            },
+            indent=2,
+        )
+    )
+
+
+def qualify_prompt02_geometry(args: argparse.Namespace) -> None:
+    source_root = Path(args.source_root).resolve()
+    derived_root = Path(args.derived_root).resolve()
+    m2_root = Path(args.m2_root).resolve()
+    clearance_path = Path(args.clearance_receipt).resolve()
+    output_root = Path(args.output_root).resolve()
+    if output_root.exists():
+        raise FileExistsError(f"create-only output root exists: {output_root}")
+    source_path = source_root / "SOURCE_CAD_61X121_ACCEPTANCE.json"
+    derived_path = derived_root / "SOURCE_CAD_90D_ACCEPTANCE.json"
+    source_manifest = json.loads(source_path.read_text(encoding="utf-8"))
+    derived_manifest = json.loads(derived_path.read_text(encoding="utf-8"))
+    mapping_path = m2_root / "CANONICAL_452_M2_MAPPING.json"
+    product_path = m2_root / "PROMPT02_GEOMETRY_PRODUCT_INVENTORY.json"
+    m2_path = m2_root / "M2_GEOMETRY_HANDSHAKE.json"
+    mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+    product = json.loads(product_path.read_text(encoding="utf-8"))
+    m2 = json.loads(m2_path.read_text(encoding="utf-8"))
+    clearance = json.loads(clearance_path.read_text(encoding="utf-8"))
+    if mapping.get("local_frames", {}).get("status") != "PASS":
+        raise ValueError("M2 local-frame mapping is not accepted")
+    if product.get("classification") != "P2G5_GEOMETRY_PATCH_CATALOG_PASS":
+        raise ValueError("Prompt-2 geometry product inventory is not accepted")
+    if m2.get("classification") != "M2_GEOMETRY_INVENTORY_PASS":
+        raise ValueError("M2 geometry inventory is not accepted")
+    if clearance.get("classification") != (
+        "P2G3_ALL_PAIR_CLEARANCE_AND_SEAM_PASS"
+    ):
+        raise ValueError("Prompt-2 clearance receipt is not accepted")
+
+    mesh_roots = {
+        "45d_selected": Path(args.source_selected_mesh_root).resolve(),
+        "45d_refined": Path(args.source_refined_mesh_root).resolve(),
+        "90d_selected": Path(args.derived_selected_mesh_root).resolve(),
+        "90d_refined": Path(args.derived_refined_mesh_root).resolve(),
+    }
+    mesh_files = {}
+    for role, root in mesh_roots.items():
+        extent = 45.0 if role.startswith("45d") else 90.0
+        label = "selected" if role.endswith("selected") else "refined"
+        _, mesh_files[role] = load_mesh_qualification(
+            root, extent_degrees=extent, label=label
+        )
+
+    all_frames = mapping["local_frames"]["frames"]
+    output_root.mkdir(parents=True)
+    accepted_paths = {}
+    for extent_label, root, raw_path, raw_manifest, instances in (
+        ("45D", source_root, source_path, source_manifest, {"canonical"}),
+        (
+            "90D",
+            derived_root,
+            derived_path,
+            derived_manifest,
+            {"canonical", "mate"},
+        ),
+    ):
+        frames = [
+            frame
+            for frame in all_frames
+            if frame["symmetry_instance_id"] in instances
+        ]
+        mesh_prefix = extent_label.lower()
+        artifact_files = {
+            "source_step": root
+            / (
+                "wistell_d_45d_61x121_source_cad.step"
+                if extent_label == "45D"
+                else "wistell_d_90d_symmetry_derived.step"
+            ),
+            **{
+                f"component_step:{name}": root / f"{name}.step"
+                for name in raw_manifest["model"]["component_order"]
+            },
+            "selected_h5m": mesh_files[f"{mesh_prefix}_selected"],
+            "refined_h5m": mesh_files[f"{mesh_prefix}_refined"],
+            "raw_cad_acceptance": raw_path,
+            "m2_mapping": mapping_path,
+            "m2_geometry_handshake": m2_path,
+            "prompt02_geometry_product_inventory": product_path,
+            "prompt02_clearance_receipt": clearance_path,
+        }
+        qualified = {
+            **raw_manifest,
+            "generated_utc": utc_now(),
+            "local_frames": {
+                "status": "PASS",
+                "accepted_for_prompt02": True,
+                "frame_count": len(frames),
+                "selected_patch_scope": (
+                    "ALL_CANONICAL_452_NWL_CONTROL_PATCH_ALIASES"
+                ),
+                "frames": frames,
+            },
+            "prompt02_producer_gate": {
+                "P2G2_local_engineering_frames": "PASS",
+                "P2G3_no_overlap_min_clearance_and_seam": "PASS",
+                "P2G5_geometry_product_inventory": "PASS",
+                "selected_and_refined_h5m_hashes_bound": True,
+                "openmc_geometry_debug": "BLOCKED_LOCAL_RUNTIME_UNAVAILABLE",
+                "canonical_452_identity_preserved": True,
+                "exact_45_to_90_transform_preserved": True,
+                "tape_twist_resolved": False,
+            },
+            "artifacts": artifact_rows(output_root, artifact_files),
+        }
+        validate_wistell_d_manifest(
+            qualified,
+            required_extent_degrees=float(
+                qualified["model"]["toroidal_extent_degrees"]
+            ),
+        )
+        acceptance_path = (
+            output_root / f"PROMPT02_{extent_label}_ACCEPTANCE.json"
+        )
+        write_json_create_only(acceptance_path, qualified)
+        accepted_paths[extent_label] = acceptance_path
+
+    bundle = {
+        "schema": "wistell_d.geometry_acceptance_bundle/v1.0.0",
+        "generated_utc": utc_now(),
+        "classification": "GEOMETRY_PROVIDER_PASS_OPENMC_DEBUG_BLOCKED",
+        "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+        "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
+        "provider_route": {
+            "mode": "READ_ONLY_HASH_VERIFIED",
+            "default_extent": "90D",
+            "example_fallback_available": False,
+        },
+        "prompt02_gates": {
+            "P2G2": "PASS",
+            "P2G3": "PASS",
+            "P2G5_geometry_half": "PASS",
+            "openmc_geometry_debug": "BLOCKED_LOCAL_RUNTIME_UNAVAILABLE",
+        },
+        "artifacts": artifact_rows(
+            output_root,
+            {
+                "accepted_45d_manifest": accepted_paths["45D"],
+                "accepted_90d_manifest": accepted_paths["90D"],
+                "clearance_receipt": clearance_path,
+                "m2_geometry_handshake": m2_path,
+                "canonical_452_mapping": mapping_path,
+                "prompt02_geometry_product_inventory": product_path,
+            },
+        ),
+    }
+    write_json_create_only(
+        output_root / "GEOMETRY_ACCEPTANCE_BUNDLE.json", bundle
+    )
+    print(
+        json.dumps(
+            {
+                "classification": bundle["classification"],
+                "output": str(output_root),
             },
             indent=2,
         )
@@ -1622,6 +2526,46 @@ def parse_args() -> argparse.Namespace:
     m2.add_argument("--transform-receipt", required=True)
     m2.add_argument("--output-root", required=True)
     m2.set_defaults(function=build_m2_contract)
+
+    mesh = subparsers.add_parser("mesh-cad")
+    mesh.add_argument("--source-root", required=True)
+    mesh.add_argument("--output-root", required=True)
+    mesh.add_argument(
+        "--label", choices=("selected", "refined"), required=True
+    )
+    mesh.add_argument("--min-mesh-size-cm", type=float, required=True)
+    mesh.add_argument("--max-mesh-size-cm", type=float, required=True)
+    mesh.add_argument("--algorithm", type=int, default=1)
+    mesh.set_defaults(function=mesh_cad_to_dagmc)
+
+    clearance = subparsers.add_parser("audit-prompt02-clearance")
+    clearance.add_argument("--source-root", required=True)
+    clearance.add_argument("--derived-root", required=True)
+    clearance.add_argument("--transform-receipt", required=True)
+    clearance.add_argument("--source-selected-mesh-root", required=True)
+    clearance.add_argument("--source-refined-mesh-root", required=True)
+    clearance.add_argument("--derived-selected-mesh-root", required=True)
+    clearance.add_argument("--derived-refined-mesh-root", required=True)
+    clearance.add_argument("--output", required=True)
+    clearance.add_argument(
+        "--minimum-nonadjacent-clearance-cm", type=float, default=1.0e-4
+    )
+    clearance.add_argument(
+        "--interface-gap-tolerance-cm", type=float, default=1.0e-4
+    )
+    clearance.set_defaults(function=audit_prompt02_clearance)
+
+    qualify = subparsers.add_parser("qualify-prompt02")
+    qualify.add_argument("--source-root", required=True)
+    qualify.add_argument("--derived-root", required=True)
+    qualify.add_argument("--m2-root", required=True)
+    qualify.add_argument("--clearance-receipt", required=True)
+    qualify.add_argument("--source-selected-mesh-root", required=True)
+    qualify.add_argument("--source-refined-mesh-root", required=True)
+    qualify.add_argument("--derived-selected-mesh-root", required=True)
+    qualify.add_argument("--derived-refined-mesh-root", required=True)
+    qualify.add_argument("--output-root", required=True)
+    qualify.set_defaults(function=qualify_prompt02_geometry)
     return parser.parse_args()
 
 

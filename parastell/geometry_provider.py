@@ -353,6 +353,78 @@ def _all_strings(value: Any) -> list[str]:
     return [str(value)]
 
 
+def _validate_prompt02_local_frames(local_frames: Any) -> None:
+    if not isinstance(local_frames, Mapping):
+        raise GeometryProvenanceError("missing Prompt-2 local-frame contract")
+    if local_frames.get("status") != "PASS":
+        raise GeometryProvenanceError("Prompt-2 local-frame contract is not accepted")
+    frames = local_frames.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise GeometryProvenanceError(
+            "Prompt-2 local-frame inventory is empty"
+        )
+    if int(local_frames.get("frame_count", -1)) != len(frames):
+        raise GeometryProvenanceError("Prompt-2 local-frame count mismatch")
+    for index, frame in enumerate(frames):
+        if not isinstance(frame, Mapping):
+            raise GeometryProvenanceError(
+                f"local frame {index} is not a mapping"
+            )
+        control_id = frame.get("canonical_control_point_id")
+        arc_interval = frame.get("canonical_arc_interval")
+        if control_id is None and arc_interval is None:
+            raise GeometryProvenanceError(
+                f"local frame {index} has no control point or arc interval"
+            )
+        if control_id is not None and not 0 <= int(control_id) < 452:
+            raise GeometryProvenanceError(
+                f"local frame {index} has an invalid canonical control point"
+            )
+        for key in (
+            "canonical_45_patch_id",
+            "symmetry_instance_id",
+            "transform_id",
+            "local_engineering_frame_id",
+            "frame_kind",
+        ):
+            if not isinstance(frame.get(key), str) or not frame[key]:
+                raise GeometryProvenanceError(
+                    f"local frame {index} is missing {key}"
+                )
+        if frame.get("symmetry_instance_id") not in ("canonical", "mate"):
+            raise GeometryProvenanceError(
+                f"local frame {index} has an unsupported symmetry instance"
+            )
+        for key in ("global_90_surface_ids", "global_90_facet_ids"):
+            identifiers = frame.get(key)
+            if not isinstance(identifiers, list) or not identifiers:
+                raise GeometryProvenanceError(
+                    f"local frame {index} has no {key}"
+                )
+            if any(int(identifier) < 0 for identifier in identifiers):
+                raise GeometryProvenanceError(
+                    f"local frame {index} has an invalid {key}"
+                )
+        forward = np.asarray(frame.get("forward_transform"), dtype=float)
+        inverse = np.asarray(frame.get("inverse_transform"), dtype=float)
+        if forward.shape != (4, 4) or inverse.shape != (4, 4):
+            raise GeometryProvenanceError(
+                f"local frame {index} transforms are not 4x4"
+            )
+        if not np.isfinite(forward).all() or not np.isfinite(inverse).all():
+            raise GeometryProvenanceError(
+                f"local frame {index} transforms are not finite"
+            )
+        if not np.allclose(forward @ inverse, np.eye(4), atol=1.0e-10):
+            raise GeometryProvenanceError(
+                f"local frame {index} forward/inverse transforms do not close"
+            )
+        if not isinstance(frame.get("tape_twist_resolved"), bool):
+            raise GeometryProvenanceError(
+                f"local frame {index} has no Boolean tape-twist status"
+            )
+
+
 def validate_wistell_d_manifest(
     manifest: Mapping[str, Any],
     *,
@@ -425,6 +497,8 @@ def validate_wistell_d_manifest(
         extent, required_extent_degrees, abs_tol=1e-12
     ):
         raise GeometryProvenanceError("geometry extent does not match request")
+
+    _validate_prompt02_local_frames(manifest.get("local_frames"))
 
     pairwise = manifest.get("complete_pairwise_audit")
     if not isinstance(pairwise, Mapping):

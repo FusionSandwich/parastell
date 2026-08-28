@@ -23,6 +23,7 @@ from scripts.wistell_d_geometry_lane import (
     concatenate_facet_tables,
     control_grid_aliases,
     patch_cells,
+    qualify_engineering_frame,
     transform_facet_table,
     triangulate_envelope_boundary,
 )
@@ -50,6 +51,27 @@ def _accepted_manifest(tmp_path: Path) -> dict:
             "global_explicit_coils": False,
         },
         "complete_pairwise_audit": pairwise,
+        "local_frames": {
+            "status": "PASS",
+            "frame_count": 1,
+            "frames": [
+                {
+                    "canonical_control_point_id": 0,
+                    "canonical_45_patch_id": "M2:canonical:location:t00:p00",
+                    "symmetry_instance_id": "canonical",
+                    "transform_id": "identity",
+                    "global_90_surface_ids": [1],
+                    "global_90_facet_ids": [0, 1],
+                    "local_engineering_frame_id": "LEF:canonical:t00:p00",
+                    "forward_transform": np.eye(4).tolist(),
+                    "inverse_transform": np.eye(4).tolist(),
+                    "frame_kind": (
+                        "ORTHONORMAL_MAGNET_ALIGNED_TOROIDAL_POLOIDAL_RADIAL"
+                    ),
+                    "tape_twist_resolved": False,
+                }
+            ],
+        },
         "artifacts": {
             "source_step": {
                 "path": str((tmp_path / "source.step").resolve()),
@@ -138,6 +160,18 @@ def test_manifest_rejects_example_path_and_has_no_fallback(tmp_path):
         validate_wistell_d_manifest(manifest)
 
 
+def test_manifest_rejects_empty_or_noninvertible_local_frames(tmp_path):
+    manifest = _accepted_manifest(tmp_path)
+    manifest["local_frames"] = {}
+    with pytest.raises(GeometryProvenanceError, match="local-frame"):
+        validate_wistell_d_manifest(manifest)
+
+    manifest = _accepted_manifest(tmp_path)
+    manifest["local_frames"]["frames"][0]["inverse_transform"][0][0] = 2.0
+    with pytest.raises(GeometryProvenanceError, match="do not close"):
+        validate_wistell_d_manifest(manifest)
+
+
 def test_canonical_controls_are_not_renumbered_for_symmetry_instances():
     rows = canonical_patch_instances(
         canonical_count=452, instance_ids=("canonical", "mate")
@@ -204,6 +238,29 @@ def test_m2_facet_transform_preserves_area_and_ancestry():
     assert np.isclose(
         expanded["areas_cm2"].sum(), 2.0 * canonical["areas_cm2"].sum()
     )
+
+
+def test_qualified_engineering_frame_is_finite_invertible_and_handed():
+    source = {
+        "origin_cm": [10.0, 20.0, 30.0],
+        "toroidal_unit": [1.0, 0.0, 0.0],
+        "poloidal_unit": [0.0, 1.0, 0.0],
+        "radially_outward_unit": [0.0, 0.0, 1.0],
+        "basis_columns_determinant": 1.0,
+    }
+    mate = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
+    frame = qualify_engineering_frame(
+        source, mate, frame_id="LEF:mate:t00:p00"
+    )
+    forward = np.asarray(frame["forward_transform"])
+    inverse = np.asarray(frame["inverse_transform"])
+    assert np.isfinite(forward).all()
+    assert np.isfinite(inverse).all()
+    assert np.allclose(forward @ inverse, np.eye(4), atol=1.0e-12)
+    assert np.isclose(frame["basis_columns_determinant"], 1.0)
+    assert frame["frame_kind"].startswith("ORTHONORMAL_MAGNET_ALIGNED")
+    assert frame["tape_twist_resolved"] is False
+    assert len(frame["frame_fingerprint_sha256"]) == 64
 
 
 def test_manifest_round_trip_is_stable(tmp_path):
