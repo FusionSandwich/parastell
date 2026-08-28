@@ -1,29 +1,41 @@
 import argparse
-from pathlib import Path
 from abc import ABC
+from pathlib import Path
 
-import numpy as np
 import cadquery as cq
-import gmsh
-from pymoab import core
-
-from . import log
-from .utils import get_obmp_index, orient_coords
-from .cubit_utils import (
-    create_new_cubit_instance,
-    import_geom_to_cubit,
-    export_mesh_cubit,
-    merge_volumes,
-    mesh_volume_auto_factor,
-    mesh_surface_coarse_trimesh,
-    get_last_id,
-)
+import numpy as np
 
 # Import cubit_utils separately for its initialized variable. If initialized is
 # imported into this namespace, changes to the variable do not persist when
-# modified by calls to the imported functions
-from . import cubit_utils
-from .utils import read_yaml_config, filter_kwargs, reorder_loop, m2cm
+# modified by calls to the imported functions.
+from . import cubit_utils, log
+from .cubit_utils import (
+    create_new_cubit_instance,
+    export_mesh_cubit,
+    get_last_id,
+    import_geom_to_cubit,
+    merge_volumes,
+    mesh_surface_coarse_trimesh,
+    mesh_volume_auto_factor,
+)
+from .utils import (
+    filter_kwargs,
+    get_obmp_index,
+    m2cm,
+    orient_coords,
+    read_yaml_config,
+    reorder_loop,
+)
+
+try:
+    import gmsh
+except ImportError:  # CAD-only source export does not require Gmsh.
+    gmsh = None
+
+try:
+    from pymoab import core
+except ImportError:  # CAD-only source export does not require MOAB.
+    core = None
 
 export_allowed_kwargs = ["step_filename", "export_mesh", "mesh_filename"]
 
@@ -218,6 +230,9 @@ class MagnetSet(ABC):
         """
         self._logger.info("Generating tetrahedral mesh of magnets via Gmsh...")
 
+        if gmsh is None:
+            raise ImportError("Gmsh is required to mesh magnets")
+
         gmsh.initialize()
 
         gmsh.option.setNumber(
@@ -265,6 +280,11 @@ class MagnetSet(ABC):
                 (defaults to empty string).
         """
         self._logger.info("Exporting mesh H5M file...")
+
+        if gmsh is None or core is None:
+            raise ImportError(
+                "Gmsh and PyMOAB are required to export a magnet mesh"
+            )
 
         vtk_path = Path(export_dir) / Path(filename).with_suffix(".vtk")
         moab_path = vtk_path.with_suffix(".h5m")

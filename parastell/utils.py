@@ -1,24 +1,35 @@
-import yaml
-import tempfile
-from functools import cached_property
-import tempfile
-from pathlib import Path
-from abc import ABC
-
-import numpy as np
 import math
-from scipy.ndimage import gaussian_filter
-from pymoab import core, types
-import pydagmc
+import tempfile
+from abc import ABC
+from functools import cached_property
+from pathlib import Path
+
 import cadquery as cq
-import gmsh
+import numpy as np
+import yaml
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
 from OCP.StlAPI import StlAPI_Reader
-from OCP.TopoDS import TopoDS_Shape
-from OCP.TopExp import TopExp_Explorer
 from OCP.TopAbs import TopAbs_SHELL
+from OCP.TopExp import TopExp_Explorer
+from OCP.TopoDS import TopoDS_Shape
+from scipy.ndimage import gaussian_filter
 
 from . import log
+
+try:
+    from pymoab import core, types
+except ImportError:  # CAD-only ParaStell workflows do not require MOAB.
+    core = types = None
+
+try:
+    import pydagmc
+except ImportError:  # CAD-only ParaStell workflows do not require DAGMC.
+    pydagmc = None
+
+try:
+    import gmsh
+except ImportError:  # CAD-only ParaStell workflows do not require Gmsh.
+    gmsh = None
 
 m2cm = 100
 m3tocm3 = m2cm * m2cm * m2cm
@@ -419,6 +430,9 @@ def create_vol_mesh_from_surf_mesh(
         filename (str): path to remeshed mesh output file. The output file type
             and path will be the same as the input.
     """
+    if gmsh is None:
+        raise ImportError("Gmsh is required to create a volume mesh")
+
     gmsh.open(filename)
 
     surfaces = gmsh.model.getEntities(dim=2)
@@ -453,6 +467,9 @@ def combine_dagmc_models(models_to_merge):
         combined_model (pydagmc.Model): Single DAGMC model containing the
             combined individual models.
     """
+    if pydagmc is None:
+        raise ImportError("PyDAGMC is required to combine DAGMC models")
+
     renumberizer = DAGMCRenumberizer()
     for model in models_to_merge:
         with tempfile.NamedTemporaryFile(
@@ -663,6 +680,8 @@ class DAGMCRenumberizer(object):
     """
 
     def __init__(self, mb=None):
+        if core is None or types is None:
+            raise ImportError("PyMOAB is required to renumber DAGMC models")
         self.mb = mb
         if mb is None:
             self.mb = core.Core()
@@ -729,6 +748,10 @@ class ToroidalMesh(ABC):
     """
 
     def __init__(self, logger=None):
+        if core is None or types is None:
+            raise ImportError(
+                "PyMOAB is required to construct a toroidal mesh"
+            )
         self.logger = logger
 
         self.mbc = core.Core()

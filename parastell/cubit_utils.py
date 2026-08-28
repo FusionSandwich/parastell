@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from pymoab import core
+try:
+    from pymoab import core
+except ImportError:  # CAD-only ParaStell workflows do not require MOAB.
+    core = None
 
 initialized = False
 
@@ -122,6 +125,9 @@ def export_mesh_cubit(filename, export_dir="", delete_upon_export=True):
         delete_upon_export (bool): delete the mesh from the Cubit instance
             after exporting. Prevents inclusion of mesh in future exports.
     """
+    if core is None:
+        raise ImportError("PyMOAB is required to export a Cubit mesh")
+
     exo_path = Path(export_dir) / Path(filename).with_suffix(".exo")
     h5m_path = Path(export_dir) / Path(filename).with_suffix(".h5m")
 
