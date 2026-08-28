@@ -21,6 +21,11 @@ The local ENDF/B-VIII.0 fast depletion chain and all 728 payloads referenced by
 the transport index are content-hashed. Existing old-geometry MicroXS/depletion artifacts may
 exercise the software path only; they cannot supply final physical results.
 
+The pinned OpenMC 0.16.0 Docker runtime also parsed the exact 3,820-nuclide
+depletion chain and 728-entry transport catalog successfully. This was a
+zero-transport compatibility check: it ran no particle histories and no
+depletion operation.
+
 The retained source mesh is the qualified 0–45° half-period input and sums to
 `9.427053032700797e19 s^-1`; it is not a 90° transport source. A create-only
 stellarator-symmetry expansion now provides a 0–90° construction candidate

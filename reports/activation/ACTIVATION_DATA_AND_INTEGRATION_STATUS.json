@@ -28,7 +28,16 @@
     "container_image": "parastell-openmc:0.16.0",
     "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
     "cross_sections_mount_path": "/data/openmc/cross_sections.xml",
-    "status": "LOCALLY_AVAILABLE"
+    "status": "LOCALLY_AVAILABLE_AND_ACTIVATION_DATA_PARSE_PASS",
+    "activation_runtime_validation": {
+      "receipt_path": "D:\\parastell-artifacts\\prompt7r-wistell90-20260828\\activation-runtime-validation-v1\\ACTIVATION_RUNTIME_VALIDATION.json",
+      "receipt_sha256": "bcff005a95992d6c78062dd7d03ddf04e02ec244d8d0d3577af53893c78155f3",
+      "openmc_version": "0.16.0",
+      "depletion_chain_nuclide_count": 3820,
+      "transport_library_count": 728,
+      "transport_or_depletion_executed": false,
+      "status": "PASS"
+    }
   },
   "old_selected_catalog": {
     "path": "D:\\2026_DPA\\_artifacts\\openmc_microxs_alara_production_library_20260826\\prompt1b_recovery\\cross_sections.bound-selected6-9-6622bc43.xml",
