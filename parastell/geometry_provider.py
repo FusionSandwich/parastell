@@ -357,7 +357,9 @@ def _validate_prompt02_local_frames(local_frames: Any) -> None:
     if not isinstance(local_frames, Mapping):
         raise GeometryProvenanceError("missing Prompt-2 local-frame contract")
     if local_frames.get("status") != "PASS":
-        raise GeometryProvenanceError("Prompt-2 local-frame contract is not accepted")
+        raise GeometryProvenanceError(
+            "Prompt-2 local-frame contract is not accepted"
+        )
     frames = local_frames.get("frames")
     if not isinstance(frames, list) or not frames:
         raise GeometryProvenanceError(
@@ -429,6 +431,7 @@ def validate_wistell_d_manifest(
     manifest: Mapping[str, Any],
     *,
     required_extent_degrees: float | None = None,
+    require_local_frames: bool = False,
 ) -> None:
     """Validate a new-lane scientific WISTELL-D geometry manifest."""
     if manifest.get("schema") != WISTELL_D_ACCEPTANCE_SCHEMA:
@@ -498,7 +501,12 @@ def validate_wistell_d_manifest(
     ):
         raise GeometryProvenanceError("geometry extent does not match request")
 
-    _validate_prompt02_local_frames(manifest.get("local_frames"))
+    local_frames = manifest.get("local_frames")
+    if require_local_frames or (
+        isinstance(local_frames, Mapping)
+        and local_frames.get("status") == "PASS"
+    ):
+        _validate_prompt02_local_frames(local_frames)
 
     pairwise = manifest.get("complete_pairwise_audit")
     if not isinstance(pairwise, Mapping):
@@ -584,6 +592,10 @@ class WistellDGeometryProvider:
             raise GeometryProvenanceError(
                 "selected DAGMC artifact hash mismatch"
             )
+
+    def validate_selected_patch_contract(self) -> None:
+        """Require the optional surface/frame contract for selected consumers."""
+        validate_wistell_d_manifest(self._manifest, require_local_frames=True)
 
     def component_manifest(self) -> Mapping[str, Any]:
         return self._manifest["components"]

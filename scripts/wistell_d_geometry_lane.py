@@ -68,6 +68,90 @@ RADIAL_NAMES = (
 )
 
 
+def load_geometry_configuration(
+    path: str | Path,
+) -> tuple[dict[str, Any], Path]:
+    config_path = Path(path).resolve()
+    if not config_path.is_file():
+        raise FileNotFoundError(config_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if config.get("schema") != "parastell.geometry_build_config/v1.0.0":
+        raise ValueError("unsupported ParaStell geometry-build configuration")
+    if config.get("device") != "WISTELL-D":
+        raise ValueError("configuration device is not WISTELL-D")
+    if config.get("geometry_input_mode") != WISTELL_D_GEOMETRY_INPUT_MODE:
+        raise ValueError("configuration geometry-input mode is not accepted")
+    if config.get("inputs") != WISTELL_D_SOURCE_HASHES:
+        raise ValueError(
+            "configuration authoritative-input hashes do not match"
+        )
+    construction = config.get("construction", {})
+    expected = {
+        "wall_s": 1.0,
+        "canonical_control_count": N_CONTROL_POINTS,
+        "control_grid": [N_TOROIDAL, N_POLOIDAL],
+        "source_cad_grid": list(SOURCE_CAD_GRID),
+        "source_extent_degrees": [0.0, 45.0],
+        "transport_extent_degrees": [0.0, 90.0],
+        "magnet_representation": "continuous_30_cm_magnet_envelope",
+        "global_explicit_coils": False,
+    }
+    if construction != expected:
+        raise ValueError("configuration construction identity is not accepted")
+    if set(config.get("materials", {})) != set(EXPECTED_LAYER_ORDER):
+        raise ValueError(
+            "configuration material roles do not match component order"
+        )
+    if any(
+        not isinstance(value, str) or not value
+        for value in config["materials"].values()
+    ):
+        raise ValueError(
+            "configuration material tags must be nonempty strings"
+        )
+    radial_keys = {
+        "first_wall",
+        "breeder_base",
+        "breeder_nwl_span",
+        "back_wall",
+        "high_temperature_shield",
+        "vacuum_vessel",
+        "low_temperature_shield_minimum",
+        "magnet_envelope",
+    }
+    radial = config.get("radial_build_cm", {})
+    if set(radial) != radial_keys or any(
+        not math.isfinite(float(value)) or float(value) <= 0.0
+        for value in radial.values()
+    ):
+        raise ValueError(
+            "configuration radial-build values must be finite and positive"
+        )
+    for label in ("selected", "refined"):
+        mesh = config.get("dagmc", {}).get(label, {})
+        minimum = float(mesh.get("min_mesh_size_cm", math.nan))
+        maximum = float(mesh.get("max_mesh_size_cm", math.nan))
+        if (
+            not math.isfinite(minimum)
+            or not math.isfinite(maximum)
+            or minimum <= 0.0
+            or maximum < minimum
+            or int(mesh.get("algorithm", -1)) <= 0
+        ):
+            raise ValueError(
+                f"configuration DAGMC {label} settings are invalid"
+            )
+    selected = config.get("selected_patch_mapping", {}).get(
+        "canonical_control_point_ids"
+    )
+    if not isinstance(selected, list) or any(
+        not isinstance(value, int) or not 0 <= value < N_CONTROL_POINTS
+        for value in selected
+    ):
+        raise ValueError("configuration selected-patch IDs are invalid")
+    return config, config_path
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -137,28 +221,56 @@ def summarize(values: np.ndarray) -> dict[str, Any]:
 
 
 def make_radial_build(
-    input_root: Path,
+    input_root: Path, config: Mapping[str, Any]
 ) -> tuple[OrderedDict, OrderedDict, dict]:
     blanket_boundary = np.load(input_root / "blanket_boundary.npy")
     magnet_boundary = np.load(input_root / "magnet_boundary.npy")
     nwl = np.load(input_root / "nwl.npy")
     nwl_normalized = (nwl - nwl.min()) / (nwl.max() - nwl.min())
-    breeder_requested = 25.0 + 30.0 * nwl_normalized
-    hts = np.full(N_CONTROL_POINTS, 20.0)
-    breeder_limit = blanket_boundary - 4.0 - 5.0 - 10.0 - hts - 5.0
+    parameters = config["radial_build_cm"]
+    first_wall_cm = float(parameters["first_wall"])
+    breeder_requested = (
+        float(parameters["breeder_base"])
+        + float(parameters["breeder_nwl_span"]) * nwl_normalized
+    )
+    back_wall_cm = float(parameters["back_wall"])
+    hts = np.full(
+        N_CONTROL_POINTS, float(parameters["high_temperature_shield"])
+    )
+    vessel_cm = float(parameters["vacuum_vessel"])
+    breeder_limit = (
+        blanket_boundary
+        - first_wall_cm
+        - back_wall_cm
+        - vessel_cm
+        - hts
+        - float(parameters["low_temperature_shield_minimum"])
+    )
     breeder = np.minimum(breeder_requested, breeder_limit)
-    lts = blanket_boundary - 4.0 - breeder - 5.0 - hts - 10.0
+    lts = (
+        blanket_boundary
+        - first_wall_cm
+        - breeder
+        - back_wall_cm
+        - hts
+        - vessel_cm
+    )
     gap = magnet_boundary - blanket_boundary
     arrays = OrderedDict(
         (
-            ("first_wall", np.full(N_CONTROL_POINTS, 4.0)),
+            ("first_wall", np.full(N_CONTROL_POINTS, first_wall_cm)),
             ("breeder", breeder),
-            ("back_wall", np.full(N_CONTROL_POINTS, 5.0)),
+            ("back_wall", np.full(N_CONTROL_POINTS, back_wall_cm)),
             ("high_temperature_shield", hts),
-            ("vacuum_vessel", np.full(N_CONTROL_POINTS, 10.0)),
+            ("vacuum_vessel", np.full(N_CONTROL_POINTS, vessel_cm)),
             ("low_temperature_shield", lts),
             ("vacuum_gap", gap),
-            ("magnet_envelope", np.full(N_CONTROL_POINTS, 30.0)),
+            (
+                "magnet_envelope",
+                np.full(
+                    N_CONTROL_POINTS, float(parameters["magnet_envelope"])
+                ),
+            ),
         )
     )
     radial_build = OrderedDict(
@@ -166,7 +278,7 @@ def make_radial_build(
             name,
             {
                 "thickness_matrix": array_to_symmetric_matrix(values),
-                "mat_tag": "Vacuum" if name == "vacuum_gap" else name,
+                "mat_tag": config["materials"][name],
             },
         )
         for name, values in arrays.items()
@@ -434,18 +546,20 @@ def build_45(args: argparse.Namespace) -> None:
     output_root = Path(args.output_root).resolve()
     if output_root.exists():
         raise FileExistsError(f"create-only output root exists: {output_root}")
+    config, config_path = load_geometry_configuration(args.config)
+    construction = config["construction"]
     input_before = verify_source_set(input_root)
     output_root.mkdir(parents=True)
     started = time.time()
     parastell, ps = load_geometry_only_parastell()
-    radial_build, arrays, thickness = make_radial_build(input_root)
+    radial_build, arrays, thickness = make_radial_build(input_root, config)
     np.savez(output_root / "canonical_thickness_arrays_cm.npz", **arrays)
 
     stellarator = ps.Stellarator(str(input_root / "wout_wistell-d.nc"))
     stellarator.construct_invessel_build(
         np.linspace(0.0, 45.0, N_TOROIDAL),
         np.linspace(0.0, 360.0, N_POLOIDAL),
-        1.0,
+        float(construction["wall_s"]),
         radial_build,
         split_chamber=False,
         num_ribs=SOURCE_CAD_GRID[0],
@@ -470,10 +584,15 @@ def build_45(args: argparse.Namespace) -> None:
                 "immutability_check": "PASS",
                 "parastell_module": str(Path(parastell.__file__).resolve()),
             },
+            "configuration": {
+                "path": str(config_path),
+                "sha256": sha256_file(config_path),
+                "schema": config["schema"],
+            },
             "model": {
                 "device": "WISTELL-D",
                 "toroidal_extent_degrees": 45.0,
-                "wall_s": 1.0,
+                "wall_s": construction["wall_s"],
                 "canonical_control_count": N_CONTROL_POINTS,
                 "control_grid": [16, 31],
                 "source_cad_grid": list(SOURCE_CAD_GRID),
@@ -526,6 +645,7 @@ def build_45(args: argparse.Namespace) -> None:
         output_root,
         {
             "source_step": combined_path,
+            "geometry_configuration": config_path,
             "canonical_thickness_arrays": output_root
             / "canonical_thickness_arrays_cm.npz",
             **{
@@ -551,11 +671,16 @@ def build_45(args: argparse.Namespace) -> None:
             "immutability_check": "PASS",
             "parastell_module": str(Path(parastell.__file__).resolve()),
         },
+        "configuration": {
+            "path": str(config_path),
+            "sha256": sha256_file(config_path),
+            "schema": config["schema"],
+        },
         "model": {
             "device": "WISTELL-D",
             "role": "canonical_45_degree_half_field_period_source_geometry",
             "toroidal_extent_degrees": 45.0,
-            "wall_s": 1.0,
+            "wall_s": construction["wall_s"],
             "canonical_control_count": N_CONTROL_POINTS,
             "control_grid": [16, 31],
             "source_cad_grid": list(SOURCE_CAD_GRID),
@@ -566,10 +691,7 @@ def build_45(args: argparse.Namespace) -> None:
         "thickness_validation": thickness,
         "expanded_surface_validation": surface_diagnostics,
         "components": component_metrics,
-        "materials": {
-            name: ("Vacuum" if name in ("chamber", "vacuum_gap") else name)
-            for name in components
-        },
+        "materials": {name: config["materials"][name] for name in components},
         "complete_pairwise_audit": pairwise,
         "source_domain": {
             "mesh_path": str(source_files["source_mesh.h5m"].resolve()),
@@ -590,10 +712,11 @@ def build_45(args: argparse.Namespace) -> None:
         },
         "canonical_patch_map": canonical_patch_instances(),
         "local_frames": {
-            "status": "PENDING_M2_QUALIFICATION",
+            "status": "OPTIONAL_DEFERRED_UNTIL_SELECTED_PATCHES_ARE_DECLARED",
             "frame_count": 0,
             "frames": [],
             "accepted_for_prompt02": False,
+            "required_for_base_step_or_h5m": False,
         },
         "artifacts": artifacts,
         "elapsed_seconds": time.time() - started,
@@ -672,17 +795,19 @@ def _normalize(vectors: np.ndarray) -> np.ndarray:
     return vectors / lengths
 
 
-def magnet_envelope_loci(input_root: Path) -> tuple[np.ndarray, np.ndarray]:
+def magnet_envelope_loci(
+    input_root: Path, config: Mapping[str, Any]
+) -> tuple[np.ndarray, np.ndarray]:
     """Recreate only the accepted 61x121 interface point clouds, not CAD."""
     _, ps = load_geometry_only_parastell()
     import parastell.invessel_build as ivb
 
-    radial_build, _, _ = make_radial_build(input_root)
+    radial_build, _, _ = make_radial_build(input_root, config)
     stellarator = ps.Stellarator(str(input_root / "wout_wistell-d.nc"))
     radial = ivb.RadialBuild(
         np.linspace(0.0, 45.0, N_TOROIDAL),
         np.linspace(0.0, 360.0, N_POLOIDAL),
-        1.0,
+        float(config["construction"]["wall_s"]),
         radial_build,
         split_chamber=False,
         logger=stellarator._logger,
@@ -1041,6 +1166,21 @@ def build_m2_contract(args: argparse.Namespace) -> None:
     output_root = Path(args.output_root).resolve()
     if output_root.exists():
         raise FileExistsError(f"create-only output root exists: {output_root}")
+    config, config_path = load_geometry_configuration(args.config)
+    configured_selection = config["selected_patch_mapping"][
+        "canonical_control_point_ids"
+    ]
+    selected_control_ids = (
+        list(range(N_CONTROL_POINTS))
+        if args.all_control_points
+        else sorted({int(value) for value in configured_selection})
+    )
+    if any(
+        not 0 <= value < N_CONTROL_POINTS for value in selected_control_ids
+    ):
+        raise ValueError(
+            "selected canonical control point is outside [0, 451]"
+        )
     verify_source_set(input_root)
     source_acceptance = source_root / "SOURCE_CAD_61X121_ACCEPTANCE.json"
     derived_acceptance = derived_root / "SOURCE_CAD_90D_ACCEPTANCE.json"
@@ -1073,7 +1213,7 @@ def build_m2_contract(args: argparse.Namespace) -> None:
     )[:3, :3]
 
     output_root.mkdir(parents=True)
-    inner, outer = magnet_envelope_loci(input_root)
+    inner, outer = magnet_envelope_loci(input_root, config)
     radial = _normalize(outer - inner)
     inner_table = triangulate_envelope_boundary(
         inner, -radial, boundary_role_code=0
@@ -1130,7 +1270,7 @@ def build_m2_contract(args: argparse.Namespace) -> None:
     nwl = np.load(input_root / "nwl.npy")
     normalized_nwl = (nwl - nwl.min()) / (nwl.max() - nwl.min())
     mapping = []
-    for canonical_id in range(N_CONTROL_POINTS):
+    for canonical_id in selected_control_ids:
         aliases = control_grid_aliases(canonical_id)
         for instance_id, instance_linear in (
             ("canonical", np.eye(3)),
@@ -1368,12 +1508,27 @@ def build_m2_contract(args: argparse.Namespace) -> None:
             "schema": "wistell_d.canonical_452_m2_mapping/v1.1.0",
             "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
             "canonical_control_count": N_CONTROL_POINTS,
+            "mapped_canonical_control_count": len(selected_control_ids),
+            "mapped_canonical_control_ids": selected_control_ids,
+            "mapping_scope": (
+                "OPTIONAL_ALL_452"
+                if args.all_control_points
+                else "CONFIGURATION_SELECTED_PATCHES_ONLY"
+            ),
             "symmetry_instance_count": 2,
             "records": mapping,
             "local_frames": {
-                "status": "PASS",
+                "status": (
+                    "PASS"
+                    if local_frame_rows
+                    else "NO_SELECTED_PATCHES_DECLARED"
+                ),
                 "frame_count": len(local_frame_rows),
                 "frames": local_frame_rows,
+            },
+            "configuration": {
+                "path": str(config_path),
+                "sha256": sha256_file(config_path),
             },
             "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
         },
@@ -1386,7 +1541,11 @@ def build_m2_contract(args: argparse.Namespace) -> None:
         {
             "schema": "wistell_d.prompt02_geometry_product_inventory/v1.0.0",
             "generated_utc": utc_now(),
-            "classification": "P2G5_GEOMETRY_PATCH_CATALOG_PASS",
+            "classification": (
+                "P2G5_GEOMETRY_PATCH_CATALOG_PASS"
+                if product_rows
+                else "BASE_GEOMETRY_NO_SELECTED_PATCHES_DECLARED"
+            ),
             "representation": "continuous_homogenized_magnet_envelope",
             "exact_component_roles": ["outer_casing", "winding_pack"],
             "tape_twist_resolved": False,
@@ -1421,10 +1580,16 @@ def build_m2_contract(args: argparse.Namespace) -> None:
             if row["symmetry_instance_id"] in allowed_instances
         ]
         frame_contract = {
-            "status": "PASS",
-            "accepted_for_prompt02": True,
+            "status": (
+                "PASS" if accepted_frames else "NO_SELECTED_PATCHES_DECLARED"
+            ),
+            "accepted_for_prompt02": bool(accepted_frames),
             "frame_count": len(accepted_frames),
-            "selected_patch_scope": "ALL_CANONICAL_452_NWL_CONTROL_PATCH_ALIASES",
+            "selected_patch_scope": (
+                "OPTIONAL_ALL_452"
+                if args.all_control_points
+                else "CONFIGURATION_SELECTED_PATCHES_ONLY"
+            ),
             "frames": accepted_frames,
         }
         qualified_manifest = {
@@ -1453,25 +1618,31 @@ def build_m2_contract(args: argparse.Namespace) -> None:
                 ),
             },
         }
-        qualified_path = (
-            output_root / f"PROMPT02_{extent_label}_CAD_ACCEPTANCE.json"
-        )
-        write_json_create_only(qualified_path, qualified_manifest)
-        prompt02_acceptance_paths[extent_label] = qualified_path
+        if accepted_frames:
+            qualified_path = (
+                output_root / f"PROMPT02_{extent_label}_CAD_ACCEPTANCE.json"
+            )
+            write_json_create_only(qualified_path, qualified_manifest)
+            prompt02_acceptance_paths[extent_label] = qualified_path
     artifact_files = {
         "physical_facets_45d": facets_45_path,
         "physical_facets_90d": facets_90_path,
         "excluded_symmetry_cut_facets": cuts_path,
         "canonical_452_mapping": mapping_path,
         "prompt02_geometry_product_inventory": product_inventory_path,
-        "prompt02_45d_cad_acceptance": prompt02_acceptance_paths["45D"],
-        "prompt02_90d_cad_acceptance": prompt02_acceptance_paths["90D"],
         "source_acceptance": source_acceptance,
         "derived_acceptance": derived_acceptance,
         "transform_receipt": transform_path,
         "source_magnet_step": source_step,
         "derived_magnet_step": derived_step,
+        "geometry_configuration": config_path,
     }
+    artifact_files.update(
+        {
+            f"prompt02_{extent.lower()}_cad_acceptance": path
+            for extent, path in prompt02_acceptance_paths.items()
+        }
+    )
     payload = {
         "schema": "wistell_d.m2_geometry_handshake/v1.0.0",
         "generated_utc": utc_now(),
@@ -1525,6 +1696,13 @@ def build_m2_contract(args: argparse.Namespace) -> None:
         "cad_surface_inventory": {"45d": cad_faces_45, "90d": cad_faces_90},
         "canonical_mapping": {
             "canonical_control_count": N_CONTROL_POINTS,
+            "mapped_canonical_control_count": len(selected_control_ids),
+            "mapped_canonical_control_ids": selected_control_ids,
+            "mapping_scope": (
+                "OPTIONAL_ALL_452"
+                if args.all_control_points
+                else "CONFIGURATION_SELECTED_PATCHES_ONLY"
+            ),
             "record_count": len(mapping),
             "instance_ids": ["canonical", "mate"],
             "mapping_path": str(mapping_path),
@@ -1534,6 +1712,12 @@ def build_m2_contract(args: argparse.Namespace) -> None:
             "roles": ["outer_casing", "winding_pack"],
             "patch_count": len(product_rows),
             "tape_twist_resolved": False,
+        },
+        "base_geometry_scope": {
+            "surface_inventory_required": True,
+            "selected_patch_frames_required_only_when_selected": True,
+            "selected_patch_count": len(selected_control_ids),
+            "all_452_frames_base_prerequisite": False,
         },
         "source_hashes": dict(WISTELL_D_SOURCE_HASHES),
         "artifacts": artifact_rows(output_root, artifact_files),
@@ -1847,10 +2031,11 @@ def derive_90(args: argparse.Namespace) -> None:
             instance_ids=("canonical", "mate")
         ),
         "local_frames": {
-            "status": "PENDING_M2_QUALIFICATION",
+            "status": "OPTIONAL_DEFERRED_UNTIL_SELECTED_PATCHES_ARE_DECLARED",
             "frame_count": 0,
             "frames": [],
             "accepted_for_prompt02": False,
+            "required_for_base_step_or_h5m": False,
         },
         "artifacts": artifacts,
         "elapsed_seconds": time.time() - started,
@@ -1875,6 +2060,25 @@ def mesh_cad_to_dagmc(args: argparse.Namespace) -> None:
     output_root = Path(args.output_root).resolve()
     if output_root.exists():
         raise FileExistsError(f"create-only output root exists: {output_root}")
+    config, config_path = load_geometry_configuration(args.config)
+    mesh_config = config["dagmc"][args.label]
+    min_mesh_size_cm = (
+        float(mesh_config["min_mesh_size_cm"])
+        if args.min_mesh_size_cm is None
+        else args.min_mesh_size_cm
+    )
+    max_mesh_size_cm = (
+        float(mesh_config["max_mesh_size_cm"])
+        if args.max_mesh_size_cm is None
+        else args.max_mesh_size_cm
+    )
+    algorithm = (
+        int(mesh_config["algorithm"])
+        if args.algorithm is None
+        else args.algorithm
+    )
+    if min_mesh_size_cm <= 0.0 or max_mesh_size_cm < min_mesh_size_cm:
+        raise ValueError("invalid DAGMC mesh-size configuration")
     manifest_names = (
         "SOURCE_CAD_61X121_ACCEPTANCE.json",
         "SOURCE_CAD_90D_ACCEPTANCE.json",
@@ -1928,9 +2132,9 @@ def mesh_cad_to_dagmc(args: argparse.Namespace) -> None:
             )
         cad_to_dagmc.set_sizes_for_mesh(
             gmsh_object,
-            min_mesh_size=args.min_mesh_size_cm,
-            max_mesh_size=args.max_mesh_size_cm,
-            mesh_algorithm=args.algorithm,
+            min_mesh_size=min_mesh_size_cm,
+            max_mesh_size=max_mesh_size_cm,
+            mesh_algorithm=algorithm,
         )
         gmsh_object.model.mesh.generate(dim=2)
         vertices, triangles_by_solid_and_by_face = (
@@ -2018,10 +2222,15 @@ def mesh_cad_to_dagmc(args: argparse.Namespace) -> None:
         "faceting_label": args.label,
         "faceting": {
             "backend": "cad_to_dagmc",
-            "min_mesh_size_cm": args.min_mesh_size_cm,
-            "max_mesh_size_cm": args.max_mesh_size_cm,
-            "gmsh_algorithm": args.algorithm,
+            "min_mesh_size_cm": min_mesh_size_cm,
+            "max_mesh_size_cm": max_mesh_size_cm,
+            "gmsh_algorithm": algorithm,
             "source_cad_grid": list(SOURCE_CAD_GRID),
+        },
+        "configuration": {
+            "path": str(config_path),
+            "sha256": sha256_file(config_path),
+            "schema": config["schema"],
         },
         "source_cad_acceptance": {
             "path": str(manifest_path),
@@ -2039,7 +2248,10 @@ def mesh_cad_to_dagmc(args: argparse.Namespace) -> None:
             ),
             "two_seed_debug_run_performed": False,
         },
-        "artifacts": artifact_rows(output_root, {"dagmc_h5m": h5m_path}),
+        "artifacts": artifact_rows(
+            output_root,
+            {"dagmc_h5m": h5m_path, "geometry_configuration": config_path},
+        ),
         "elapsed_seconds": time.time() - started,
     }
     write_json_create_only(output_root / "DAGMC_QUALIFICATION.json", payload)
@@ -2498,6 +2710,7 @@ def parse_args() -> argparse.Namespace:
 
     build = subparsers.add_parser("build-45")
     build.add_argument("--input-root", required=True)
+    build.add_argument("--config", required=True)
     build.add_argument("--output-root", required=True)
     build.add_argument("--construct-only", action="store_true")
     build.add_argument(
@@ -2521,21 +2734,28 @@ def parse_args() -> argparse.Namespace:
 
     m2 = subparsers.add_parser("build-m2-contract")
     m2.add_argument("--input-root", required=True)
+    m2.add_argument("--config", required=True)
     m2.add_argument("--source-root", required=True)
     m2.add_argument("--derived-root", required=True)
     m2.add_argument("--transform-receipt", required=True)
     m2.add_argument("--output-root", required=True)
+    m2.add_argument(
+        "--all-control-points",
+        action="store_true",
+        help="optional deferred Prompt-2 mapping; base geometry uses configured selections",
+    )
     m2.set_defaults(function=build_m2_contract)
 
     mesh = subparsers.add_parser("mesh-cad")
     mesh.add_argument("--source-root", required=True)
+    mesh.add_argument("--config", required=True)
     mesh.add_argument("--output-root", required=True)
     mesh.add_argument(
         "--label", choices=("selected", "refined"), required=True
     )
-    mesh.add_argument("--min-mesh-size-cm", type=float, required=True)
-    mesh.add_argument("--max-mesh-size-cm", type=float, required=True)
-    mesh.add_argument("--algorithm", type=int, default=1)
+    mesh.add_argument("--min-mesh-size-cm", type=float)
+    mesh.add_argument("--max-mesh-size-cm", type=float)
+    mesh.add_argument("--algorithm", type=int)
     mesh.set_defaults(function=mesh_cad_to_dagmc)
 
     clearance = subparsers.add_parser("audit-prompt02-clearance")

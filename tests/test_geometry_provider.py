@@ -9,6 +9,7 @@ import pytest
 
 from parastell.geometry_provider import (
     GeometryProvenanceError,
+    EXPECTED_LAYER_ORDER,
     KNOWN_EXAMPLE_SOURCE_HASHES,
     WISTELL_D_ACCEPTANCE_SCHEMA,
     WISTELL_D_GEOMETRY_INPUT_MODE,
@@ -22,11 +23,54 @@ from parastell.geometry_provider import (
 from scripts.wistell_d_geometry_lane import (
     concatenate_facet_tables,
     control_grid_aliases,
+    load_geometry_configuration,
     patch_cells,
     qualify_engineering_frame,
     transform_facet_table,
     triangulate_envelope_boundary,
 )
+
+
+def _geometry_build_config() -> dict:
+    return {
+        "schema": "parastell.geometry_build_config/v1.0.0",
+        "device": "WISTELL-D",
+        "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+        "inputs": dict(WISTELL_D_SOURCE_HASHES),
+        "construction": {
+            "wall_s": 1.0,
+            "canonical_control_count": 452,
+            "control_grid": [16, 31],
+            "source_cad_grid": [61, 121],
+            "source_extent_degrees": [0.0, 45.0],
+            "transport_extent_degrees": [0.0, 90.0],
+            "magnet_representation": "continuous_30_cm_magnet_envelope",
+            "global_explicit_coils": False,
+        },
+        "radial_build_cm": {
+            "first_wall": 4.0,
+            "breeder_base": 25.0,
+            "breeder_nwl_span": 30.0,
+            "back_wall": 5.0,
+            "high_temperature_shield": 20.0,
+            "vacuum_vessel": 10.0,
+            "low_temperature_shield_minimum": 5.0,
+            "magnet_envelope": 30.0,
+        },
+        "materials": {name: name for name in EXPECTED_LAYER_ORDER},
+        "dagmc": {
+            label: {
+                "min_mesh_size_cm": minimum,
+                "max_mesh_size_cm": maximum,
+                "algorithm": 1,
+            }
+            for label, minimum, maximum in (
+                ("selected", 5.0, 20.0),
+                ("refined", 2.5, 10.0),
+            )
+        },
+        "selected_patch_mapping": {"canonical_control_point_ids": []},
+    }
 
 
 def _accepted_manifest(tmp_path: Path) -> dict:
@@ -164,12 +208,41 @@ def test_manifest_rejects_empty_or_noninvertible_local_frames(tmp_path):
     manifest = _accepted_manifest(tmp_path)
     manifest["local_frames"] = {}
     with pytest.raises(GeometryProvenanceError, match="local-frame"):
-        validate_wistell_d_manifest(manifest)
+        validate_wistell_d_manifest(manifest, require_local_frames=True)
 
     manifest = _accepted_manifest(tmp_path)
     manifest["local_frames"]["frames"][0]["inverse_transform"][0][0] = 2.0
     with pytest.raises(GeometryProvenanceError, match="do not close"):
-        validate_wistell_d_manifest(manifest)
+        validate_wistell_d_manifest(manifest, require_local_frames=True)
+
+
+def test_base_cad_acceptance_does_not_require_optional_patch_frames(tmp_path):
+    manifest = _accepted_manifest(tmp_path)
+    manifest["local_frames"] = {
+        "status": "OPTIONAL_DEFERRED_UNTIL_SELECTED_PATCHES_ARE_DECLARED",
+        "frame_count": 0,
+        "frames": [],
+    }
+    validate_wistell_d_manifest(manifest)
+
+
+def test_parametric_geometry_configuration_is_hash_bound_and_fail_closed(
+    tmp_path,
+):
+    config_path = tmp_path / "geometry.json"
+    config = _geometry_build_config()
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    loaded, resolved = load_geometry_configuration(config_path)
+    assert resolved == config_path.resolve()
+    assert loaded["construction"]["source_cad_grid"] == [61, 121]
+    assert (
+        loaded["selected_patch_mapping"]["canonical_control_point_ids"] == []
+    )
+
+    config["inputs"]["wout_wistell-d.nc"] = "0" * 64
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="authoritative-input hashes"):
+        load_geometry_configuration(config_path)
 
 
 def test_canonical_controls_are_not_renumbered_for_symmetry_instances():
