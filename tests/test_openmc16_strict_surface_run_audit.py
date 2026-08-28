@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 
 import h5py
@@ -177,8 +178,37 @@ def _fixture(tmp_path, *, mpi_ranks=2, max_particles=10):
         + "Creating source file surface_source.h5 with 1 particles ...\n"
         + "RESULTS\n"
     )
+    source_cad = tmp_path / "magnet-source.step"
+    source_cad.write_bytes(b"accepted source CAD identity")
+    inventory = tmp_path / "ACCEPTED_MAGNET_INVENTORY.json"
+    inventory.write_text(
+        json.dumps(
+            {
+                "schema": (
+                    "parastell.accepted_magnet_component_inventory/v1.0.0"
+                ),
+                "geometry_gate_status": "PASS",
+                "dagmc_sha256": _sha(dagmc),
+                "canonical_geometry_fingerprint": "c" * 64,
+                "magnet_material_tags": ["mat:winding_pack"],
+                "components": [
+                    {
+                        "magnet_id": "magnet-8",
+                        "component_id": "coil-8-winding-pack",
+                        "dagmc_volume_id": 8,
+                        "material_tag": "mat:winding_pack",
+                        "surface_ids": [17],
+                        "source_cad": {
+                            "path": str(source_cad),
+                            "sha256": _sha(source_cad),
+                        },
+                    }
+                ],
+            }
+        )
+    )
     artifacts = StrictSurfaceRunArtifacts(
-        dagmc, model, statepoint, log, [bank]
+        dagmc, model, statepoint, log, [bank], inventory
     )
     request = {
         "volume_id": 8,
@@ -191,15 +221,30 @@ def _fixture(tmp_path, *, mpi_ranks=2, max_particles=10):
     return artifacts, request, _envelope(dagmc)
 
 
-def test_strict_audit_parses_artifacts_and_binds_localization(
-    monkeypatch, tmp_path
-):
-    artifacts, request, envelope = _fixture(tmp_path, mpi_ranks=2)
+def _patch_single_magnet_group(monkeypatch, envelope):
     monkeypatch.setattr(
         openmc16_export,
         "_extract_envelopes_from_h5m",
         lambda path, requests: (envelope,),
     )
+    monkeypatch.setattr(
+        openmc16_export,
+        "_discover_h5m_material_group",
+        lambda path, tags: (
+            {
+                "dagmc_volume_id": 8,
+                "material_tag": "winding_pack",
+                "surface_ids": [17],
+            },
+        ),
+    )
+
+
+def test_strict_audit_parses_artifacts_and_binds_localization(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(tmp_path, mpi_ranks=2)
+    _patch_single_magnet_group(monkeypatch, envelope)
     result = audit_openmc16_surface_run(
         artifacts, envelope_requests=[request], required_particles=["neutron"]
     )
@@ -216,6 +261,9 @@ def test_strict_audit_parses_artifacts_and_binds_localization(
         result["same_run_integrity"]["localization_topology_manifest_sha256"]
         == binding["manifest_sha256"]
     )
+    assert result["accepted_magnet_inventory"][
+        "all_material_group_volumes_selected"
+    ]
 
 
 def test_mpi_capacity_is_proved_below_cap_and_fails_at_cap():
@@ -238,12 +286,67 @@ def test_mpi_capacity_is_proved_below_cap_and_fails_at_cap():
 def test_arbitrary_bank_bytes_cannot_produce_complete(monkeypatch, tmp_path):
     artifacts, request, envelope = _fixture(tmp_path)
     Path(artifacts.surface_source_paths[0]).write_bytes(b"not an HDF5 bank")
+    _patch_single_magnet_group(monkeypatch, envelope)
+    with pytest.raises(OSError):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
+def test_arbitrary_closed_volume_cannot_replace_complete_magnet_group(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(tmp_path)
     monkeypatch.setattr(
         openmc16_export,
         "_extract_envelopes_from_h5m",
         lambda path, requests: (envelope,),
     )
-    with pytest.raises(OSError):
+    monkeypatch.setattr(
+        openmc16_export,
+        "_discover_h5m_material_group",
+        lambda path, tags: (
+            {
+                "dagmc_volume_id": 8,
+                "material_tag": "winding_pack",
+                "surface_ids": [17],
+            },
+            {
+                "dagmc_volume_id": 9,
+                "material_tag": "winding_pack",
+                "surface_ids": [18],
+            },
+        ),
+    )
+    with pytest.raises(ValueError, match="does not enumerate every"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
+def test_semantic_magnet_id_and_source_cad_hash_are_required(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(tmp_path)
+    _patch_single_magnet_group(monkeypatch, envelope)
+    wrong = {**request, "magnet_id": "not-magnet-8"}
+    with pytest.raises(ValueError, match="semantic magnet/envelope mismatch"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[wrong],
+            required_particles=["neutron"],
+        )
+    inventory = json.loads(
+        Path(artifacts.accepted_magnet_inventory_path).read_text()
+    )
+    Path(inventory["components"][0]["source_cad"]["path"]).write_bytes(
+        b"mutated CAD"
+    )
+    with pytest.raises(ValueError, match="source CAD hash mismatch"):
         audit_openmc16_surface_run(
             artifacts,
             envelope_requests=[request],

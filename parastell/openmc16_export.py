@@ -46,6 +46,7 @@ class StrictSurfaceRunArtifacts:
     statepoint_path: str | Path
     terminal_log_path: str | Path
     surface_source_paths: Sequence[str | Path]
+    accepted_magnet_inventory_path: str | Path
 
 
 def _resolved_file(path: str | Path, label: str) -> Path:
@@ -116,6 +117,224 @@ def _localization_topology_binding(
     }
     binding["manifest_sha256"] = _canonical_json_sha256(binding)
     return binding
+
+
+def _canonical_material_tag(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text.startswith("mat:"):
+        text = text[4:]
+    return text.replace("-", "_").replace(" ", "_")
+
+
+def _valid_sha256(value: Any) -> bool:
+    text = str(value or "").lower()
+    return len(text) == 64 and not (set(text) - set("0123456789abcdef"))
+
+
+def _discover_h5m_material_group(
+    dagmc_path: Path, material_tags: Sequence[str]
+) -> tuple[dict[str, Any], ...]:
+    """Discover all H5M volumes in an accepted material group."""
+    import pydagmc
+
+    accepted = {_canonical_material_tag(value) for value in material_tags}
+    if not accepted or "" in accepted:
+        raise ValueError("magnet material group must be nonempty")
+    model = pydagmc.Model(str(dagmc_path))
+    rows = []
+    for volume_id, volume in sorted(model.volumes_by_id.items()):
+        material = str(getattr(volume, "material", "") or "")
+        if _canonical_material_tag(material) not in accepted:
+            continue
+        surface_ids = tuple(
+            sorted(int(surface.id) for surface in volume.surfaces)
+        )
+        if not surface_ids:
+            raise ValueError(
+                f"magnet material volume {volume_id} has no boundary surfaces"
+            )
+        rows.append(
+            {
+                "dagmc_volume_id": int(volume_id),
+                "material_tag": material,
+                "surface_ids": list(surface_ids),
+            }
+        )
+    if not rows:
+        raise ValueError(
+            "H5M has no volume in the accepted magnet material group"
+        )
+    return tuple(rows)
+
+
+def _verify_accepted_magnet_inventory(
+    inventory_path: Path,
+    dagmc_path: Path,
+    envelopes: Sequence[DagmcEnvelope],
+    envelope_requests: Sequence[Mapping[str, Any]],
+    localization_binding: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind root-selected magnet semantics to independently parsed H5M rows."""
+    try:
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            "accepted magnet inventory is not valid JSON"
+        ) from exc
+    required = {
+        "schema",
+        "geometry_gate_status",
+        "dagmc_sha256",
+        "canonical_geometry_fingerprint",
+        "magnet_material_tags",
+        "components",
+    }
+    missing = required - set(inventory)
+    if missing:
+        raise ValueError(f"accepted magnet inventory omits {sorted(missing)}")
+    if (
+        inventory["schema"]
+        != "parastell.accepted_magnet_component_inventory/v1.0.0"
+        or inventory["geometry_gate_status"] != "PASS"
+    ):
+        raise ValueError(
+            "magnet inventory is not a root-accepted geometry gate"
+        )
+    dagmc_hash = _hash(dagmc_path)
+    if str(inventory["dagmc_sha256"]).lower() != dagmc_hash:
+        raise ValueError("magnet inventory H5M hash mismatch")
+    fingerprints = {
+        item.envelope.metadata["canonical_geometry_fingerprint"]
+        for item in envelopes
+    }
+    if fingerprints != {str(inventory["canonical_geometry_fingerprint"])}:
+        raise ValueError("magnet inventory canonical fingerprint mismatch")
+    material_tags = tuple(
+        str(item) for item in inventory["magnet_material_tags"]
+    )
+    if not material_tags or len(material_tags) != len(set(material_tags)):
+        raise ValueError(
+            "magnet inventory material tags must be unique/nonempty"
+        )
+    discovered = _discover_h5m_material_group(dagmc_path, material_tags)
+    discovered_by_id = {
+        int(item["dagmc_volume_id"]): item for item in discovered
+    }
+    components = list(inventory["components"])
+    if not components:
+        raise ValueError("accepted magnet inventory has no components")
+    component_by_id = {}
+    semantic_ids = set()
+    for component in components:
+        component_required = {
+            "magnet_id",
+            "component_id",
+            "dagmc_volume_id",
+            "material_tag",
+            "surface_ids",
+            "source_cad",
+        }
+        component_missing = component_required - set(component)
+        if component_missing:
+            raise ValueError(
+                f"magnet inventory component omits {sorted(component_missing)}"
+            )
+        volume_id = int(component["dagmc_volume_id"])
+        magnet_id = str(component["magnet_id"]).strip()
+        component_id = str(component["component_id"]).strip()
+        if (
+            volume_id <= 0
+            or not magnet_id
+            or not component_id
+            or volume_id in component_by_id
+            or magnet_id in semantic_ids
+        ):
+            raise ValueError(
+                "magnet inventory component identities are invalid"
+            )
+        semantic_ids.add(magnet_id)
+        source_cad = component["source_cad"]
+        if not isinstance(source_cad, Mapping):
+            raise ValueError("magnet inventory source_cad must be a mapping")
+        source_path = _resolved_file(
+            source_cad.get("path", ""), "magnet source CAD"
+        )
+        source_hash = str(source_cad.get("sha256", "")).lower()
+        if not _valid_sha256(source_hash) or _hash(source_path) != source_hash:
+            raise ValueError("magnet inventory source CAD hash mismatch")
+        component_by_id[volume_id] = {
+            "magnet_id": magnet_id,
+            "component_id": component_id,
+            "dagmc_volume_id": volume_id,
+            "material_tag": str(component["material_tag"]),
+            "surface_ids": sorted(
+                int(value) for value in component["surface_ids"]
+            ),
+            "source_cad": {
+                "path": str(source_path),
+                "sha256": source_hash,
+            },
+        }
+    if set(component_by_id) != set(discovered_by_id):
+        raise ValueError(
+            "accepted inventory does not enumerate every H5M magnet-material volume"
+        )
+    for volume_id, component in component_by_id.items():
+        actual = discovered_by_id[volume_id]
+        if _canonical_material_tag(
+            component["material_tag"]
+        ) != _canonical_material_tag(actual["material_tag"]) or component[
+            "surface_ids"
+        ] != sorted(
+            actual["surface_ids"]
+        ):
+            raise ValueError(
+                f"magnet inventory topology/material mismatch for volume {volume_id}"
+            )
+    request_by_id = {
+        int(item["volume_id"]): str(item["magnet_id"]).strip()
+        for item in envelope_requests
+    }
+    if set(request_by_id) != set(component_by_id):
+        raise ValueError(
+            "envelope requests do not equal the complete magnet material group"
+        )
+    envelope_by_id = {
+        item.envelope.dagmc_volume_id: item for item in envelopes
+    }
+    if set(envelope_by_id) != set(component_by_id):
+        raise ValueError("extracted envelopes do not equal accepted inventory")
+    topology_by_id = {
+        int(item["dagmc_volume_id"]): item
+        for item in localization_binding["envelopes"]
+    }
+    for volume_id, component in component_by_id.items():
+        envelope = envelope_by_id[volume_id]
+        if (
+            request_by_id[volume_id] != component["magnet_id"]
+            or envelope.envelope.magnet_component != component["magnet_id"]
+            or sorted(envelope.envelope.surface_ids)
+            != component["surface_ids"]
+            or volume_id not in topology_by_id
+        ):
+            raise ValueError(
+                f"semantic magnet/envelope mismatch for volume {volume_id}"
+            )
+    result = {
+        "path": str(inventory_path),
+        "sha256": _hash(inventory_path),
+        "schema": inventory["schema"],
+        "geometry_gate_status": inventory["geometry_gate_status"],
+        "dagmc_sha256": dagmc_hash,
+        "canonical_geometry_fingerprint": next(iter(fingerprints)),
+        "magnet_material_tags": list(material_tags),
+        "components": [
+            component_by_id[key] for key in sorted(component_by_id)
+        ],
+        "all_material_group_volumes_selected": True,
+    }
+    result["verified_inventory_sha256"] = _canonical_json_sha256(result)
+    return result
 
 
 def _positive_int_text(parent, name: str) -> int:
@@ -842,6 +1061,10 @@ def audit_openmc16_surface_run(
     )
     if len(source_paths) != len(set(source_paths)):
         raise ValueError("surface-source bank paths must be unique")
+    inventory_path = _resolved_file(
+        artifacts.accepted_magnet_inventory_path,
+        "accepted magnet inventory",
+    )
     particles = tuple(str(item) for item in required_particles)
     if (
         not particles
@@ -856,6 +1079,13 @@ def audit_openmc16_surface_run(
     envelopes = _extract_envelopes_from_h5m(dagmc_path, envelope_requests)
     localization_binding = _localization_topology_binding(
         dagmc_path, envelopes
+    )
+    accepted_inventory = _verify_accepted_magnet_inventory(
+        inventory_path,
+        dagmc_path,
+        envelopes,
+        envelope_requests,
+        localization_binding,
     )
     surface_ids = tuple(
         sorted(
@@ -925,6 +1155,7 @@ def audit_openmc16_surface_run(
             ),
         },
         "localization_topology_binding": localization_binding,
+        "accepted_magnet_inventory": accepted_inventory,
         "model": {
             key: value
             for key, value in model.items()
@@ -949,6 +1180,10 @@ def audit_openmc16_surface_run(
             "model_xml_sha256": model["sha256"],
             "localization_topology_manifest_sha256": localization_binding[
                 "manifest_sha256"
+            ],
+            "accepted_magnet_inventory_sha256": accepted_inventory["sha256"],
+            "verified_magnet_inventory_sha256": accepted_inventory[
+                "verified_inventory_sha256"
             ],
         },
         "capacity": capacity,
