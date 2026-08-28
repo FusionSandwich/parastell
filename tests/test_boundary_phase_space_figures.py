@@ -1,7 +1,10 @@
 import copy
 import hashlib
 import json
+import sys
+import types
 
+import h5py
 import numpy as np
 import pytest
 
@@ -11,6 +14,9 @@ from parastell.boundary_phase_space_figures import (
 )
 from parastell.boundary_phase_space_figures import validate_figure_inputs
 from parastell.boundary_phase_space_figures import write_phase_space_figures
+from parastell.boundary_phase_space_figures import (
+    _write_phase_space_figures_from_legacy_audit,
+)
 
 
 def _phase_manifest(histories=10):
@@ -151,6 +157,123 @@ def _verified_audit(tmp_path):
     return audit_path, audit
 
 
+def _strict_renderer_fixture(tmp_path, monkeypatch):
+    geometry = tmp_path / "trusted.h5m"
+    model = tmp_path / "model.xml"
+    statepoint = tmp_path / "statepoint.h5"
+    terminal = tmp_path / "openmc.log"
+    inventory = tmp_path / "inventory.json"
+    acceptance = tmp_path / "acceptance.json"
+    bank = tmp_path / "bank.h5"
+    geometry.write_bytes(b"h5m")
+    model.write_bytes(b"model")
+    statepoint.write_bytes(b"statepoint")
+    terminal.write_bytes(b"terminal")
+    inventory.write_bytes(b"inventory")
+    acceptance.write_bytes(b"acceptance")
+    vector = np.dtype([("x", "<f8"), ("y", "<f8"), ("z", "<f8")])
+    dtype = np.dtype(
+        [
+            ("r", vector),
+            ("u", vector),
+            ("E", "<f8"),
+            ("time", "<f8"),
+            ("wgt", "<f8"),
+            ("delayed_group", "<i4"),
+            ("surf_id", "<i4"),
+            ("particle", "<i4"),
+        ]
+    )
+    native = np.zeros(3, dtype=dtype)
+    records = _records()
+    for axis_index, axis in enumerate("xyz"):
+        native["r"][axis] = records["position_global_cm"][:, axis_index]
+        native["u"][axis] = records["direction_global"][:, axis_index]
+    native["E"] = records["energy_eV"]
+    native["time"] = records["time_s"]
+    native["wgt"] = records["weight"]
+    native["surf_id"] = records["surface_id"]
+    native["particle"] = records["particle"]
+    with h5py.File(bank, "w") as source:
+        source.create_dataset("source_bank", data=native)
+
+    localized = tmp_path / "localized_strict.npz"
+    records["openmc_weight"] = records.pop("weight")
+    records["particle_pdg"] = records.pop("particle")
+    records["delayed_group"] = np.zeros(3, dtype=int)
+    records["source_file_index"] = np.zeros(3, dtype=int)
+    records["source_record_index"] = np.arange(3, dtype=int)
+    np.savez(localized, **records)
+    catalog_values = _facet_catalog()
+    catalog_values.pop("normal_source")
+    catalog_values.pop("topology_manifest_sha256")
+    catalog_values["canonical_facet_id"] = catalog_values.pop("facet_id")
+    catalog_values["triangle_vertices_global_cm"] = catalog_values.pop(
+        "vertices_global_cm"
+    )
+    catalog = tmp_path / "catalog_strict.npz"
+    np.savez(catalog, **catalog_values)
+    requests = tmp_path / "envelopes.json"
+    requests.write_text(
+        json.dumps({"envelope_requests": [{"volume_id": 1}]}),
+        encoding="utf-8",
+    )
+    strict = {
+        "schema": "parastell.openmc16_surface_run_audit/v1.0.0",
+        "classification": "COMPLETE_CROSSING_BANK",
+        "dagmc": {
+            "path": str(geometry),
+            "sha256": _digest(geometry),
+            "surface_ids": list(range(1, 73)),
+        },
+        "model": {
+            "path": str(model),
+            "sha256": _digest(model),
+            "source_histories": 10,
+        },
+        "statepoint": {"path": str(statepoint), "sha256": _digest(statepoint)},
+        "terminal_log": {"path": str(terminal), "sha256": _digest(terminal)},
+        "surface_source_files": [{"path": str(bank), "sha256": _digest(bank)}],
+        "accepted_magnet_inventory": {
+            "path": str(inventory),
+            "sha256": _digest(inventory),
+        },
+        "root_acceptance_receipt": {
+            "path": str(acceptance),
+            "sha256": _digest(acceptance),
+        },
+        "required_particles": ["neutron", "photon"],
+        "localization_topology_binding": {"manifest_sha256": "e" * 64},
+    }
+    audit_path = tmp_path / "strict.json"
+    audit_path.write_text(
+        json.dumps({"strict_audit": strict}), encoding="utf-8"
+    )
+
+    class Artifacts:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class Envelope:
+        def facet_metadata(self):
+            return catalog_values
+
+    fake = types.ModuleType("parastell.openmc16_export")
+    fake.StrictSurfaceRunArtifacts = Artifacts
+    fake.audit_openmc16_surface_run = lambda *args, **kwargs: copy.deepcopy(
+        strict
+    )
+    fake._extract_envelopes_from_h5m = lambda *args, **kwargs: [Envelope()]
+    monkeypatch.setitem(sys.modules, "parastell.openmc16_export", fake)
+    return {
+        "audit": audit_path,
+        "requests": requests,
+        "localized": localized,
+        "catalog": catalog,
+        "strict": strict,
+    }
+
+
 def test_phase_space_validation_preserves_all_required_correlations():
     values = validate_figure_inputs(_records())
     summary = summarize_phase_space(
@@ -225,7 +348,7 @@ def test_phase_space_validation_rejects_invalid_barycentric_coordinates():
 def test_matched_figures_are_hash_bound(tmp_path):
     audit_path, _ = _verified_audit(tmp_path)
     output = tmp_path / "figures"
-    manifest = write_phase_space_figures(
+    manifest = _write_phase_space_figures_from_legacy_audit(
         audit_path,
         output,
         expected_run_audit_sha256=_digest(audit_path),
@@ -263,7 +386,7 @@ def test_renderer_rejects_noncomplete_run_audit(tmp_path):
     audit["status"] = "SAMPLED_CROSSING_BANK"
     audit_path.write_text(json.dumps(audit), encoding="utf-8")
     with pytest.raises(ValueError, match="not COMPLETE_CROSSING_BANK"):
-        write_phase_space_figures(
+        _write_phase_space_figures_from_legacy_audit(
             audit_path,
             tmp_path / "figures",
             expected_run_audit_sha256=_digest(audit_path),
@@ -285,7 +408,7 @@ def test_renderer_rejects_forged_localized_rows(tmp_path):
     ] = new_hash
     audit_path.write_text(json.dumps(audit), encoding="utf-8")
     with pytest.raises(ValueError, match="barycentric reconstruction"):
-        write_phase_space_figures(
+        _write_phase_space_figures_from_legacy_audit(
             audit_path,
             tmp_path / "figures",
             expected_run_audit_sha256=_digest(audit_path),
@@ -295,7 +418,7 @@ def test_renderer_rejects_forged_localized_rows(tmp_path):
 def test_renderer_rejects_stale_expected_audit_hash(tmp_path):
     audit_path, _ = _verified_audit(tmp_path)
     with pytest.raises(ValueError, match="audit file/hash binding"):
-        write_phase_space_figures(
+        _write_phase_space_figures_from_legacy_audit(
             audit_path,
             tmp_path / "figures",
             expected_run_audit_sha256="f" * 64,
@@ -308,10 +431,82 @@ def test_renderer_rejects_tampered_bound_artifact(tmp_path, filename):
     (tmp_path / filename).write_bytes(b"tampered")
 
     with pytest.raises(ValueError, match="path/hash binding failed"):
-        write_phase_space_figures(
+        _write_phase_space_figures_from_legacy_audit(
             audit_path,
             tmp_path / "figures",
             expected_run_audit_sha256=_digest(audit_path),
+        )
+
+
+def test_trusted_renderer_rechecks_native_rows_and_lists_all_surfaces(
+    tmp_path, monkeypatch
+):
+    fixture = _strict_renderer_fixture(tmp_path, monkeypatch)
+    output = tmp_path / "trusted_figures"
+    manifest = write_phase_space_figures(
+        fixture["audit"],
+        output,
+        expected_strict_audit_sha256=_digest(fixture["audit"]),
+        envelope_request_path=fixture["requests"],
+        expected_envelope_request_sha256=_digest(fixture["requests"]),
+        localized_records_path=fixture["localized"],
+        expected_localized_records_sha256=_digest(fixture["localized"]),
+        facet_catalog_path=fixture["catalog"],
+        expected_facet_catalog_sha256=_digest(fixture["catalog"]),
+        geometry_label="trusted-test",
+    )
+
+    current = manifest["surface_current"]
+    assert current["surface_ids"] == list(range(1, 73))
+    assert current["qualification"][0] == "NO_RECORDS"
+    assert current["qualification"][10] == "INSUFFICIENT_STATISTICS"
+    assert current["qualification"][11] == "INSUFFICIENT_STATISTICS"
+    assert current["qualification"].count("NO_RECORDS") == 70
+
+
+def test_trusted_renderer_rejects_native_row_forgery(tmp_path, monkeypatch):
+    fixture = _strict_renderer_fixture(tmp_path, monkeypatch)
+    with np.load(fixture["localized"], allow_pickle=False) as archive:
+        localized = {name: archive[name] for name in archive.files}
+    localized["energy_eV"][0] += 1.0
+    np.savez(fixture["localized"], **localized)
+
+    with pytest.raises(ValueError, match="differs from native row"):
+        write_phase_space_figures(
+            fixture["audit"],
+            tmp_path / "figures",
+            expected_strict_audit_sha256=_digest(fixture["audit"]),
+            envelope_request_path=fixture["requests"],
+            expected_envelope_request_sha256=_digest(fixture["requests"]),
+            localized_records_path=fixture["localized"],
+            expected_localized_records_sha256=_digest(fixture["localized"]),
+            facet_catalog_path=fixture["catalog"],
+            expected_facet_catalog_sha256=_digest(fixture["catalog"]),
+            geometry_label="forged-test",
+        )
+
+
+def test_trusted_renderer_rejects_supplied_catalog_forgery(
+    tmp_path, monkeypatch
+):
+    fixture = _strict_renderer_fixture(tmp_path, monkeypatch)
+    with np.load(fixture["catalog"], allow_pickle=False) as archive:
+        catalog = {name: archive[name] for name in archive.files}
+    catalog["outward_normal_global"][0] *= -1.0
+    np.savez(fixture["catalog"], **catalog)
+
+    with pytest.raises(ValueError, match="supplied facet catalog differs"):
+        write_phase_space_figures(
+            fixture["audit"],
+            tmp_path / "figures",
+            expected_strict_audit_sha256=_digest(fixture["audit"]),
+            envelope_request_path=fixture["requests"],
+            expected_envelope_request_sha256=_digest(fixture["requests"]),
+            localized_records_path=fixture["localized"],
+            expected_localized_records_sha256=_digest(fixture["localized"]),
+            facet_catalog_path=fixture["catalog"],
+            expected_facet_catalog_sha256=_digest(fixture["catalog"]),
+            geometry_label="forged-test",
         )
 
 

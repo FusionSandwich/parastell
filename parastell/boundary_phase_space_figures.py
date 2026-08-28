@@ -334,6 +334,7 @@ def surface_current_by_particle_and_sense(
     *,
     source_histories: int,
     grazing_tolerance: float,
+    qualified_surface_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Compute crossing current without angular or tally conditioning."""
 
@@ -345,7 +346,21 @@ def surface_current_by_particle_and_sense(
         raise ValueError("source_histories must be a positive integer")
     normalized_weight = values.weight / float(source_histories)
     labels = _particle_labels(values.particle)
-    surfaces = np.asarray(sorted(set(values.surface_id)), dtype=np.int64)
+    surfaces = np.asarray(
+        (
+            sorted(set(values.surface_id))
+            if qualified_surface_ids is None
+            else qualified_surface_ids
+        ),
+        dtype=np.int64,
+    )
+    if (
+        len(surfaces) == 0
+        or len(set(surfaces.tolist())) != len(surfaces)
+        or np.any(surfaces <= 0)
+        or not set(values.surface_id).issubset(set(surfaces))
+    ):
+        raise ValueError("qualified surface IDs are invalid or incomplete")
     groups = (
         (
             "neutron_incoming",
@@ -365,6 +380,14 @@ def surface_current_by_particle_and_sense(
         ("photon_outgoing", labels == "photon", values.mu > grazing_tolerance),
     )
     currents = {}
+    record_counts = []
+    qualifications = []
+    for surface in surfaces:
+        count = int(np.count_nonzero(values.surface_id == surface))
+        record_counts.append(count)
+        qualifications.append(
+            "NO_RECORDS" if count == 0 else "INSUFFICIENT_STATISTICS"
+        )
     for name, particle_mask, sense_mask in groups:
         currents[name] = [
             float(
@@ -379,6 +402,8 @@ def surface_current_by_particle_and_sense(
         "normalization": "raw OpenMC weight / exact source histories",
         "units": "particle/source history",
         "currents": currents,
+        "record_counts": record_counts,
+        "qualification": qualifications,
     }
 
 
@@ -406,6 +431,7 @@ def _write_phase_space_figures(
     facet_catalog: Mapping[str, Any] | None = None,
     topology_manifest_sha256: str | None = None,
     run_audit_sha256: str | None = None,
+    qualified_surface_ids: list[int] | None = None,
     grazing_tolerance: float = 1.0e-8,
     status: str = "BOUNDED_TEST_ONLY",
 ) -> dict[str, Any]:
@@ -567,6 +593,7 @@ def _write_phase_space_figures(
         values,
         source_histories=summary["source_histories"],
         grazing_tolerance=grazing_tolerance,
+        qualified_surface_ids=qualified_surface_ids,
     )
     surface_ids = np.asarray(current_summary["surface_ids"], dtype=np.int64)
     x = np.arange(len(surface_ids), dtype=float)
@@ -576,7 +603,22 @@ def _write_phase_space_figures(
         current_summary["currents"].items()
     ):
         label = name.replace("_", " ")
-        axis.bar(x + (offset - 1.5) * width, current, width, label=label)
+        visible = np.asarray(current, dtype=float)
+        no_records = np.asarray(current_summary["record_counts"]) == 0
+        visible[no_records] = np.nan
+        axis.bar(x + (offset - 1.5) * width, visible, width, label=label)
+    for index, qualification in enumerate(current_summary["qualification"]):
+        if qualification == "NO_RECORDS":
+            axis.text(
+                x[index],
+                0.0,
+                "NO_RECORDS",
+                rotation=90,
+                va="bottom",
+                ha="center",
+                fontsize=5,
+                color="#666666",
+            )
     axis.set_xticks(x, [str(value) for value in surface_ids], rotation=45)
     axis.set(
         xlabel="DAGMC surface ID",
@@ -717,7 +759,7 @@ def _verify_localized_rows_against_catalog(
             raise ValueError("localized position roundtrip mismatch")
 
 
-def write_phase_space_figures(
+def _write_phase_space_figures_from_legacy_audit(
     run_audit_path: str | Path,
     output_directory: str | Path,
     *,
@@ -841,6 +883,238 @@ def write_phase_space_figures(
         facet_catalog=catalog,
         topology_manifest_sha256=topology_hash,
         run_audit_sha256=expected_audit_hash,
+        grazing_tolerance=grazing_tolerance,
+        status=status,
+    )
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+
+
+def _native_vector(records: np.ndarray, name: str) -> np.ndarray:
+    values = records[name]
+    return np.column_stack([values[axis] for axis in "xyz"])
+
+
+def _verify_native_rows(
+    localized: Mapping[str, np.ndarray], bank_paths: list[Path]
+) -> None:
+    banks = []
+    for path in bank_paths:
+        import h5py
+
+        with h5py.File(path, "r") as source:
+            banks.append(source["source_bank"][:])
+    file_index = np.asarray(localized["source_file_index"], dtype=np.int64)
+    record_index = np.asarray(localized["source_record_index"], dtype=np.int64)
+    expected_pairs = {
+        (file_id, row_id)
+        for file_id, bank in enumerate(banks)
+        for row_id in range(len(bank))
+    }
+    actual_pairs = set(zip(file_index.tolist(), record_index.tolist()))
+    if len(actual_pairs) != len(file_index) or actual_pairs != expected_pairs:
+        raise ValueError(
+            "localized rows are not a one-to-one native bank inventory"
+        )
+    vector_fields = {
+        "position_global_cm": "r",
+        "direction_global": "u",
+    }
+    scalar_fields = {
+        "energy_eV": "E",
+        "time_s": "time",
+        "openmc_weight": "wgt",
+        "delayed_group": "delayed_group",
+        "surface_id": "surf_id",
+        "particle_pdg": "particle",
+    }
+    for row, (file_id, row_id) in enumerate(zip(file_index, record_index)):
+        native = banks[int(file_id)][int(row_id) : int(row_id) + 1]
+        for localized_name, native_name in vector_fields.items():
+            if not np.array_equal(
+                np.asarray(localized[localized_name])[row],
+                _native_vector(native, native_name)[0],
+            ):
+                raise ValueError(
+                    f"localized {localized_name} differs from native row"
+                )
+        for localized_name, native_name in scalar_fields.items():
+            if (
+                np.asarray(localized[localized_name])[row]
+                != native[native_name][0]
+            ):
+                raise ValueError(
+                    f"localized {localized_name} differs from native row"
+                )
+
+
+def _canonical_catalog_from_envelopes(envelopes: Any) -> dict[str, np.ndarray]:
+    catalogs = [item.facet_metadata() for item in envelopes]
+    fields = (
+        "canonical_facet_id",
+        "surface_id",
+        "triangle_vertices_global_cm",
+        "outward_normal_global",
+    )
+    return {
+        name: np.concatenate(
+            [np.asarray(catalog[name]) for catalog in catalogs]
+        )
+        for name in fields
+    }
+
+
+def write_phase_space_figures(
+    strict_audit_path: str | Path,
+    output_directory: str | Path,
+    *,
+    expected_strict_audit_sha256: str,
+    envelope_request_path: str | Path,
+    expected_envelope_request_sha256: str,
+    localized_records_path: str | Path,
+    expected_localized_records_sha256: str,
+    facet_catalog_path: str | Path,
+    expected_facet_catalog_sha256: str,
+    geometry_label: str,
+    grazing_tolerance: float = 1.0e-8,
+    status: str = "BOUNDED_TEST_ONLY",
+) -> dict[str, Any]:
+    """Recompute trust from native artifacts before rendering any row."""
+
+    audit_path = Path(strict_audit_path).resolve()
+    if _sha256(audit_path) != _sha256_text(
+        expected_strict_audit_sha256, "expected_strict_audit_sha256"
+    ):
+        raise ValueError("strict audit file/hash binding failed")
+    document = json.loads(audit_path.read_text(encoding="utf-8"))
+    strict = document.get("strict_audit", document)
+    if strict.get("schema") != "parastell.openmc16_surface_run_audit/v1.0.0":
+        raise ValueError("unsupported strict surface-run audit schema")
+    if strict.get("classification") != "COMPLETE_CROSSING_BANK":
+        raise ValueError("strict audit is not COMPLETE_CROSSING_BANK")
+
+    request_path = Path(envelope_request_path).resolve()
+    if _sha256(request_path) != _sha256_text(
+        expected_envelope_request_sha256,
+        "expected_envelope_request_sha256",
+    ):
+        raise ValueError("envelope request file/hash binding failed")
+    request_document = json.loads(request_path.read_text(encoding="utf-8"))
+    requests = request_document.get("envelope_requests", request_document)
+    if not isinstance(requests, list) or not requests:
+        raise ValueError("envelope request artifact is empty")
+
+    from .openmc16_export import StrictSurfaceRunArtifacts
+    from .openmc16_export import _extract_envelopes_from_h5m
+    from .openmc16_export import audit_openmc16_surface_run
+
+    artifacts = StrictSurfaceRunArtifacts(
+        dagmc_path=strict["dagmc"]["path"],
+        model_xml_path=strict["model"]["path"],
+        statepoint_path=strict["statepoint"]["path"],
+        terminal_log_path=strict["terminal_log"]["path"],
+        surface_source_paths=[
+            row["path"] for row in strict["surface_source_files"]
+        ],
+        accepted_magnet_inventory_path=strict["accepted_magnet_inventory"][
+            "path"
+        ],
+        root_acceptance_receipt_path=strict["root_acceptance_receipt"]["path"],
+        expected_root_acceptance_receipt_sha256=strict[
+            "root_acceptance_receipt"
+        ]["sha256"],
+    )
+    recomputed = audit_openmc16_surface_run(
+        artifacts,
+        envelope_requests=requests,
+        required_particles=strict["required_particles"],
+    )
+    if _canonical_json(recomputed) != _canonical_json(strict):
+        raise ValueError(
+            "stored strict audit differs from native recomputation"
+        )
+
+    dagmc_path = Path(strict["dagmc"]["path"]).resolve()
+    bank_paths = [
+        Path(row["path"]).resolve() for row in strict["surface_source_files"]
+    ]
+    localized_path = Path(localized_records_path).resolve()
+    if _sha256(localized_path) != _sha256_text(
+        expected_localized_records_sha256,
+        "expected_localized_records_sha256",
+    ):
+        raise ValueError("localized record file/hash binding failed")
+    localized = _load_npz_mapping(localized_path)
+    _verify_native_rows(localized, bank_paths)
+
+    catalog_path = Path(facet_catalog_path).resolve()
+    if _sha256(catalog_path) != _sha256_text(
+        expected_facet_catalog_sha256, "expected_facet_catalog_sha256"
+    ):
+        raise ValueError("facet catalog file/hash binding failed")
+    supplied_catalog = _load_npz_mapping(catalog_path)
+    envelopes = _extract_envelopes_from_h5m(dagmc_path, requests)
+    recomputed_catalog = _canonical_catalog_from_envelopes(envelopes)
+    for name, expected in recomputed_catalog.items():
+        if name not in supplied_catalog or not np.array_equal(
+            (
+                np.asarray(supplied_catalog[name]).astype(str)
+                if expected.dtype.kind in "OUS"
+                else np.asarray(supplied_catalog[name])
+            ),
+            expected.astype(str) if expected.dtype.kind in "OUS" else expected,
+        ):
+            raise ValueError(f"supplied facet catalog differs for {name}")
+    renderer_catalog = {
+        "facet_id": recomputed_catalog["canonical_facet_id"],
+        "surface_id": recomputed_catalog["surface_id"],
+        "vertices_global_cm": recomputed_catalog[
+            "triangle_vertices_global_cm"
+        ],
+        "outward_normal_global": recomputed_catalog["outward_normal_global"],
+    }
+    _verify_localized_rows_against_catalog(localized, renderer_catalog)
+    topology_hash = strict["localization_topology_binding"]["manifest_sha256"]
+    renderer_catalog["normal_source"] = "dagmc_forward_reverse_topology"
+    renderer_catalog["topology_manifest_sha256"] = topology_hash
+
+    histories = int(strict["model"]["source_histories"])
+    model_path = Path(strict["model"]["path"]).resolve()
+    statepoint_path = Path(strict["statepoint"]["path"]).resolve()
+    phase_manifest = {
+        "schema": "parastell.openmc16_surface_phase_space/v1.0.0",
+        "raw_phase_space_pass": True,
+        "source_histories": histories,
+        "source_files": strict["surface_source_files"],
+        "history_binding": {
+            "kind": "fixed_source_run",
+            "run_id": strict["model"]["sha256"],
+            "source_histories": histories,
+            "openmc_version": "0.16.0",
+            "settings_payload_path": str(model_path),
+            "settings_payload_sha256": _sha256(model_path),
+            "statepoint_path": str(statepoint_path),
+            "statepoint_sha256": _sha256(statepoint_path),
+        },
+    }
+    return _write_phase_space_figures(
+        localized,
+        output_directory,
+        geometry_label=geometry_label,
+        geometry_sha256=_sha256(dagmc_path),
+        source_bank_sha256=_sha256(bank_paths[0]),
+        source_bank_sha256s=[_sha256(path) for path in bank_paths],
+        phase_space_manifest=phase_manifest,
+        facet_catalog=renderer_catalog,
+        topology_manifest_sha256=topology_hash,
+        run_audit_sha256=_sha256(audit_path),
+        qualified_surface_ids=[
+            int(value) for value in strict["dagmc"]["surface_ids"]
+        ],
         grazing_tolerance=grazing_tolerance,
         status=status,
     )
