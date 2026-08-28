@@ -288,6 +288,100 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_text(value: object, name: str) -> str:
+    digest = str(value).lower()
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise ValueError(f"{name} must be a SHA-256 digest")
+    return digest
+
+
+def _verified_facet_mesh(
+    facet_catalog: Mapping[str, Any] | None,
+    topology_manifest_sha256: str | None,
+) -> tuple[np.ndarray | None, np.ndarray | None, str | None]:
+    if facet_catalog is None:
+        if topology_manifest_sha256 is not None:
+            raise ValueError(
+                "topology hash was supplied without a facet catalog"
+            )
+        return None, None, None
+    if topology_manifest_sha256 is None:
+        raise ValueError("facet catalog requires topology_manifest_sha256")
+    digest = _sha256_text(topology_manifest_sha256, "topology_manifest_sha256")
+    if facet_catalog.get("topology_manifest_sha256") != digest:
+        raise ValueError("facet catalog and topology manifest hash disagree")
+    if facet_catalog.get("normal_source") != "dagmc_forward_reverse_topology":
+        raise ValueError("facet catalog normals are not topology-derived")
+    triangles = np.asarray(
+        facet_catalog.get("vertices_global_cm"), dtype=float
+    )
+    surfaces = np.asarray(facet_catalog.get("surface_id"), dtype=np.int64)
+    if (
+        triangles.ndim != 3
+        or triangles.shape[1:] != (3, 3)
+        or surfaces.shape != (len(triangles),)
+        or len(triangles) == 0
+        or np.any(~np.isfinite(triangles))
+    ):
+        raise ValueError("facet catalog mesh arrays are invalid")
+    return triangles, surfaces, digest
+
+
+def surface_current_by_particle_and_sense(
+    values: BoundaryFigureInputs,
+    *,
+    source_histories: int,
+    grazing_tolerance: float,
+) -> dict[str, Any]:
+    """Compute crossing current without angular or tally conditioning."""
+
+    if (
+        isinstance(source_histories, bool)
+        or not isinstance(source_histories, (int, np.integer))
+        or int(source_histories) <= 0
+    ):
+        raise ValueError("source_histories must be a positive integer")
+    normalized_weight = values.weight / float(source_histories)
+    labels = _particle_labels(values.particle)
+    surfaces = np.asarray(sorted(set(values.surface_id)), dtype=np.int64)
+    groups = (
+        (
+            "neutron_incoming",
+            labels == "neutron",
+            values.mu < -grazing_tolerance,
+        ),
+        (
+            "neutron_outgoing",
+            labels == "neutron",
+            values.mu > grazing_tolerance,
+        ),
+        (
+            "photon_incoming",
+            labels == "photon",
+            values.mu < -grazing_tolerance,
+        ),
+        ("photon_outgoing", labels == "photon", values.mu > grazing_tolerance),
+    )
+    currents = {}
+    for name, particle_mask, sense_mask in groups:
+        currents[name] = [
+            float(
+                normalized_weight[
+                    particle_mask & sense_mask & (values.surface_id == surface)
+                ].sum()
+            )
+            for surface in surfaces
+        ]
+    return {
+        "surface_ids": surfaces.tolist(),
+        "normalization": "raw OpenMC weight / exact source histories",
+        "units": "particle/source history",
+        "currents": currents,
+    }
+
+
 def _particle_labels(values: np.ndarray) -> np.ndarray:
     labels = []
     for value in values:
@@ -308,6 +402,8 @@ def write_phase_space_figures(
     geometry_sha256: str,
     source_bank_sha256: str,
     phase_space_manifest: Mapping[str, Any],
+    facet_catalog: Mapping[str, Any] | None = None,
+    topology_manifest_sha256: str | None = None,
     grazing_tolerance: float = 1.0e-8,
     status: str = "BOUNDED_TEST_ONLY",
 ) -> dict[str, Any]:
@@ -316,6 +412,13 @@ def write_phase_space_figures(
     import matplotlib.pyplot as plt
 
     values = validate_figure_inputs(records)
+    facet_triangles, facet_surfaces, topology_hash = _verified_facet_mesh(
+        facet_catalog, topology_manifest_sha256
+    )
+    if facet_surfaces is not None and not set(values.surface_id).issubset(
+        set(facet_surfaces)
+    ):
+        raise ValueError("facet catalog omits one or more crossing surfaces")
     summary = summarize_phase_space(
         values,
         phase_space_manifest=phase_space_manifest,
@@ -348,6 +451,21 @@ def write_phase_space_figures(
 
     figure = plt.figure(figsize=(8, 7))
     axis = figure.add_subplot(111, projection="3d")
+    if facet_triangles is not None:
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+        mesh = Poly3DCollection(
+            facet_triangles,
+            facecolor="#bdbdbd",
+            edgecolor="#737373",
+            linewidth=0.15,
+            alpha=0.22,
+        )
+        axis.add_collection3d(mesh)
+        mesh_points = facet_triangles.reshape(-1, 3)
+        axis.auto_scale_xyz(
+            mesh_points[:, 0], mesh_points[:, 1], mesh_points[:, 2]
+        )
     colors = {
         "incoming": "#2166ac",
         "outgoing": "#b2182b",
@@ -443,12 +561,42 @@ def write_phase_space_figures(
         "mu and energy weighted diagnostics",
     )
 
+    current_summary = surface_current_by_particle_and_sense(
+        values,
+        source_histories=summary["source_histories"],
+        grazing_tolerance=grazing_tolerance,
+    )
+    surface_ids = np.asarray(current_summary["surface_ids"], dtype=np.int64)
+    x = np.arange(len(surface_ids), dtype=float)
+    width = 0.19
+    figure, axis = plt.subplots(figsize=(max(8, len(surface_ids) * 0.55), 5.5))
+    for offset, (name, current) in enumerate(
+        current_summary["currents"].items()
+    ):
+        label = name.replace("_", " ")
+        axis.bar(x + (offset - 1.5) * width, current, width, label=label)
+    axis.set_xticks(x, [str(value) for value in surface_ids], rotation=45)
+    axis.set(
+        xlabel="DAGMC surface ID",
+        ylabel="crossing current [particle/source history]",
+    )
+    axis.legend(loc="best", fontsize="small")
+    axis.set_title(f"{geometry_label}: current by envelope surface and sense")
+    save(
+        figure,
+        "05_current_by_surface.png",
+        "incoming/outgoing neutron and photon crossing current by surface",
+    )
+
     manifest = {
         "schema": SCHEMA,
         "geometry_label": geometry_label,
         "geometry_sha256": geometry_sha256,
         "source_bank_sha256": source_bank_sha256,
         "phase_space_history_binding": phase_space_manifest["history_binding"],
+        "facet_catalog_overlay": facet_triangles is not None,
+        "topology_manifest_sha256": topology_hash,
+        "surface_current": current_summary,
         "status": status,
         "grazing_tolerance": grazing_tolerance,
         "summary": summary,

@@ -4,6 +4,9 @@ import numpy as np
 import pytest
 
 from parastell.boundary_phase_space_figures import summarize_phase_space
+from parastell.boundary_phase_space_figures import (
+    surface_current_by_particle_and_sense,
+)
 from parastell.boundary_phase_space_figures import validate_figure_inputs
 from parastell.boundary_phase_space_figures import write_phase_space_figures
 
@@ -47,6 +50,20 @@ def _records():
         "facet_id": np.asarray([7, 8, 9]),
         "barycentric_coordinates": np.asarray(
             [[0.2, 0.3, 0.5], [0.1, 0.1, 0.8], [0.0, 0.5, 0.5]]
+        ),
+    }
+
+
+def _facet_catalog():
+    return {
+        "normal_source": "dagmc_forward_reverse_topology",
+        "topology_manifest_sha256": "c" * 64,
+        "surface_id": np.asarray([11, 12]),
+        "vertices_global_cm": np.asarray(
+            [
+                [[0.0, 0.0, 3.0], [4.0, 0.0, 3.0], [0.0, 5.0, 3.0]],
+                [[0.0, 0.0, 5.0], [4.0, 0.0, 5.0], [0.0, 5.0, 5.0]],
+            ]
         ),
     }
 
@@ -130,13 +147,63 @@ def test_matched_figures_are_hash_bound(tmp_path):
         geometry_sha256="a" * 64,
         source_bank_sha256="b" * 64,
         phase_space_manifest=_phase_manifest(),
+        facet_catalog=_facet_catalog(),
+        topology_manifest_sha256="c" * 64,
     )
 
-    assert len(manifest["figures"]) == 4
+    assert len(manifest["figures"]) == 5
     assert all(
         (tmp_path / row["path"]).is_file() for row in manifest["figures"]
     )
     assert (tmp_path / "FIGURE_MANIFEST.json").is_file()
+    assert manifest["facet_catalog_overlay"] is True
+    assert manifest["topology_manifest_sha256"] == "c" * 64
+    assert manifest["surface_current"]["currents"]["neutron_incoming"] == [
+        0.1,
+        0.0,
+    ]
+
+
+def test_current_by_surface_preserves_particle_and_sense():
+    values = validate_figure_inputs(_records())
+    result = surface_current_by_particle_and_sense(
+        values, source_histories=10, grazing_tolerance=1.0e-8
+    )
+
+    assert result["surface_ids"] == [11, 12]
+    assert result["currents"] == {
+        "neutron_incoming": [0.1, 0.0],
+        "neutron_outgoing": [0.2, 0.0],
+        "photon_incoming": [0.0, 0.0],
+        "photon_outgoing": [0.0, 0.0],
+    }
+
+
+def test_facet_overlay_requires_topology_manifest_hash(tmp_path):
+    with pytest.raises(ValueError, match="topology_manifest_sha256"):
+        write_phase_space_figures(
+            _records(),
+            tmp_path,
+            geometry_label="synthetic-variant",
+            geometry_sha256="a" * 64,
+            source_bank_sha256="b" * 64,
+            phase_space_manifest=_phase_manifest(),
+            facet_catalog=_facet_catalog(),
+        )
+
+
+def test_facet_overlay_rejects_mismatched_topology_binding(tmp_path):
+    with pytest.raises(ValueError, match="topology manifest hash disagree"):
+        write_phase_space_figures(
+            _records(),
+            tmp_path,
+            geometry_label="synthetic-variant",
+            geometry_sha256="a" * 64,
+            source_bank_sha256="b" * 64,
+            phase_space_manifest=_phase_manifest(),
+            facet_catalog=_facet_catalog(),
+            topology_manifest_sha256="d" * 64,
+        )
 
 
 def test_summary_rejects_independently_mismatched_history_binding():
