@@ -1,0 +1,58 @@
+{
+  "schema": "parastell.surface_source_phase_space_proof_status/v1.0.0",
+  "status": "MECHANISM_PASS_GEOMETRY_PROOFS_PENDING",
+  "openmc_runtime": {
+    "version": "0.16.0",
+    "docker_image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191"
+  },
+  "proofs": {
+    "native_serializer_reader_roundtrip": {
+      "status": "PASS",
+      "transport_histories": 0,
+      "receipt": "D:/parastell-artifacts/surface-source-proof-20260828/openmc16-contract-v2/OPENMC16_SURFACE_BANK_RUNTIME_VALIDATION.json",
+      "receipt_sha256": "20f5dd3f933118183e528553f1ca36fd7e767af95f9d6bf5dd2556f00480ab29"
+    },
+    "bounded_transport_bank_tally_integrity": {
+      "status": "PASS",
+      "histories": 2000,
+      "seed": 7104291,
+      "records": 2000,
+      "bank_integrated_current_per_source": 1.0000000000000004,
+      "tally_outgoing_current_per_source": 1.0,
+      "receipt": "D:/parastell-artifacts/surface-source-proof-20260828/openmc16-transport-contract-v3/OPENMC16_SURFACE_TRANSPORT_CONTRACT.json",
+      "receipt_sha256": "87d740f94110c59868b275ac7d67010ece554e5b8a51d50fc1ff6cba992c3495"
+    },
+    "facet_barycentric_normal_local_frame_unit_contract": {
+      "status": "PASS",
+      "tests": 2,
+      "normal_source_required": "dagmc_forward_reverse_topology"
+    },
+    "actual_wistell_d_90_degree_geometry": {
+      "status": "PENDING_ACCEPTED_DAGMC_GEOMETRY",
+      "reason": "The imprinted direct-90 geometry candidate must pass native watertightness, overlap, and OpenMC navigation before any scientific surface bank is accepted."
+    },
+    "private_alternate_input_geometry": {
+      "status": "IN_PROGRESS_EXTERNAL_ARTIFACTS_ONLY",
+      "repository_policy": "Private inputs, CAD, H5M, banks, statepoints, and figures are excluded from Git."
+    }
+  },
+  "phase_information": [
+    {"field": "position_global_cm", "origin": "OpenMC source_bank.r", "status": "PASS"},
+    {"field": "direction_global", "origin": "OpenMC source_bank.u", "status": "PASS"},
+    {"field": "energy_eV", "origin": "OpenMC source_bank.E", "status": "PASS"},
+    {"field": "time_s", "origin": "OpenMC source_bank.time", "status": "PASS"},
+    {"field": "openmc_weight", "origin": "OpenMC source_bank.wgt", "status": "PASS"},
+    {"field": "weight_per_source_history", "origin": "OpenMC weight divided only by exact histories", "status": "PASS"},
+    {"field": "particle_pdg", "origin": "OpenMC source_bank.particle", "status": "PASS"},
+    {"field": "delayed_group", "origin": "OpenMC source_bank.delayed_group", "status": "PASS"},
+    {"field": "surface_id", "origin": "OpenMC source_bank.surf_id", "status": "PASS"},
+    {"field": "facet_id", "origin": "DAGMC facet catalog", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
+    {"field": "barycentric_coordinates", "origin": "strict facet localization", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
+    {"field": "outward_normal_global", "origin": "DAGMC forward/reverse topology", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
+    {"field": "mu", "origin": "direction dot outward normal", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
+    {"field": "crossing_sense", "origin": "mu sign with declared grazing tolerance", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
+    {"field": "position_local_cm", "origin": "right-handed facet-local frame", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
+    {"field": "direction_local", "origin": "right-handed facet-local frame", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"}
+  ],
+  "acceptance_rule": "No geometry is qualified from these mechanism proofs alone. Each candidate still requires a closed selected envelope, exact requested surface IDs, complete non-truncated bank accounting, facet round trips on every retained record, same-run bank/tally integrity, and zero OpenMC lost/navigation errors."
+}
