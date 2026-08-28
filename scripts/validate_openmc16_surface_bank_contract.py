@@ -53,7 +53,14 @@ def main() -> None:
     bank_path = output / "openmc16_surface_bank.h5"
     openmc.write_source_file(expected, bank_path)
     columns, manifest = read_openmc16_surface_sources(
-        [bank_path], source_histories=200, requested_surface_ids=[17, 18]
+        [bank_path],
+        source_histories=200,
+        history_binding={
+            "kind": "serializer_fixture",
+            "fixture_id": "openmc16-native-sourceparticle-roundtrip-v1",
+            "source_histories": 200,
+        },
+        requested_surface_ids=[17, 18],
     )
     checks = {
         "position": np.allclose(

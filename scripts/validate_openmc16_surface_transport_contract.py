@@ -89,9 +89,18 @@ def main() -> None:
 
     bank_path = output / "surface_source.h5"
     statepoint_path = output / "statepoint.1.h5"
+    model_path = output / "model.xml"
     columns, phase_manifest = read_openmc16_surface_sources(
         [bank_path],
         source_histories=HISTORIES,
+        history_binding={
+            "kind": "fixed_source_run",
+            "run_id": "openmc16-vacuum-sphere-contract-v1",
+            "settings_payload_path": str(model_path),
+            "settings_payload_sha256": _hash(model_path),
+            "statepoint_path": str(statepoint_path),
+            "statepoint_sha256": _hash(statepoint_path),
+        },
         requested_surface_ids=[SURFACE_ID],
     )
     incoming_tally, outgoing_tally = _statepoint_directional_current(
