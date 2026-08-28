@@ -1,0 +1,53 @@
+{
+  "schema": "parastell.openmc_downstream_data_contract_status/v1.0.0",
+  "status": "PARTIAL_WORKFLOW_IMPLEMENTATION",
+  "statistics_scope": "WORKFLOW_SMOKE_ONLY",
+  "global_magnet_representation": "homogenized",
+  "producer_products": {
+    "boundary_phase_space_v2_2": "BOUNDED_PROOF_PASS",
+    "volume_scalar_flux_tally_definition": "IMPLEMENTED",
+    "volume_scalar_flux_statepoint_export": "IMPLEMENTED_AND_UNIT_TESTED",
+    "heating_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
+    "damage_energy_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
+    "gas_production_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
+    "reaction_family_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
+    "particle_production_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
+    "non_flux_statepoint_export": "PENDING",
+    "accepted_90_degree_physical_statepoint": "BLOCKED_GEOMETRY_GATE"
+  },
+  "scientific_firewalls": {
+    "activation_uses_volume_scalar_flux": true,
+    "surface_current_as_activation_flux_forbidden": true,
+    "openmc_claims_direct_pka_output": false,
+    "openmc_flux_as_defect_yield_forbidden": true,
+    "canonical_boundary_bank_reconditioning_forbidden": true,
+    "fabricated_parent_history_forbidden": true
+  },
+  "activation_schedule": {
+    "owner": "DPA_workflow",
+    "schema": "dpa_workflow.activation_campaign_schedule/v1.0.0",
+    "year_definition": "Julian_year_365.25_days",
+    "irradiation_checkpoint_s": [
+      86400,
+      604800,
+      31557600,
+      157788000,
+      315576000
+    ],
+    "cooling_offset_s": [
+      0,
+      1,
+      60,
+      3600,
+      86400,
+      604800,
+      2592000,
+      31557600,
+      157788000,
+      315576000
+    ],
+    "branching": "independent_zero_source_branch_from_each_EOI",
+    "parastell_binding": "schedule_id_and_sha256_only"
+  },
+  "production_authorized": false
+}

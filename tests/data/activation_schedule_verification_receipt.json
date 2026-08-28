@@ -1,0 +1,8 @@
+{
+  "schema": "dpa_workflow.activation_campaign_schedule_verification/v1.0.0",
+  "status": "PASS",
+  "owner": "DPA_workflow",
+  "schedule_id": "wistell-d-full-power-checkpoints-v1",
+  "schedule_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "scope": "UNIT_TEST_FIXTURE"
+}

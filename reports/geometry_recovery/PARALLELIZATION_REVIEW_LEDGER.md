@@ -256,3 +256,25 @@
 - V6 was staged after its preflight printed the v5 exporter instead of asserting process absence. It was never submitted or leased, but its root is permanently setup-only/nonselectable.
 - Serial/root-owned: any v7 successor must assert exact process absence before creating its root and monitor both guard/wrapper and exporter sessions. The reviewed wrapper now has an internal 22,000-second total-attempt timeout, so owner monitoring must not terminate a healthy sleeping wrapper.
 - Shared resources: both v5 process groups are terminal, the ledger is zero, no H5M exists, and no OpenMC ran.
+
+## 2026-08-28 16:05 EDT — Downstream workflow-contract integration
+
+- Serial/root-owned: define the producer/consumer firewall, integrate the
+  schedule reference into activation readiness, review tests, and decide what
+  may be committed. Accepted geometry selection remains exclusively root-owned.
+- Safe parallel work completed: one read-only reviewer mapped exact
+  SPECTRA-PKA, Beyond-DPA, OpenMC replay, Geant4, MCNP, and deterministic input
+  contracts; a second read-only reviewer audited schedule ownership and
+  branched full-power/cooling semantics. Neither reviewer edited a worktree or
+  launched a job.
+- Scheduler/local jobs: none. All new verification uses synthetic HDF5 or API
+  fixtures and consumes no transport histories. No geometry, OpenMC,
+  depletion, SPECTRA-PKA, Geant4, MCNP, or deterministic execution was started.
+- Shared-artifact risks: DPA_workflow currently has unrelated dirty planning
+  files, so it remains read-only. ParaStell records only a hash-bound schedule
+  reference; it does not duplicate executable depletion intervals or select
+  between conflicting historical absolute source rates.
+- Result: the producer now has a geometry-neutral statepoint scalar-spectrum
+  exporter, consumer-neutral handoff validation, and explicit replay/physics
+  firewalls. The accepted 90-degree physical statepoint and non-flux response
+  exporter remain pending.

@@ -16,8 +16,12 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from xml.etree import ElementTree
 
+from .radiation_consumer_handoff import (
+    validate_activation_schedule_reference,
+)
 
-ACTIVATION_HANDOFF_SCHEMA = "parastell.activation_ready_metadata/v2.0.0"
+
+ACTIVATION_HANDOFF_SCHEMA = "parastell.activation_ready_metadata/v2.1.0"
 ACTIVATION_EXECUTION_OWNER = "DPA_workflow"
 ENDFB80_FAST_CHAIN_SHA256 = (
     "5eeb727498d824d7c951ad89864bbc1c2d76ec5e8c9097a820505213ba6a2bf3"
@@ -158,6 +162,7 @@ def build_activation_handoff(
     physical_source_rate_per_s: float,
     source_mesh: Mapping[str, Any] | None = None,
     activation_domains: Sequence[Mapping[str, Any]] = (),
+    activation_schedule_reference: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build and validate a neutral producer-to-activation handoff.
 
@@ -176,7 +181,11 @@ def build_activation_handoff(
     field_ready = (
         scalar_flux is not None and scalar_flux.get("status") == "PASS"
     )
-    binding_ready = source_mesh is not None and bool(domains)
+    binding_ready = (
+        source_mesh is not None
+        and bool(domains)
+        and activation_schedule_reference is not None
+    )
     status = (
         "READY_FOR_DPA_ACTIVATION_QUALIFICATION"
         if geometry_gates_pass and field_ready and binding_ready
@@ -191,6 +200,11 @@ def build_activation_handoff(
         "material_counts": material_counts,
         "source_mesh": dict(source_mesh) if source_mesh is not None else None,
         "activation_domains": domains,
+        "activation_schedule_reference": (
+            dict(activation_schedule_reference)
+            if activation_schedule_reference is not None
+            else None
+        ),
         "activation_input": {
             "observable": "volume_scalar_flux",
             "estimator": "track_length",
@@ -340,6 +354,15 @@ def validate_activation_handoff(handoff: Mapping[str, Any]) -> None:
     if consumer.get("production_activation_authorized") is not False:
         raise ActivationHandoffError("production activation is not authorized")
 
+    schedule_reference = handoff.get("activation_schedule_reference")
+    if schedule_reference is not None:
+        try:
+            validate_activation_schedule_reference(schedule_reference)
+        except ValueError as exc:
+            raise ActivationHandoffError(
+                f"invalid activation schedule reference: {exc}"
+            ) from exc
+
     source_mesh = handoff.get("source_mesh")
     domains = handoff.get("activation_domains")
     if not isinstance(domains, list):
@@ -448,6 +471,7 @@ def validate_activation_handoff(handoff: Mapping[str, Any]) -> None:
         and activation_input["scalar_flux"].get("status") == "PASS"
         and source_mesh is not None
         and bool(domains)
+        and schedule_reference is not None
     )
     scalar_flux = activation_input.get("scalar_flux")
     if scalar_flux is not None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +21,9 @@ from parastell.activation_handoff import (
     build_activation_handoff,
     inspect_activation_data,
     validate_activation_handoff,
+)
+from parastell.radiation_consumer_handoff import (
+    build_activation_schedule_reference,
 )
 
 
@@ -163,6 +167,7 @@ def _handoff(
     native="PASS",
     navigation="PASS",
     bind_domain=False,
+    bind_schedule=True,
 ):
     return build_activation_handoff(
         geometry=_geometry(native=native, navigation=navigation),
@@ -172,6 +177,19 @@ def _handoff(
         physical_source_rate_per_s=DIRECT90_MODELED_SOURCE_RATE_PER_S,
         source_mesh=_source_mesh() if bind_domain else None,
         activation_domains=[_domain()] if bind_domain else (),
+        activation_schedule_reference=(
+            build_activation_schedule_reference(
+                schedule_id="wistell-d-full-power-checkpoints-v1",
+                schedule_sha256="3" * 64,
+                verification_receipt_path=(
+                    Path(__file__).parent
+                    / "data"
+                    / "activation_schedule_verification_receipt.json"
+                ),
+            )
+            if bind_domain and bind_schedule
+            else None
+        ),
     )
 
 
@@ -200,6 +218,13 @@ def test_activation_handoff_becomes_ready_only_after_both_geometry_gates():
     assert _handoff(scalar_flux=flux, navigation="NOT_RUN", bind_domain=True)[
         "status"
     ].startswith("BLOCKED_")
+
+
+def test_activation_handoff_stays_blocked_without_dpa_schedule_reference():
+    handoff = _handoff(
+        scalar_flux=_flux(), bind_domain=True, bind_schedule=False
+    )
+    assert handoff["status"].startswith("BLOCKED_")
 
 
 @pytest.mark.parametrize(
