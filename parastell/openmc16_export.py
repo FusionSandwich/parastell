@@ -47,6 +47,8 @@ class StrictSurfaceRunArtifacts:
     terminal_log_path: str | Path
     surface_source_paths: Sequence[str | Path]
     accepted_magnet_inventory_path: str | Path
+    root_acceptance_receipt_path: str | Path
+    expected_root_acceptance_receipt_sha256: str
 
 
 def _resolved_file(path: str | Path, label: str) -> Path:
@@ -167,8 +169,95 @@ def _discover_h5m_material_group(
     return tuple(rows)
 
 
+def _verify_root_acceptance_receipt(
+    receipt_path: Path,
+    expected_receipt_sha256: str,
+    inventory_path: Path,
+    dagmc_path: Path,
+) -> dict[str, Any]:
+    """Verify the external frozen-control anchor before inventory semantics."""
+    expected_receipt_sha256 = str(expected_receipt_sha256).lower()
+    if (
+        not _valid_sha256(expected_receipt_sha256)
+        or _hash(receipt_path) != expected_receipt_sha256
+    ):
+        raise ValueError(
+            "root acceptance receipt does not match frozen run-control SHA"
+        )
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("root acceptance receipt is not valid JSON") from exc
+    required = {
+        "schema",
+        "acceptance_authority",
+        "accepted_magnet_inventory_sha256",
+        "dagmc_sha256",
+        "canonical_geometry_fingerprint",
+        "accepted_canonical_material_tags",
+    }
+    missing = required - set(receipt)
+    if missing:
+        raise ValueError(f"root acceptance receipt omits {sorted(missing)}")
+    if (
+        receipt["schema"] != "parastell.root_accepted_magnet_inventory/v1.0.0"
+        or receipt["acceptance_authority"] != "ROOT_GEOMETRY_GATE_ACCEPTED"
+    ):
+        raise ValueError("root acceptance receipt has no accepted authority")
+    inventory_hash = str(receipt["accepted_magnet_inventory_sha256"]).lower()
+    if (
+        not _valid_sha256(inventory_hash)
+        or _hash(inventory_path) != inventory_hash
+    ):
+        raise ValueError(
+            "accepted magnet inventory is not bound by root receipt"
+        )
+    dagmc_hash = str(receipt["dagmc_sha256"]).lower()
+    if not _valid_sha256(dagmc_hash) or _hash(dagmc_path) != dagmc_hash:
+        raise ValueError("root acceptance receipt H5M hash mismatch")
+    raw_tags = receipt["accepted_canonical_material_tags"]
+    if not isinstance(raw_tags, list):
+        raise ValueError(
+            "root acceptance receipt material tags must be a canonical list"
+        )
+    canonical_tags = tuple(
+        sorted(_canonical_material_tag(value) for value in raw_tags)
+    )
+    if (
+        not canonical_tags
+        or "" in canonical_tags
+        or len(canonical_tags) != len(set(canonical_tags))
+    ):
+        raise ValueError(
+            "root acceptance receipt material tags are not canonical/unique"
+        )
+    if tuple(raw_tags) != canonical_tags:
+        raise ValueError(
+            "root acceptance receipt material tags must already be canonical"
+        )
+    fingerprint = str(receipt["canonical_geometry_fingerprint"]).lower()
+    if not _valid_sha256(fingerprint):
+        raise ValueError(
+            "root acceptance receipt canonical fingerprint is invalid"
+        )
+    result = {
+        "path": str(receipt_path),
+        "sha256": _hash(receipt_path),
+        "expected_sha256_from_frozen_run_control": expected_receipt_sha256,
+        "schema": receipt["schema"],
+        "acceptance_authority": receipt["acceptance_authority"],
+        "accepted_magnet_inventory_sha256": inventory_hash,
+        "dagmc_sha256": dagmc_hash,
+        "canonical_geometry_fingerprint": fingerprint,
+        "accepted_canonical_material_tags": list(canonical_tags),
+    }
+    result["verified_acceptance_sha256"] = _canonical_json_sha256(result)
+    return result
+
+
 def _verify_accepted_magnet_inventory(
     inventory_path: Path,
+    root_acceptance: Mapping[str, Any],
     dagmc_path: Path,
     envelopes: Sequence[DagmcEnvelope],
     envelope_requests: Sequence[Mapping[str, Any]],
@@ -203,18 +292,44 @@ def _verify_accepted_magnet_inventory(
     dagmc_hash = _hash(dagmc_path)
     if str(inventory["dagmc_sha256"]).lower() != dagmc_hash:
         raise ValueError("magnet inventory H5M hash mismatch")
+    if dagmc_hash != root_acceptance["dagmc_sha256"]:
+        raise ValueError("magnet inventory H5M is not root-authorized")
     fingerprints = {
-        item.envelope.metadata["canonical_geometry_fingerprint"]
+        str(item.envelope.metadata["canonical_geometry_fingerprint"]).lower()
         for item in envelopes
     }
-    if fingerprints != {str(inventory["canonical_geometry_fingerprint"])}:
+    inventory_fingerprint = str(
+        inventory["canonical_geometry_fingerprint"]
+    ).lower()
+    if fingerprints != {inventory_fingerprint}:
         raise ValueError("magnet inventory canonical fingerprint mismatch")
+    if (
+        inventory_fingerprint
+        != root_acceptance["canonical_geometry_fingerprint"]
+    ):
+        raise ValueError(
+            "magnet inventory canonical fingerprint is not root-authorized"
+        )
     material_tags = tuple(
         str(item) for item in inventory["magnet_material_tags"]
     )
-    if not material_tags or len(material_tags) != len(set(material_tags)):
+    canonical_material_tags = tuple(
+        _canonical_material_tag(item) for item in material_tags
+    )
+    if (
+        not material_tags
+        or "" in canonical_material_tags
+        or len(canonical_material_tags) != len(set(canonical_material_tags))
+    ):
         raise ValueError(
             "magnet inventory material tags must be unique/nonempty"
+        )
+    if (
+        sorted(canonical_material_tags)
+        != root_acceptance["accepted_canonical_material_tags"]
+    ):
+        raise ValueError(
+            "magnet inventory material tags are not root-authorized"
         )
     discovered = _discover_h5m_material_group(dagmc_path, material_tags)
     discovered_by_id = {
@@ -225,6 +340,7 @@ def _verify_accepted_magnet_inventory(
         raise ValueError("accepted magnet inventory has no components")
     component_by_id = {}
     semantic_ids = set()
+    component_ids = set()
     for component in components:
         component_required = {
             "magnet_id",
@@ -248,11 +364,13 @@ def _verify_accepted_magnet_inventory(
             or not component_id
             or volume_id in component_by_id
             or magnet_id in semantic_ids
+            or component_id in component_ids
         ):
             raise ValueError(
                 "magnet inventory component identities are invalid"
             )
         semantic_ids.add(magnet_id)
+        component_ids.add(component_id)
         source_cad = component["source_cad"]
         if not isinstance(source_cad, Mapping):
             raise ValueError("magnet inventory source_cad must be a mapping")
@@ -323,6 +441,13 @@ def _verify_accepted_magnet_inventory(
     result = {
         "path": str(inventory_path),
         "sha256": _hash(inventory_path),
+        "accepted_sha256_from_root_receipt": root_acceptance[
+            "accepted_magnet_inventory_sha256"
+        ],
+        "root_acceptance_receipt_sha256": root_acceptance["sha256"],
+        "verified_root_acceptance_sha256": root_acceptance[
+            "verified_acceptance_sha256"
+        ],
         "schema": inventory["schema"],
         "geometry_gate_status": inventory["geometry_gate_status"],
         "dagmc_sha256": dagmc_hash,
@@ -1065,6 +1190,10 @@ def audit_openmc16_surface_run(
         artifacts.accepted_magnet_inventory_path,
         "accepted magnet inventory",
     )
+    root_acceptance_receipt_path = _resolved_file(
+        artifacts.root_acceptance_receipt_path,
+        "root acceptance receipt",
+    )
     particles = tuple(str(item) for item in required_particles)
     if (
         not particles
@@ -1080,8 +1209,15 @@ def audit_openmc16_surface_run(
     localization_binding = _localization_topology_binding(
         dagmc_path, envelopes
     )
+    root_acceptance = _verify_root_acceptance_receipt(
+        root_acceptance_receipt_path,
+        artifacts.expected_root_acceptance_receipt_sha256,
+        inventory_path,
+        dagmc_path,
+    )
     accepted_inventory = _verify_accepted_magnet_inventory(
         inventory_path,
+        root_acceptance,
         dagmc_path,
         envelopes,
         envelope_requests,
@@ -1155,6 +1291,7 @@ def audit_openmc16_surface_run(
             ),
         },
         "localization_topology_binding": localization_binding,
+        "root_acceptance_receipt": root_acceptance,
         "accepted_magnet_inventory": accepted_inventory,
         "model": {
             key: value
@@ -1184,6 +1321,10 @@ def audit_openmc16_surface_run(
             "accepted_magnet_inventory_sha256": accepted_inventory["sha256"],
             "verified_magnet_inventory_sha256": accepted_inventory[
                 "verified_inventory_sha256"
+            ],
+            "root_acceptance_receipt_sha256": root_acceptance["sha256"],
+            "verified_root_acceptance_sha256": root_acceptance[
+                "verified_acceptance_sha256"
             ],
         },
         "capacity": capacity,

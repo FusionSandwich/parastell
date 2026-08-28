@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import h5py
@@ -207,8 +208,28 @@ def _fixture(tmp_path, *, mpi_ranks=2, max_particles=10):
             }
         )
     )
+    root_receipt = tmp_path / "ROOT_ACCEPTANCE_RECEIPT.json"
+    root_receipt.write_text(
+        json.dumps(
+            {
+                "schema": ("parastell.root_accepted_magnet_inventory/v1.0.0"),
+                "acceptance_authority": "ROOT_GEOMETRY_GATE_ACCEPTED",
+                "accepted_magnet_inventory_sha256": _sha(inventory),
+                "dagmc_sha256": _sha(dagmc),
+                "canonical_geometry_fingerprint": "c" * 64,
+                "accepted_canonical_material_tags": ["winding_pack"],
+            }
+        )
+    )
     artifacts = StrictSurfaceRunArtifacts(
-        dagmc, model, statepoint, log, [bank], inventory
+        dagmc,
+        model,
+        statepoint,
+        log,
+        [bank],
+        inventory,
+        root_receipt,
+        _sha(root_receipt),
     )
     request = {
         "volume_id": 8,
@@ -264,6 +285,13 @@ def test_strict_audit_parses_artifacts_and_binds_localization(
     assert result["accepted_magnet_inventory"][
         "all_material_group_volumes_selected"
     ]
+    assert (
+        result["root_acceptance_receipt"]["acceptance_authority"]
+        == "ROOT_GEOMETRY_GATE_ACCEPTED"
+    )
+    assert result["same_run_integrity"][
+        "root_acceptance_receipt_sha256"
+    ] == _sha(Path(artifacts.root_acceptance_receipt_path))
 
 
 def test_mpi_capacity_is_proved_below_cap_and_fails_at_cap():
@@ -347,6 +375,143 @@ def test_semantic_magnet_id_and_source_cad_hash_are_required(
         b"mutated CAD"
     )
     with pytest.raises(ValueError, match="source CAD hash mismatch"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
+def test_inventory_must_match_frozen_root_control_sha(monkeypatch, tmp_path):
+    artifacts, request, envelope = _fixture(tmp_path)
+    _patch_single_magnet_group(monkeypatch, envelope)
+    inventory_path = Path(artifacts.accepted_magnet_inventory_path)
+    inventory = json.loads(inventory_path.read_text())
+    inventory["unapproved_mutation"] = True
+    inventory_path.write_text(json.dumps(inventory))
+    with pytest.raises(ValueError, match="not bound by root receipt"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
+def test_alternate_inventory_and_tag_relabel_cannot_replace_frozen_acceptance(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(tmp_path)
+    _patch_single_magnet_group(monkeypatch, envelope)
+    inventory_path = Path(artifacts.accepted_magnet_inventory_path)
+    inventory = json.loads(inventory_path.read_text())
+    inventory["magnet_material_tags"] = ["mat:vessel"]
+    inventory["components"][0]["material_tag"] = "mat:vessel"
+    inventory_path.write_text(json.dumps(inventory))
+    receipt_path = Path(artifacts.root_acceptance_receipt_path)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["accepted_magnet_inventory_sha256"] = _sha(inventory_path)
+    receipt["accepted_canonical_material_tags"] = ["vessel"]
+    receipt_path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError, match="frozen run-control SHA"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
+def test_root_receipt_rejects_material_alias_duplicates(monkeypatch, tmp_path):
+    artifacts, request, envelope = _fixture(tmp_path)
+    _patch_single_magnet_group(monkeypatch, envelope)
+    receipt_path = Path(artifacts.root_acceptance_receipt_path)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["accepted_canonical_material_tags"] = [
+        "winding-pack",
+        "winding_pack",
+    ]
+    receipt_path.write_text(json.dumps(receipt))
+    artifacts = replace(
+        artifacts,
+        expected_root_acceptance_receipt_sha256=_sha(receipt_path),
+    )
+    with pytest.raises(ValueError, match="not canonical/unique"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
+def test_inventory_rejects_material_alias_duplicates_under_pinned_receipt(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(tmp_path)
+    _patch_single_magnet_group(monkeypatch, envelope)
+    inventory_path = Path(artifacts.accepted_magnet_inventory_path)
+    inventory = json.loads(inventory_path.read_text())
+    inventory["magnet_material_tags"] = [
+        "mat:winding-pack",
+        "winding_pack",
+    ]
+    inventory_path.write_text(json.dumps(inventory))
+    receipt_path = Path(artifacts.root_acceptance_receipt_path)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["accepted_magnet_inventory_sha256"] = _sha(inventory_path)
+    receipt_path.write_text(json.dumps(receipt))
+    artifacts = replace(
+        artifacts,
+        expected_root_acceptance_receipt_sha256=_sha(receipt_path),
+    )
+    with pytest.raises(ValueError, match="material tags must be unique"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
+def test_duplicate_component_id_is_rejected_under_pinned_receipt(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(tmp_path)
+    inventory_path = Path(artifacts.accepted_magnet_inventory_path)
+    inventory = json.loads(inventory_path.read_text())
+    duplicate = dict(inventory["components"][0])
+    duplicate["magnet_id"] = "magnet-9"
+    duplicate["dagmc_volume_id"] = 9
+    duplicate["surface_ids"] = [18]
+    inventory["components"].append(duplicate)
+    inventory_path.write_text(json.dumps(inventory))
+    receipt_path = Path(artifacts.root_acceptance_receipt_path)
+    receipt = json.loads(receipt_path.read_text())
+    receipt["accepted_magnet_inventory_sha256"] = _sha(inventory_path)
+    receipt_path.write_text(json.dumps(receipt))
+    artifacts = replace(
+        artifacts,
+        expected_root_acceptance_receipt_sha256=_sha(receipt_path),
+    )
+    monkeypatch.setattr(
+        openmc16_export,
+        "_extract_envelopes_from_h5m",
+        lambda path, requests: (envelope,),
+    )
+    monkeypatch.setattr(
+        openmc16_export,
+        "_discover_h5m_material_group",
+        lambda path, tags: (
+            {
+                "dagmc_volume_id": 8,
+                "material_tag": "winding_pack",
+                "surface_ids": [17],
+            },
+            {
+                "dagmc_volume_id": 9,
+                "material_tag": "winding_pack",
+                "surface_ids": [18],
+            },
+        ),
+    )
+    with pytest.raises(ValueError, match="component identities are invalid"):
         audit_openmc16_surface_run(
             artifacts,
             envelope_requests=[request],
