@@ -15,6 +15,7 @@ import gc
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -26,6 +27,7 @@ import cadquery as cq
 import h5py
 import numpy as np
 from scipy.io import netcdf_file
+from scipy.interpolate import RegularGridInterpolator
 from scipy.spatial import cKDTree
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -48,14 +50,30 @@ from parastell.geometry_provider import (
 
 
 LINEAGE_COMMIT = "398032b8c0b4e7c0459c602f2af1e73b3fca0b9a"
-LANE_BASE = "cff61d06cf1d6129337841bdb80061f6a8f2b998"
+LANE_BASE = "dd3c2c53474980b6527d6ad40e8e2a638337d107"
 N_TOROIDAL = 16
 N_POLOIDAL = 31
 N_CONTROL_POINTS = 452
 N_UNIQUE_POLOIDAL = N_POLOIDAL - 1
 N_SYMMETRIC_PROFILE = math.ceil(N_POLOIDAL / 2)
 SOURCE_CAD_GRID = (61, 121)
+DIRECT90_GRID = (80, 90)
 OVERLAP_TOLERANCE_CM3 = 1.0e-5
+DIRECT90_RUNTIME_RECEIPT_SHA256 = (
+    "7fe93d056604d5c279f55678615e772201a9b3737855891f88708580221be07e"
+)
+DIRECT90_RUNTIME_MODULES = {
+    "ParaStell": "0.1.0-image-package",
+    "CadQuery": "2.7.0",
+    "OCP": "7.8.1.2",
+    "SciPy": "1.17.1",
+    "NumPy": "1.26.4",
+    "cad_to_dagmc": "0.11.5",
+    "Gmsh": "4.15.0",
+    "PyMOAB": "5.5.1",
+    "PyDAGMC": "0.0.1-image-package",
+    "OpenMC": "0.16.0",
+}
 
 RADIAL_NAMES = (
     "first_wall",
@@ -87,7 +105,7 @@ def load_geometry_configuration(
             "configuration authoritative-input hashes do not match"
         )
     construction = config.get("construction", {})
-    expected = {
+    expected_half_period = {
         "wall_s": 1.0,
         "canonical_control_count": N_CONTROL_POINTS,
         "control_grid": [N_TOROIDAL, N_POLOIDAL],
@@ -97,7 +115,20 @@ def load_geometry_configuration(
         "magnet_representation": "continuous_30_cm_magnet_envelope",
         "global_explicit_coils": False,
     }
-    if construction != expected:
+    expected_direct_period = {
+        "wall_s": 1.0,
+        "canonical_control_count": N_CONTROL_POINTS,
+        "canonical_control_grid": [N_TOROIDAL, N_POLOIDAL],
+        "canonical_scalar_extent_degrees": [0.0, 45.0],
+        "resolved_control_grid": list(DIRECT90_GRID),
+        "cad_grid": list(DIRECT90_GRID),
+        "model_extent_degrees": [0.0, 90.0],
+        "construction_method": "direct_ParaStell_0_to_90_degrees",
+        "derived_from_finished_45_degree_CAD": False,
+        "magnet_representation": "continuous_30_cm_magnet_envelope",
+        "global_explicit_coils": False,
+    }
+    if construction not in (expected_half_period, expected_direct_period):
         raise ValueError("configuration construction identity is not accepted")
     if set(config.get("materials", {})) != set(EXPECTED_LAYER_ORDER):
         raise ValueError(
@@ -172,6 +203,88 @@ def write_json_create_only(path: Path, payload: Mapping[str, Any]) -> None:
     )
 
 
+def validate_direct90_container_runtime(
+    image_id: str,
+    runtime_receipt_path: Path,
+    source_revision: str,
+    *,
+    container_marker: Path = Path("/.dockerenv"),
+) -> dict[str, Any]:
+    """Fail closed unless the process carries the frozen Docker attestation."""
+    if (
+        not image_id.startswith("sha256:")
+        or len(image_id) != 71
+        or any(
+            character not in "0123456789abcdef" for character in image_id[7:]
+        )
+    ):
+        raise ValueError(
+            "container image must be bound by immutable SHA-256 ID"
+        )
+    receipt_digest = sha256_file(runtime_receipt_path)
+    receipt = json.loads(runtime_receipt_path.read_text(encoding="utf-8"))
+    python_receipt = receipt.get("python", {})
+    module_receipts = receipt.get("modules", {})
+    hashes_are_valid = all(
+        isinstance(row, Mapping)
+        and len(str(row.get("sha256", ""))) == 64
+        and all(
+            character in "0123456789abcdef"
+            for character in str(row.get("sha256", ""))
+        )
+        for row in module_receipts.values()
+    )
+    if (
+        receipt_digest != DIRECT90_RUNTIME_RECEIPT_SHA256
+        or receipt.get("schema") != "wistell_d.docker_runtime_receipt/v1.0.0"
+        or receipt.get("status") != "QUALIFIED_EXISTING_RUNTIME"
+        or receipt.get("docker", {}).get("image_id") != image_id
+        or receipt.get("docker", {}).get("required_network_mode") != "none"
+        or python_receipt.get("version") != "3.12.13"
+        or python_receipt.get("executable")
+        != "/opt/openmc-v0.16.0-venv/bin/python"
+        or len(str(python_receipt.get("executable_sha256", ""))) != 64
+        or {
+            name: row.get("version")
+            for name, row in module_receipts.items()
+            if isinstance(row, Mapping)
+        }
+        != DIRECT90_RUNTIME_MODULES
+        or not hashes_are_valid
+    ):
+        raise ValueError(
+            "Docker runtime receipt does not match the frozen qualified stack"
+        )
+    if not container_marker.is_file():
+        raise RuntimeError("direct-90 builder is not executing in Docker")
+    expected_environment = {
+        "PARASTELL_CONTAINER_IMAGE_ID": image_id,
+        "PARASTELL_CONTAINER_NETWORK": "none",
+        "PARASTELL_MOUNTED_SOURCE_REVISION": source_revision,
+        "PARASTELL_DOCKER_ATTESTATION": "direct90-create-only-v1",
+    }
+    actual_environment = {
+        name: os.environ.get(name) for name in expected_environment
+    }
+    if actual_environment != expected_environment:
+        raise RuntimeError(
+            "direct-90 builder lacks the exact in-container launch attestation"
+        )
+    return {
+        "image_id": image_id,
+        "runtime_receipt": {
+            "path": str(runtime_receipt_path),
+            "sha256": receipt_digest,
+            "schema": receipt["schema"],
+        },
+        "network": "none",
+        "container_execution_proof": str(container_marker),
+        "python": dict(python_receipt),
+        "modules": dict(module_receipts),
+        "launch_attestation": actual_environment,
+    }
+
+
 def source_paths(root: Path) -> dict[str, Path]:
     return {name: root / name for name in WISTELL_D_SOURCE_HASHES}
 
@@ -207,6 +320,43 @@ def array_to_symmetric_matrix(values: np.ndarray) -> np.ndarray:
         matrix[toroidal_id, poloidal_id] = values[canonical_id]
     matrix[0, N_SYMMETRIC_PROFILE:] = np.flip(matrix[0, : N_POLOIDAL // 2])
     matrix[-1, N_SYMMETRIC_PROFILE:] = np.flip(matrix[-1, : N_POLOIDAL // 2])
+    matrix[:, -1] = matrix[:, 0]
+    return matrix
+
+
+def array_to_full_period_matrix(values: np.ndarray) -> np.ndarray:
+    """Expand 452 independent half-period values to the native 90-degree period."""
+    half_period = array_to_symmetric_matrix(values)
+    reflected = [
+        np.concatenate((row[:1], row[-2:0:-1], row[:1]))
+        for row in half_period[-2::-1]
+    ]
+    return np.vstack((half_period, np.asarray(reflected)))
+
+
+def resample_full_period(
+    source_matrix: np.ndarray,
+    target_shape: tuple[int, int] = DIRECT90_GRID,
+) -> np.ndarray:
+    """Interpolate a scalar full-period field and restore exact symmetry."""
+    import parastell.utils as psu
+
+    source_phi = np.linspace(0.0, 90.0, source_matrix.shape[0])
+    source_theta = np.linspace(0.0, 360.0, source_matrix.shape[1])
+    target_phi = np.linspace(0.0, 90.0, target_shape[0])
+    target_theta = np.linspace(0.0, 360.0, target_shape[1])
+    interpolator = RegularGridInterpolator(
+        (source_phi, source_theta),
+        source_matrix,
+        method="linear",
+        bounds_error=True,
+    )
+    phi_grid, theta_grid = np.meshgrid(target_phi, target_theta, indexing="ij")
+    matrix = interpolator(
+        np.column_stack((phi_grid.ravel(), theta_grid.ravel()))
+    ).reshape(target_shape)
+    matrix[:, -1] = matrix[:, 0]
+    matrix = psu.enforce_helical_symmetry(matrix)
     matrix[:, -1] = matrix[:, 0]
     return matrix
 
@@ -316,6 +466,157 @@ def make_radial_build(
     return radial_build, arrays, diagnostics
 
 
+def make_direct90_radial_build(
+    input_root: Path, config: Mapping[str, Any]
+) -> tuple[OrderedDict, OrderedDict, dict]:
+    """Create the full-period 80x90 radial build directly from source fields."""
+    source_fields = {
+        name: np.load(input_root / f"{name}.npy")
+        for name in ("blanket_boundary", "magnet_boundary", "nwl")
+    }
+    fields = {
+        name: resample_full_period(array_to_full_period_matrix(values))
+        for name, values in source_fields.items()
+    }
+    parameters = config["radial_build_cm"]
+    shape = DIRECT90_GRID
+    nwl_normalized = (fields["nwl"] - source_fields["nwl"].min()) / (
+        source_fields["nwl"].max() - source_fields["nwl"].min()
+    )
+    first_wall = np.full(shape, float(parameters["first_wall"]))
+    breeder_requested = (
+        float(parameters["breeder_base"])
+        + float(parameters["breeder_nwl_span"]) * nwl_normalized
+    )
+    back_wall = np.full(shape, float(parameters["back_wall"]))
+    hts = np.full(shape, float(parameters["high_temperature_shield"]))
+    vessel = np.full(shape, float(parameters["vacuum_vessel"]))
+    breeder_limit = (
+        fields["blanket_boundary"]
+        - first_wall
+        - back_wall
+        - hts
+        - vessel
+        - float(parameters["low_temperature_shield_minimum"])
+    )
+    breeder = np.minimum(breeder_requested, breeder_limit)
+    lts = (
+        fields["blanket_boundary"]
+        - first_wall
+        - breeder
+        - back_wall
+        - hts
+        - vessel
+    )
+    gap = fields["magnet_boundary"] - fields["blanket_boundary"]
+    magnets = np.full(shape, float(parameters["magnet_envelope"]))
+    arrays = OrderedDict(
+        (
+            ("first_wall", first_wall),
+            ("breeder", breeder),
+            ("back_wall", back_wall),
+            ("high_temperature_shield", hts),
+            ("vacuum_vessel", vessel),
+            ("low_temperature_shield", lts),
+            ("vacuum_gap", gap),
+            ("magnet_envelope", magnets),
+        )
+    )
+    # ParaStell's symmetry helper is applied to each final physical layer, not
+    # merely to the three interpolated source fields.
+    import parastell.utils as psu
+
+    for name, values in arrays.items():
+        values = psu.enforce_helical_symmetry(values)
+        values[:, -1] = values[:, 0]
+        arrays[name] = values
+    radial_build = OrderedDict(
+        (
+            name,
+            {
+                "thickness_matrix": values,
+                "mat_tag": config["materials"][name],
+            },
+        )
+        for name, values in arrays.items()
+    )
+    cumulative = np.cumsum(np.stack(tuple(arrays.values())), axis=0)
+    outer_blanket_residual = fields["blanket_boundary"] - sum(
+        arrays[name] for name in RADIAL_NAMES[:6]
+    )
+    magnet_residual = fields["magnet_boundary"] - sum(
+        arrays[name] for name in RADIAL_NAMES[:7]
+    )
+    symmetry = {
+        "first_to_last_profile_max_abs_cm": float(
+            max(
+                np.max(np.abs(values[0] - values[-1]))
+                for values in arrays.values()
+            )
+        ),
+        "poloidal_closure_max_abs_cm": float(
+            max(
+                np.max(np.abs(values[:, 0] - values[:, -1]))
+                for values in arrays.values()
+            )
+        ),
+        "flattened_helical_mirror_max_abs_cm": float(
+            max(
+                np.max(
+                    np.abs(
+                        values.ravel()[: values.size // 2]
+                        - np.flip(values.ravel()[-(values.size // 2) :])
+                    )
+                )
+                for values in arrays.values()
+            )
+        ),
+    }
+    diagnostics = {
+        "canonical_control_count": N_CONTROL_POINTS,
+        "resolved_matrix_locations_per_layer": int(np.prod(shape)),
+        "all_thicknesses_finite": bool(
+            all(np.isfinite(values).all() for values in arrays.values())
+        ),
+        "all_thicknesses_strictly_positive": bool(
+            all(np.all(values > 0.0) for values in arrays.values())
+        ),
+        "strict_radial_order_at_all_resolved_locations": bool(
+            np.all(np.diff(cumulative, axis=0) > 0.0)
+        ),
+        "thickness_cm": {
+            name: summarize(values) for name, values in arrays.items()
+        },
+        "source_nwl_mw_per_m2": summarize(source_fields["nwl"]),
+        "nwl_mw_per_m2": summarize(fields["nwl"]),
+        "breeder_clipped_location_count": int(
+            np.count_nonzero(breeder < breeder_requested)
+        ),
+        "minimum_blanket_to_magnet_clearance_cm": float(gap.min()),
+        "outer_blanket_residual_cm": summarize(outer_blanket_residual),
+        "magnet_boundary_residual_cm": summarize(magnet_residual),
+        "full_period_symmetry": symmetry,
+    }
+    if (
+        not diagnostics["all_thicknesses_finite"]
+        or not diagnostics["all_thicknesses_strictly_positive"]
+        or not diagnostics["strict_radial_order_at_all_resolved_locations"]
+        or diagnostics["minimum_blanket_to_magnet_clearance_cm"] <= 0.0
+        or max(
+            abs(diagnostics["outer_blanket_residual_cm"]["min"]),
+            abs(diagnostics["outer_blanket_residual_cm"]["max"]),
+            abs(diagnostics["magnet_boundary_residual_cm"]["min"]),
+            abs(diagnostics["magnet_boundary_residual_cm"]["max"]),
+            *symmetry.values(),
+        )
+        > 1.0e-10
+    ):
+        raise RuntimeError(
+            f"direct 90-degree matrix gate failed: {diagnostics}"
+        )
+    return radial_build, arrays, diagnostics
+
+
 class _NetcdfVariableAdapter:
     def __init__(self, variable):
         self.variable = variable
@@ -376,6 +677,95 @@ def shape_metrics(shape: Any) -> dict[str, Any]:
     }
 
 
+def direct90_boundary_face_metrics(
+    shape: Any, *, plane_tolerance_cm: float = 1.0e-6
+) -> dict[str, Any]:
+    """Qualify the two rotational-period cut faces on a direct 90-degree BRep."""
+    rows: dict[str, list[dict[str, Any]]] = {"phi_0": [], "phi_90": []}
+    for face_index, face in enumerate(shape.Faces()):
+        vertices = face.Vertices()
+        if not vertices:
+            continue
+        xyz = np.asarray([[v.X, v.Y, v.Z] for v in vertices], dtype=float)
+        if np.max(np.abs(xyz[:, 1])) <= plane_tolerance_cm:
+            rows["phi_0"].append(
+                {"face_index": face_index, "area_cm2": float(face.Area())}
+            )
+        if np.max(np.abs(xyz[:, 0])) <= plane_tolerance_cm:
+            rows["phi_90"].append(
+                {"face_index": face_index, "area_cm2": float(face.Area())}
+            )
+    start_area = sum(row["area_cm2"] for row in rows["phi_0"])
+    end_area = sum(row["area_cm2"] for row in rows["phi_90"])
+    residual = abs(start_area - end_area)
+    tolerance = max(1.0e-6, 1.0e-9 * max(start_area, end_area))
+    return {
+        "plane_tolerance_cm": plane_tolerance_cm,
+        "phi_0_faces": rows["phi_0"],
+        "phi_90_faces": rows["phi_90"],
+        "phi_0_area_cm2": start_area,
+        "phi_90_area_cm2": end_area,
+        "area_residual_cm2": residual,
+        "area_tolerance_cm2": tolerance,
+        "pass": bool(
+            rows["phi_0"] and rows["phi_90"] and residual <= tolerance
+        ),
+    }
+
+
+def direct90_loci_periodicity(stellarator: Any) -> dict[str, Any]:
+    """Check generated 80x90 loci under full- and half-period transforms."""
+    rotation = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    half_period = np.array(
+        [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]]
+    )
+    rows = []
+    for name, surface in stellarator.invessel_build.Surfaces.items():
+        loci = np.asarray(surface.get_loci(), dtype=float)
+        if loci.shape != (*DIRECT90_GRID, 3):
+            raise RuntimeError(
+                f"unexpected direct-90 loci shape for {name}: {loci.shape}"
+            )
+        rotated_start = loci[0] @ rotation.T
+        full_period_residual = float(
+            np.max(cKDTree(loci[-1]).query(rotated_start)[0])
+        )
+        helical_residual = 0.0
+        for index in range(DIRECT90_GRID[0] // 2):
+            transformed = loci[index] @ half_period.T
+            mate = loci[DIRECT90_GRID[0] - 1 - index]
+            helical_residual = max(
+                helical_residual,
+                float(np.max(cKDTree(mate).query(transformed)[0])),
+            )
+        poloidal_residual = float(
+            np.max(np.linalg.norm(loci[:, 0] - loci[:, -1], axis=1))
+        )
+        rows.append(
+            {
+                "surface": name,
+                "full_period_rotated_profile_set_max_cm": full_period_residual,
+                "half_period_helical_profile_set_max_cm": helical_residual,
+                "poloidal_closure_max_cm": poloidal_residual,
+            }
+        )
+    maximum = max(
+        max(
+            row["full_period_rotated_profile_set_max_cm"],
+            row["half_period_helical_profile_set_max_cm"],
+            row["poloidal_closure_max_cm"],
+        )
+        for row in rows
+    )
+    return {
+        "method": "generated_loci_set_comparison_under_exact_WISTELL_D_transforms",
+        "tolerance_cm": 1.0e-6,
+        "maximum_residual_cm": maximum,
+        "surfaces": rows,
+        "pass": maximum <= 1.0e-6,
+    }
+
+
 def intersection_volume(left: Any, right: Any) -> float:
     common = left.intersect(right)
     if common is None or common.isNull():
@@ -395,6 +785,8 @@ def streaming_step_pairwise_audit(
     names: tuple[str, ...],
     *,
     tolerance_cm3: float,
+    pair_timeout_seconds: float = 1800.0,
+    adjacent_only: bool = False,
     loader: Any | None = None,
 ) -> dict[str, Any]:
     """Audit every STEP pair without retaining the full assembly in memory.
@@ -408,11 +800,15 @@ def streaming_step_pairwise_audit(
         raise ValueError("overlap tolerance must be finite and nonnegative")
     if len(names) < 2:
         raise ValueError("at least two components are required")
+    if pair_timeout_seconds <= 0.0 or not math.isfinite(pair_timeout_seconds):
+        raise ValueError("pair timeout must be finite and positive")
     pairs: list[dict[str, Any]] = []
     for left_index, left_name in enumerate(names[:-1]):
         for right_index, right_name in enumerate(
             names[left_index + 1 :], start=left_index + 1
         ):
+            if adjacent_only and right_index != left_index + 1:
+                continue
             left = None
             right = None
             try:
@@ -431,6 +827,7 @@ def streaming_step_pairwise_audit(
                         check=False,
                         capture_output=True,
                         text=True,
+                        timeout=pair_timeout_seconds,
                     )
                     if completed.returncode != 0:
                         detail = (
@@ -470,13 +867,21 @@ def streaming_step_pairwise_audit(
                 }
             )
 
-    expected = len(names) * (len(names) - 1) // 2
+    expected = (
+        len(names) - 1 if adjacent_only else len(names) * (len(names) - 1) // 2
+    )
     return {
         "component_order": list(names),
         "component_count": len(names),
         "expected_pair_count": expected,
         "evaluated_pair_count": len(pairs),
         "tolerance_cm3": tolerance_cm3,
+        "per_pair_timeout_seconds": pair_timeout_seconds,
+        "audit_scope": (
+            "adjacent_radial_pairs_only"
+            if adjacent_only
+            else "all_unordered_component_pairs"
+        ),
         "execution": "streaming_one_step_pair_at_a_time",
         "native_memory_isolation": "one_subprocess_per_pair",
         "boolean_failure_count": sum(
@@ -489,6 +894,24 @@ def streaming_step_pairwise_audit(
         ),
         "pairs": pairs,
     }
+
+
+def require_adjacent_pair_acceptance(report: Mapping[str, Any]) -> None:
+    """Require all and only the adjacent pairs in an ordered radial stack."""
+    component_count = int(report.get("component_count", -1))
+    expected = component_count - 1
+    pairs = report.get("pairs")
+    if (
+        report.get("audit_scope") != "adjacent_radial_pairs_only"
+        or int(report.get("expected_pair_count", -1)) != expected
+        or int(report.get("evaluated_pair_count", -1)) != expected
+        or not isinstance(pairs, list)
+        or len(pairs) != expected
+        or any(not row.get("adjacent_in_radial_stack") for row in pairs)
+        or int(report.get("boolean_failure_count", -1)) != 0
+        or any(row.get("overlap") for row in pairs)
+    ):
+        raise RuntimeError("adjacent radial-pair CAD audit is not accepted")
 
 
 def audit_step_pair(args: argparse.Namespace) -> None:
@@ -674,7 +1097,16 @@ def build_45(args: argparse.Namespace) -> None:
     }
     config, config_path = load_geometry_configuration(args.config)
     construction = config["construction"]
+    if construction.get("source_cad_grid") != list(SOURCE_CAD_GRID):
+        raise ValueError(
+            "build-45 requires the half-period construction config"
+        )
     input_before = verify_source_set(input_root)
+    live_vmec = vmec_data(input_root / "wout_wistell-d.nc")
+    if live_vmec["nfp"] != 4 or live_vmec["lasym"] is not False:
+        raise RuntimeError(
+            "authoritative WISTELL-D VMEC must have nfp=4 and stellarator symmetry"
+        )
     output_root.mkdir(parents=True)
     started = time.time()
     parastell, ps = load_geometry_only_parastell()
@@ -769,6 +1201,7 @@ def build_45(args: argparse.Namespace) -> None:
         output_root,
         component_names,
         tolerance_cm3=args.tolerance_cm3,
+        pair_timeout_seconds=args.pair_timeout_seconds,
     )
     require_complete_pairwise_acceptance(pairwise)
     input_after = verify_source_set(input_root)
@@ -807,6 +1240,11 @@ def build_45(args: argparse.Namespace) -> None:
             "files": input_after,
             "immutability_check": "PASS",
             "parastell_module": str(Path(parastell.__file__).resolve()),
+            "live_vmec_metadata": {
+                "nfp": live_vmec["nfp"],
+                "lasym_vmec_logical": live_vmec["lasym"],
+                "stellarator_symmetric": not live_vmec["lasym"],
+            },
         },
         "configuration": {
             "path": str(config_path),
@@ -846,7 +1284,7 @@ def build_45(args: argparse.Namespace) -> None:
         "transforms": {
             name: transform.receipt()
             for name, transform in derive_wistell_d_transforms(
-                nfp=4, lasym=True
+                nfp=live_vmec["nfp"], lasym=not live_vmec["lasym"]
             ).items()
         },
         "canonical_patch_map": canonical_patch_instances(),
@@ -861,6 +1299,278 @@ def build_45(args: argparse.Namespace) -> None:
         "elapsed_seconds": time.time() - started,
     }
     acceptance_path = output_root / "SOURCE_CAD_61X121_ACCEPTANCE.json"
+    write_json_create_only(acceptance_path, payload)
+    print(
+        json.dumps(
+            {
+                "classification": payload["classification"],
+                "output": str(acceptance_path),
+                "source_step_sha256": artifacts["source_step"]["sha256"],
+                "elapsed_seconds": payload["elapsed_seconds"],
+            },
+            indent=2,
+        )
+    )
+
+
+def build_90_direct(args: argparse.Namespace) -> None:
+    """Build one native WISTELL-D field period directly with ParaStell."""
+    input_root = Path(args.input_root).resolve()
+    output_root = Path(args.output_root).resolve()
+    if output_root.exists():
+        raise FileExistsError(f"create-only output root exists: {output_root}")
+    runtime_receipt_path = Path(args.runtime_receipt).resolve()
+    reference_manifest_path = Path(args.reference_manifest).resolve()
+    if (
+        not runtime_receipt_path.is_file()
+        or not reference_manifest_path.is_file()
+    ):
+        raise FileNotFoundError(
+            "runtime receipt and reference manifest are required"
+        )
+    source_revision = args.source_revision or git_head(Path.cwd())
+    if len(source_revision) != 40 or any(
+        character not in "0123456789abcdef" for character in source_revision
+    ):
+        raise ValueError(
+            "source revision must be a lowercase 40-character Git SHA"
+        )
+    container_runtime = validate_direct90_container_runtime(
+        args.container_image_id, runtime_receipt_path, source_revision
+    )
+    launch_identity = {
+        "git_head": source_revision,
+        "script_path": str(Path(__file__).resolve()),
+        "script_sha256": sha256_file(Path(__file__).resolve()),
+    }
+    config, config_path = load_geometry_configuration(args.config)
+    if config["construction"].get("construction_method") != (
+        "direct_ParaStell_0_to_90_degrees"
+    ):
+        raise ValueError("build-90-direct requires the direct-period config")
+    input_before = verify_source_set(input_root)
+    live_vmec = vmec_data(input_root / "wout_wistell-d.nc")
+    if live_vmec["nfp"] != 4 or live_vmec["lasym"] is not False:
+        raise RuntimeError(
+            "authoritative WISTELL-D VMEC must have nfp=4 and stellarator symmetry"
+        )
+    output_root.mkdir(parents=True)
+    started = time.time()
+    parastell, ps = load_geometry_only_parastell()
+    radial_build, arrays, thickness = make_direct90_radial_build(
+        input_root, config
+    )
+    np.savez(output_root / "resolved_thickness_arrays_cm.npz", **arrays)
+    stellarator = ps.Stellarator(str(input_root / "wout_wistell-d.nc"))
+    stellarator.construct_invessel_build(
+        np.linspace(0.0, 90.0, DIRECT90_GRID[0]),
+        np.linspace(0.0, 360.0, DIRECT90_GRID[1]),
+        float(config["construction"]["wall_s"]),
+        radial_build,
+        split_chamber=False,
+        num_ribs=DIRECT90_GRID[0],
+        num_rib_pts=DIRECT90_GRID[1],
+    )
+    stellarator.export_invessel_build_step(export_dir=str(output_root))
+    components = OrderedDict(stellarator.invessel_build.Components)
+    component_names = tuple(components)
+    if component_names != EXPECTED_LAYER_ORDER:
+        raise RuntimeError(
+            f"unexpected direct-90 component order: {component_names}"
+        )
+    combined = cq.Compound.makeCompound(list(components.values()))
+    combined_path = output_root / "wistell_d_90d_80x90_direct.step"
+    cq.exporters.export(combined, str(combined_path))
+    component_metrics = {
+        name: shape_metrics(shape) for name, shape in components.items()
+    }
+    if not all(
+        row["valid_brep"]
+        and row["solid_count"] == 1
+        and row["volume_cm3"] > 0.0
+        for row in component_metrics.values()
+    ):
+        raise RuntimeError(
+            f"direct-90 component validity failed: {component_metrics}"
+        )
+    loci_periodicity = direct90_loci_periodicity(stellarator)
+    cut_faces = {
+        name: direct90_boundary_face_metrics(shape)
+        for name, shape in components.items()
+    }
+    if not loci_periodicity["pass"] or not all(
+        row["pass"] for row in cut_faces.values()
+    ):
+        raise RuntimeError(
+            f"direct-90 CAD periodicity failed: loci={loci_periodicity}, "
+            f"faces={cut_faces}"
+        )
+    reference_manifest = json.loads(
+        reference_manifest_path.read_text(encoding="utf-8")
+    )
+    reference_aliases = {
+        "high_temperature_shield": "hts",
+        "low_temperature_shield": "lts",
+        "vacuum_gap": "gap",
+        "magnet_envelope": "magnets",
+    }
+    reference_volumes = {
+        row["name"]: float(row["volume_cm3"])
+        for row in reference_manifest.get("cad_validation", {}).get(
+            "components", []
+        )
+    }
+    volume_regression = {}
+    for name, metrics in component_metrics.items():
+        reference_name = reference_aliases.get(name, name)
+        if reference_name not in reference_volumes:
+            raise ValueError(f"reference volume is missing for {name}")
+        reference_volume = reference_volumes[reference_name]
+        relative = (
+            abs(metrics["volume_cm3"] - reference_volume) / reference_volume
+        )
+        volume_regression[name] = {
+            "reference_name": reference_name,
+            "reference_volume_cm3": reference_volume,
+            "candidate_volume_cm3": metrics["volume_cm3"],
+            "relative_difference": relative,
+            "tolerance": 1.0e-7,
+            "pass": relative <= 1.0e-7,
+        }
+    if not all(row["pass"] for row in volume_regression.values()):
+        raise RuntimeError(
+            f"direct-90 volume regression failed: {volume_regression}"
+        )
+    del combined, components, stellarator
+    gc.collect()
+    pairwise = streaming_step_pairwise_audit(
+        output_root,
+        component_names,
+        tolerance_cm3=args.tolerance_cm3,
+        pair_timeout_seconds=args.pair_timeout_seconds,
+        adjacent_only=True,
+    )
+    require_adjacent_pair_acceptance(pairwise)
+    input_after = verify_source_set(input_root)
+    if input_before != input_after:
+        raise RuntimeError("authoritative source set changed during CAD build")
+    artifacts = artifact_rows(
+        output_root,
+        {
+            "source_step": combined_path,
+            "geometry_configuration": config_path,
+            "resolved_thickness_arrays": output_root
+            / "resolved_thickness_arrays_cm.npz",
+            **{
+                f"component_step:{name}": output_root / f"{name}.step"
+                for name in component_names
+            },
+        },
+    )
+    payload = {
+        "schema": WISTELL_D_ACCEPTANCE_SCHEMA,
+        "geometry_input_mode": WISTELL_D_GEOMETRY_INPUT_MODE,
+        "generated_utc": utc_now(),
+        "classification": "WISTELL_D_90D_80X90_DIRECT_PARASTELL_SOURCE_CAD_PASS",
+        "lane": {
+            "base_sha": LANE_BASE,
+            "head_sha_at_build": launch_identity["git_head"],
+            "script_path_at_launch": launch_identity["script_path"],
+            "script_sha256_at_launch": launch_identity["script_sha256"],
+        },
+        "source": {
+            "lineage_root": str(input_root),
+            "lineage_commit": LINEAGE_COMMIT,
+            "hashes": dict(WISTELL_D_SOURCE_HASHES),
+            "files": input_after,
+            "immutability_check": "PASS",
+            "parastell_module": str(Path(parastell.__file__).resolve()),
+            "live_vmec_metadata": {
+                "nfp": live_vmec["nfp"],
+                "lasym_vmec_logical": live_vmec["lasym"],
+                "stellarator_symmetric": not live_vmec["lasym"],
+            },
+        },
+        "configuration": {
+            "path": str(config_path),
+            "sha256": sha256_file(config_path),
+            "schema": config["schema"],
+        },
+        "container_runtime": container_runtime,
+        "model": {
+            "device": "WISTELL-D",
+            "role": "native_direct_90_degree_one_field_period_source_geometry",
+            "construction_method": "direct_ParaStell_0_to_90_degrees",
+            "derived_from_finished_45_degree_CAD": False,
+            "toroidal_extent_degrees": 90.0,
+            "wall_s": float(config["construction"]["wall_s"]),
+            "canonical_control_count": N_CONTROL_POINTS,
+            "resolved_control_grid": list(DIRECT90_GRID),
+            "resolved_matrix_locations_per_layer": int(np.prod(DIRECT90_GRID)),
+            "source_cad_grid": list(DIRECT90_GRID),
+            "magnet_representation": "continuous_30_cm_magnet_envelope",
+            "global_explicit_coils": False,
+            "component_order": list(component_names),
+        },
+        "thickness_validation": thickness,
+        "components": component_metrics,
+        "cad_periodicity": {
+            "generated_loci": loci_periodicity,
+            "boundary_cut_faces": cut_faces,
+        },
+        "reference_volume_regression": {
+            "reference_manifest": {
+                "path": str(reference_manifest_path),
+                "sha256": sha256_file(reference_manifest_path),
+            },
+            "components": volume_regression,
+            "pass": True,
+        },
+        "materials": {
+            name: config["materials"][name] for name in component_names
+        },
+        "adjacent_pair_audit": pairwise,
+        "nonadjacent_separation": {
+            "proof": "strictly_positive_ordered_radial_thickness_at_all_7200_resolved_locations_in_ParaStell_nested_surface_shell_construction",
+            "native_all_volume_overlap_gate": "REQUIRED_AFTER_IMPRINTED_DAGMC_EXPORT",
+        },
+        "source_domain": {
+            "candidate_mesh_path": str(
+                (input_root / "source_mesh.h5m").resolve()
+            ),
+            "candidate_mesh_sha256": WISTELL_D_SOURCE_HASHES[
+                "source_mesh.h5m"
+            ],
+            "status": "NOT_YET_REBOUND_TO_DIRECT_90_DEGREE_PERIOD",
+            "transport_eligible": False,
+            "rate_scope": "UNRESOLVED_REQUIRES_SOURCE_REBINDING",
+        },
+        "physical_boundaries": {
+            "toroidal_start": "rotational_periodic_boundary_at_0_degrees",
+            "toroidal_end": "rotational_periodic_boundary_at_90_degrees",
+            "outer_magnet_envelope": "transport_outer_boundary_role_unassigned",
+        },
+        "transforms": {
+            name: transform.receipt()
+            for name, transform in derive_wistell_d_transforms(
+                nfp=live_vmec["nfp"], lasym=not live_vmec["lasym"]
+            ).items()
+        },
+        "canonical_patch_map": canonical_patch_instances(
+            instance_ids=("canonical", "mate")
+        ),
+        "local_frames": {
+            "status": "OPTIONAL_DEFERRED_UNTIL_SELECTED_PATCHES_ARE_DECLARED",
+            "frame_count": 0,
+            "frames": [],
+            "accepted_for_prompt02": False,
+            "required_for_base_step_or_h5m": False,
+        },
+        "artifacts": artifacts,
+        "elapsed_seconds": time.time() - started,
+    }
+    validate_wistell_d_manifest(payload, required_extent_degrees=90.0)
+    acceptance_path = output_root / "SOURCE_CAD_90D_DIRECT_ACCEPTANCE.json"
     write_json_create_only(acceptance_path, payload)
     print(
         json.dumps(
@@ -2240,6 +2950,11 @@ def combine_step_components(args: argparse.Namespace) -> None:
 
 
 def derive_90(args: argparse.Namespace) -> None:
+    raise RuntimeError(
+        "disabled: accepted WISTELL-D 90-degree geometry must be constructed "
+        "directly by ParaStell with build-90-direct, never fused from finished "
+        "45-degree CAD"
+    )
     source_root = Path(args.source_root).resolve()
     output_root = Path(args.output_root).resolve()
     transform_path = Path(args.transform_receipt).resolve()
@@ -3099,7 +3814,27 @@ def parse_args() -> argparse.Namespace:
     build.add_argument(
         "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
     )
+    build.add_argument("--pair-timeout-seconds", type=float, default=1800.0)
     build.set_defaults(function=build_45)
+
+    build_direct = subparsers.add_parser("build-90-direct")
+    build_direct.add_argument("--input-root", required=True)
+    build_direct.add_argument("--config", required=True)
+    build_direct.add_argument("--output-root", required=True)
+    build_direct.add_argument(
+        "--source-revision",
+        help="explicit Git SHA for Docker/worktree mounts whose .git pointer is host-only",
+    )
+    build_direct.add_argument("--container-image-id", required=True)
+    build_direct.add_argument("--runtime-receipt", required=True)
+    build_direct.add_argument("--reference-manifest", required=True)
+    build_direct.add_argument(
+        "--tolerance-cm3", type=float, default=OVERLAP_TOLERANCE_CM3
+    )
+    build_direct.add_argument(
+        "--pair-timeout-seconds", type=float, default=1800.0
+    )
+    build_direct.set_defaults(function=build_90_direct)
 
     symmetry = subparsers.add_parser("audit-symmetry")
     symmetry.add_argument("--input-root", required=True)

@@ -29,6 +29,15 @@ PROVIDER_VERSION = "1.0.0"
 PROVIDER_SCHEMA = "parastell.geometry_provider/v1.0.0"
 WISTELL_D_ACCEPTANCE_SCHEMA = "wistell_d.geometry_acceptance/v1.0.0"
 WISTELL_D_GEOMETRY_INPUT_MODE = "REBUILD_FROM_AUTHORITATIVE_WISTELL_D_INPUTS"
+DIRECT90_DOCKER_IMAGE_ID = (
+    "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191"
+)
+DIRECT90_RUNTIME_RECEIPT_SHA256 = (
+    "7fe93d056604d5c279f55678615e772201a9b3737855891f88708580221be07e"
+)
+DIRECT90_REFERENCE_MANIFEST_SHA256 = (
+    "b6e723cdb9ac95d789a838abbf44590d210c4fdbe718c3b459777d38768e0499"
+)
 
 WISTELL_D_SOURCE_HASHES = {
     "wout_wistell-d.nc": (
@@ -79,6 +88,20 @@ EXPECTED_LAYER_ORDER = (
 
 class GeometryProvenanceError(ValueError):
     """Raised when geometry provenance is incomplete or excluded."""
+
+
+def _is_sha256(value: Any) -> bool:
+    text = str(value)
+    return len(text) == 64 and all(
+        character in "0123456789abcdef" for character in text
+    )
+
+
+def _is_git_sha(value: Any) -> bool:
+    text = str(value)
+    return len(text) == 40 and all(
+        character in "0123456789abcdef" for character in text
+    )
 
 
 def sha256_file(path: str | Path) -> str:
@@ -485,15 +508,33 @@ def validate_wistell_d_manifest(
         raise GeometryProvenanceError(
             "WISTELL-D canonical control count mismatch"
         )
-    if model.get("source_cad_grid") != [61, 121]:
-        raise GeometryProvenanceError("scientific source CAD must be 61x121")
+    extent = float(model.get("toroidal_extent_degrees", math.nan))
+    if model.get("source_cad_grid") not in ([61, 121], [80, 90]):
+        raise GeometryProvenanceError(
+            "scientific source CAD must use 61x121 half-period or 80x90 direct-period grid"
+        )
+    if extent == 90.0 and (
+        model.get("source_cad_grid") != [80, 90]
+        or model.get("resolved_control_grid") != [80, 90]
+        or int(model.get("resolved_matrix_locations_per_layer", -1)) != 7200
+        or model.get("construction_method")
+        != "direct_ParaStell_0_to_90_degrees"
+        or model.get("derived_from_finished_45_degree_CAD") is not False
+        or model.get("component_order") != list(EXPECTED_LAYER_ORDER)
+    ):
+        raise GeometryProvenanceError(
+            "90-degree WISTELL-D geometry must be constructed directly by ParaStell"
+        )
+    if extent == 45.0 and model.get("source_cad_grid") != [61, 121]:
+        raise GeometryProvenanceError(
+            "45-degree WISTELL-D source geometry must use the 61x121 grid"
+        )
     if model.get("magnet_representation") != (
         "continuous_30_cm_magnet_envelope"
     ):
         raise GeometryProvenanceError("wrong WISTELL-D magnet representation")
     if model.get("global_explicit_coils") is not False:
         raise GeometryProvenanceError("global explicit coils are excluded")
-    extent = float(model.get("toroidal_extent_degrees", math.nan))
     if extent not in (45.0, 90.0):
         raise GeometryProvenanceError("unsupported WISTELL-D model extent")
     if required_extent_degrees is not None and not math.isclose(
@@ -508,10 +549,207 @@ def validate_wistell_d_manifest(
     ):
         _validate_prompt02_local_frames(local_frames)
 
-    pairwise = manifest.get("complete_pairwise_audit")
-    if not isinstance(pairwise, Mapping):
-        raise GeometryProvenanceError("missing complete component-pair audit")
-    require_complete_pairwise_acceptance(pairwise)
+    if extent == 90.0:
+        adjacent = manifest.get("adjacent_pair_audit")
+        pairs = (
+            adjacent.get("pairs") if isinstance(adjacent, Mapping) else None
+        )
+        expected_pairs = list(
+            zip(EXPECTED_LAYER_ORDER[:-1], EXPECTED_LAYER_ORDER[1:])
+        )
+        if (
+            not isinstance(adjacent, Mapping)
+            or adjacent.get("audit_scope") != "adjacent_radial_pairs_only"
+            or int(adjacent.get("component_count", -1)) != 9
+            or int(adjacent.get("expected_pair_count", -1)) != 8
+            or int(adjacent.get("evaluated_pair_count", -1)) != 8
+            or int(adjacent.get("boolean_failure_count", -1)) != 0
+            or int(adjacent.get("overlap_count", -1)) != 0
+            or not isinstance(pairs, list)
+            or len(pairs) != 8
+            or any(
+                (row.get("left"), row.get("right")) != expected_pair
+                or not row.get("adjacent_in_radial_stack")
+                or row.get("boolean_error") is not None
+                or row.get("overlap")
+                or not math.isfinite(
+                    float(row.get("intersection_volume_cm3", math.nan))
+                )
+                or float(row.get("intersection_volume_cm3", -1.0)) < 0.0
+                for row, expected_pair in zip(pairs, expected_pairs)
+            )
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 adjacent radial-pair audit is not accepted"
+            )
+        thickness = manifest.get("thickness_validation", {})
+        if (
+            thickness.get("all_thicknesses_strictly_positive") is not True
+            or thickness.get("strict_radial_order_at_all_resolved_locations")
+            is not True
+            or manifest.get("nonadjacent_separation", {}).get(
+                "native_all_volume_overlap_gate"
+            )
+            != "REQUIRED_AFTER_IMPRINTED_DAGMC_EXPORT"
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 nested radial separation proof is incomplete"
+            )
+
+        live_vmec = source.get("live_vmec_metadata")
+        if (
+            not isinstance(live_vmec, Mapping)
+            or int(live_vmec.get("nfp", -1)) != 4
+            or live_vmec.get("lasym_vmec_logical") is not False
+            or live_vmec.get("stellarator_symmetric") is not True
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 live VMEC symmetry proof is incomplete"
+            )
+
+        lane = manifest.get("lane")
+        runtime = manifest.get("container_runtime")
+        runtime_receipt = (
+            runtime.get("runtime_receipt")
+            if isinstance(runtime, Mapping)
+            else None
+        )
+        attestation = (
+            runtime.get("launch_attestation")
+            if isinstance(runtime, Mapping)
+            else None
+        )
+        modules = (
+            runtime.get("modules") if isinstance(runtime, Mapping) else None
+        )
+        head_sha = (
+            lane.get("head_sha_at_build")
+            if isinstance(lane, Mapping)
+            else None
+        )
+        expected_attestation = {
+            "PARASTELL_CONTAINER_IMAGE_ID": DIRECT90_DOCKER_IMAGE_ID,
+            "PARASTELL_CONTAINER_NETWORK": "none",
+            "PARASTELL_MOUNTED_SOURCE_REVISION": head_sha,
+            "PARASTELL_DOCKER_ATTESTATION": "direct90-create-only-v1",
+        }
+        required_modules = {
+            "ParaStell",
+            "CadQuery",
+            "OCP",
+            "SciPy",
+            "NumPy",
+            "cad_to_dagmc",
+            "Gmsh",
+            "PyMOAB",
+            "PyDAGMC",
+            "OpenMC",
+        }
+        if (
+            not isinstance(lane, Mapping)
+            or not _is_git_sha(head_sha)
+            or not isinstance(runtime, Mapping)
+            or runtime.get("image_id") != DIRECT90_DOCKER_IMAGE_ID
+            or runtime.get("network") != "none"
+            or runtime.get("container_execution_proof") != "/.dockerenv"
+            or not isinstance(runtime_receipt, Mapping)
+            or runtime_receipt.get("schema")
+            != "wistell_d.docker_runtime_receipt/v1.0.0"
+            or runtime_receipt.get("sha256") != DIRECT90_RUNTIME_RECEIPT_SHA256
+            or not isinstance(attestation, Mapping)
+            or dict(attestation) != expected_attestation
+            or runtime.get("python", {}).get("version") != "3.12.13"
+            or set(modules or {}) != required_modules
+            or any(
+                not isinstance(row, Mapping)
+                or not _is_sha256(row.get("sha256"))
+                for row in (modules or {}).values()
+            )
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 qualified Docker runtime proof is incomplete"
+            )
+
+        periodicity = manifest.get("cad_periodicity")
+        loci = (
+            periodicity.get("generated_loci")
+            if isinstance(periodicity, Mapping)
+            else None
+        )
+        cut_faces = (
+            periodicity.get("boundary_cut_faces")
+            if isinstance(periodicity, Mapping)
+            else None
+        )
+        loci_rows = loci.get("surfaces") if isinstance(loci, Mapping) else None
+        if (
+            not isinstance(loci, Mapping)
+            or loci.get("pass") is not True
+            or not math.isfinite(
+                float(loci.get("maximum_residual_cm", math.nan))
+            )
+            or float(loci.get("maximum_residual_cm", math.inf))
+            > float(loci.get("tolerance_cm", -math.inf))
+            or not isinstance(loci_rows, list)
+            or {row.get("surface") for row in loci_rows}
+            != set(EXPECTED_LAYER_ORDER)
+            or not isinstance(cut_faces, Mapping)
+            or set(cut_faces) != set(EXPECTED_LAYER_ORDER)
+            or any(
+                not isinstance(row, Mapping)
+                or row.get("pass") is not True
+                or not row.get("phi_0_faces")
+                or not row.get("phi_90_faces")
+                or float(row.get("area_residual_cm2", math.inf))
+                > float(row.get("area_tolerance_cm2", -math.inf))
+                for row in (cut_faces or {}).values()
+            )
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 CAD periodicity proof is incomplete"
+            )
+
+        regression = manifest.get("reference_volume_regression")
+        reference_receipt = (
+            regression.get("reference_manifest")
+            if isinstance(regression, Mapping)
+            else None
+        )
+        regression_components = (
+            regression.get("components")
+            if isinstance(regression, Mapping)
+            else None
+        )
+        if (
+            not isinstance(regression, Mapping)
+            or regression.get("pass") is not True
+            or not isinstance(reference_receipt, Mapping)
+            or reference_receipt.get("sha256")
+            != DIRECT90_REFERENCE_MANIFEST_SHA256
+            or not Path(str(reference_receipt.get("path", ""))).is_absolute()
+            or not isinstance(regression_components, Mapping)
+            or set(regression_components) != set(EXPECTED_LAYER_ORDER)
+            or any(
+                not isinstance(row, Mapping)
+                or row.get("pass") is not True
+                or float(row.get("reference_volume_cm3", 0.0)) <= 0.0
+                or float(row.get("candidate_volume_cm3", 0.0)) <= 0.0
+                or float(row.get("relative_difference", math.inf))
+                > float(row.get("tolerance", -math.inf))
+                or float(row.get("tolerance", math.inf)) > 1.0e-7
+                for row in (regression_components or {}).values()
+            )
+        ):
+            raise GeometryProvenanceError(
+                "direct-90 reference-volume regression is incomplete"
+            )
+    else:
+        pairwise = manifest.get("complete_pairwise_audit")
+        if not isinstance(pairwise, Mapping):
+            raise GeometryProvenanceError(
+                "missing complete component-pair audit"
+            )
+        require_complete_pairwise_acceptance(pairwise)
 
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, Mapping) or not artifacts:

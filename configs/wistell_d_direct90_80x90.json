@@ -1,0 +1,68 @@
+{
+  "schema": "parastell.geometry_build_config/v1.0.0",
+  "device": "WISTELL-D",
+  "geometry_input_mode": "REBUILD_FROM_AUTHORITATIVE_WISTELL_D_INPUTS",
+  "inputs": {
+    "wout_wistell-d.nc": "9231969001203a8133255ee0a275bf552b114cc12524dda0608ab2f12047f7ac",
+    "coils.wistell-d": "7748369407d28a70f35b5c4a7c0ab860495a08fd0030002112ea933fe570159b",
+    "nwl.npy": "56baa090d61b67273efba61213849b7516beabb2a57fc2ad4751a6f3a32b2db4",
+    "blanket_boundary.npy": "fdb85b2c0c8cd72f5d000302e0b67349ebf72679f98f9c4d7739e5d8484cdde3",
+    "magnet_boundary.npy": "3579e5d8fe97dd74c8700e5676964159f00f07989ca6436528f60462889f05bd",
+    "source_mesh.h5m": "65264e15669d09c43f107c3b43c2af24ffbd15173e3bbd0e990b527bfa0b5322",
+    "strengths.npy": "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df"
+  },
+  "construction": {
+    "wall_s": 1.0,
+    "canonical_control_count": 452,
+    "canonical_control_grid": [16, 31],
+    "canonical_scalar_extent_degrees": [0.0, 45.0],
+    "resolved_control_grid": [80, 90],
+    "cad_grid": [80, 90],
+    "model_extent_degrees": [0.0, 90.0],
+    "construction_method": "direct_ParaStell_0_to_90_degrees",
+    "derived_from_finished_45_degree_CAD": false,
+    "magnet_representation": "continuous_30_cm_magnet_envelope",
+    "global_explicit_coils": false
+  },
+  "radial_build_cm": {
+    "first_wall": 4.0,
+    "breeder_base": 25.0,
+    "breeder_nwl_span": 30.0,
+    "back_wall": 5.0,
+    "high_temperature_shield": 20.0,
+    "vacuum_vessel": 10.0,
+    "low_temperature_shield_minimum": 5.0,
+    "magnet_envelope": 30.0
+  },
+  "materials": {
+    "chamber": "Vacuum",
+    "first_wall": "first_wall",
+    "breeder": "breeder",
+    "back_wall": "back_wall",
+    "high_temperature_shield": "high_temperature_shield",
+    "vacuum_vessel": "vacuum_vessel",
+    "low_temperature_shield": "low_temperature_shield",
+    "vacuum_gap": "Vacuum",
+    "magnet_envelope": "magnet_envelope"
+  },
+  "dagmc": {
+    "selected": {
+      "min_mesh_size_cm": 60.0,
+      "max_mesh_size_cm": 120.0,
+      "algorithm": 1
+    },
+    "refined": {
+      "min_mesh_size_cm": 30.0,
+      "max_mesh_size_cm": 60.0,
+      "algorithm": 1
+    },
+    "openmc_geometry_debug": {
+      "transport_owned": true,
+      "bounded_handoff_only": true
+    }
+  },
+  "selected_patch_mapping": {
+    "status": "OPTIONAL_DEFERRED_UNTIL_CONSUMER_SELECTION",
+    "canonical_control_point_ids": []
+  }
+}

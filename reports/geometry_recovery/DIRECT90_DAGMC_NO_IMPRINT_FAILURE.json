@@ -1,0 +1,46 @@
+{
+  "schema": "wistell_d.direct90_dagmc_attempt/v1.0.0",
+  "attempt_id": "parastell-direct90-dagmc-20260828-02",
+  "status": "BLOCKED_NATIVE_GEOMETRY_GATE_FAILED",
+  "selectable": false,
+  "purpose": "Negative control proving that a no-imprint DAGMC export is not an acceptable transport geometry.",
+  "export": {
+    "container_exit_code": 0,
+    "oom_killed": false,
+    "imprint": false,
+    "nodes": 5091,
+    "elements": 11040,
+    "h5m_bytes": 466468,
+    "h5m_sha256": "b8e4ca84d211db3e9efc7d69e37282f7befe91be4149d8cd22e4d1c5874c542f",
+    "export_receipt": {
+      "path": "D:/parastell-magnet-data/smoke/geometry/direct90-80x90-dagmc-20260828-02/build/dagmc_export_receipt.json",
+      "bytes": 2970,
+      "sha256": "b5104920c4d8611ad5460b79450cb8b26acb3f32bdf4271f6b86713c4efa1806"
+    }
+  },
+  "native_gate": {
+    "pydagmc_reload": "PASS",
+    "volume_count": 9,
+    "surface_count": 35,
+    "volumes_without_material": 0,
+    "unmatched_edge_count": 30,
+    "unsealed_surface_count": 6,
+    "unsealed_volume_count": 2,
+    "overlap_location_counts": {
+      "precision_1": 73,
+      "precision_2": 86,
+      "precision_4": 96
+    },
+    "receipt": {
+      "path": "D:/parastell-magnet-data/smoke/geometry/direct90-80x90-dagmc-20260828-02/native-gate/native_geometry_gate.json",
+      "bytes": 7103,
+      "sha256": "8dfe42ec36d041c1d974696c0b4c7b6837f19d4cf7b59687df833f14fbe93ec6"
+    }
+  },
+  "decision": {
+    "quarantine_h5m": true,
+    "openmc_transport_allowed": false,
+    "automatic_successor_allowed": false,
+    "required_successor_change": "Use a fresh create-only imprint=true export with a separately bounded memory allowance, then repeat the complete native gate before OpenMC."
+  }
+}

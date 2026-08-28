@@ -8,6 +8,9 @@ import numpy as np
 import pytest
 
 from parastell.geometry_provider import (
+    DIRECT90_DOCKER_IMAGE_ID,
+    DIRECT90_REFERENCE_MANIFEST_SHA256,
+    DIRECT90_RUNTIME_RECEIPT_SHA256,
     GeometryProvenanceError,
     EXPECTED_LAYER_ORDER,
     KNOWN_EXAMPLE_SOURCE_HASHES,
@@ -103,6 +106,25 @@ def test_streaming_step_pairwise_audit_isolates_real_step_pairs(tmp_path):
     assert report["pairs"][0]["intersection_volume_cm3"] == 0.0
 
 
+def test_streaming_pair_timeout_is_fail_closed(tmp_path, monkeypatch):
+    import subprocess
+
+    from scripts.wistell_d_geometry_lane import streaming_step_pairwise_audit
+
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", timeout)
+    report = streaming_step_pairwise_audit(
+        tmp_path,
+        ("a", "b"),
+        tolerance_cm3=1.0e-5,
+        pair_timeout_seconds=3.0,
+    )
+    assert report["boolean_failure_count"] == 1
+    assert "TimeoutExpired" in report["pairs"][0]["boolean_error"]
+
+
 def test_build_45_uses_process_isolated_pairwise_audit():
     import inspect
 
@@ -178,17 +200,45 @@ def test_accepted_component_steps_are_rehashed_before_derivation(tmp_path):
         verify_accepted_component_steps(tmp_path, manifest, ("chamber",))
 
 
-def test_derive_90_parent_does_not_load_or_retain_cad_shapes():
-    import inspect
-
+def test_finished_45_degree_cad_derivation_is_disabled():
     from scripts.wistell_d_geometry_lane import derive_90
 
-    source = inspect.getsource(derive_90)
-    assert "derive-step-component" in source
+    with pytest.raises(
+        RuntimeError, match="constructed directly by ParaStell"
+    ):
+        derive_90(None)
+
+
+def test_direct_90_builder_contains_no_finished_cad_transform_or_fuse():
+    import inspect
+
+    from scripts.wistell_d_geometry_lane import build_90_direct
+
+    source = inspect.getsource(build_90_direct)
+    assert "np.linspace(0.0, 90.0, DIRECT90_GRID[0])" in source
     assert "streaming_step_pairwise_audit(" in source
-    assert "load_step_components(" not in source
-    assert "complete_pairwise_audit(" not in source
+    assert ".rotate(" not in source
+    assert ".fuse(" not in source
+    assert '"derived_from_finished_45_degree_CAD": False' in source
     assert '"transport_eligible": False' in source
+
+
+def test_canonical_values_expand_to_closed_full_period_matrix():
+    from scripts.wistell_d_geometry_lane import array_to_full_period_matrix
+
+    values = np.arange(452, dtype=float)
+    matrix = array_to_full_period_matrix(values)
+    assert matrix.shape == (31, 31)
+    np.testing.assert_array_equal(matrix[:, 0], matrix[:, -1])
+    np.testing.assert_array_equal(
+        matrix[16:],
+        np.asarray(
+            [
+                np.concatenate((row[:1], row[-2:0:-1], row[:1]))
+                for row in matrix[:15][::-1]
+            ]
+        ),
+    )
 
 
 def _geometry_build_config() -> dict:
@@ -285,6 +335,119 @@ def _accepted_manifest(tmp_path: Path) -> dict:
     }
 
 
+def _direct90_manifest(tmp_path: Path) -> dict:
+    manifest = _accepted_manifest(tmp_path)
+    head_sha = "b" * 40
+    manifest["lane"] = {"head_sha_at_build": head_sha}
+    manifest["source"]["live_vmec_metadata"] = {
+        "nfp": 4,
+        "lasym_vmec_logical": False,
+        "stellarator_symmetric": True,
+    }
+    manifest["model"].update(
+        {
+            "toroidal_extent_degrees": 90.0,
+            "source_cad_grid": [80, 90],
+            "resolved_control_grid": [80, 90],
+            "resolved_matrix_locations_per_layer": 7200,
+            "construction_method": "direct_ParaStell_0_to_90_degrees",
+            "derived_from_finished_45_degree_CAD": False,
+            "component_order": list(EXPECTED_LAYER_ORDER),
+        }
+    )
+    manifest.pop("complete_pairwise_audit")
+    manifest["adjacent_pair_audit"] = {
+        "audit_scope": "adjacent_radial_pairs_only",
+        "component_count": 9,
+        "expected_pair_count": 8,
+        "evaluated_pair_count": 8,
+        "boolean_failure_count": 0,
+        "overlap_count": 0,
+        "pairs": [
+            {
+                "left": left,
+                "right": right,
+                "adjacent_in_radial_stack": True,
+                "intersection_volume_cm3": 0.0,
+                "boolean_error": None,
+                "overlap": False,
+            }
+            for left, right in zip(
+                EXPECTED_LAYER_ORDER[:-1], EXPECTED_LAYER_ORDER[1:]
+            )
+        ],
+    }
+    manifest["thickness_validation"] = {
+        "all_thicknesses_strictly_positive": True,
+        "strict_radial_order_at_all_resolved_locations": True,
+    }
+    manifest["nonadjacent_separation"] = {
+        "native_all_volume_overlap_gate": "REQUIRED_AFTER_IMPRINTED_DAGMC_EXPORT"
+    }
+    receipt = json.loads(
+        (
+            Path(__file__).resolve().parents[1]
+            / "reports"
+            / "geometry_recovery"
+            / "DIRECT90_DOCKER_RUNTIME_RECEIPT.json"
+        ).read_text(encoding="utf-8")
+    )
+    manifest["container_runtime"] = {
+        "image_id": DIRECT90_DOCKER_IMAGE_ID,
+        "runtime_receipt": {
+            "path": str((tmp_path / "runtime.json").resolve()),
+            "sha256": DIRECT90_RUNTIME_RECEIPT_SHA256,
+            "schema": receipt["schema"],
+        },
+        "network": "none",
+        "container_execution_proof": "/.dockerenv",
+        "python": receipt["python"],
+        "modules": receipt["modules"],
+        "launch_attestation": {
+            "PARASTELL_CONTAINER_IMAGE_ID": DIRECT90_DOCKER_IMAGE_ID,
+            "PARASTELL_CONTAINER_NETWORK": "none",
+            "PARASTELL_MOUNTED_SOURCE_REVISION": head_sha,
+            "PARASTELL_DOCKER_ATTESTATION": "direct90-create-only-v1",
+        },
+    }
+    manifest["cad_periodicity"] = {
+        "generated_loci": {
+            "pass": True,
+            "maximum_residual_cm": 0.0,
+            "tolerance_cm": 1.0e-6,
+            "surfaces": [{"surface": name} for name in EXPECTED_LAYER_ORDER],
+        },
+        "boundary_cut_faces": {
+            name: {
+                "pass": True,
+                "phi_0_faces": [{"face_index": 0}],
+                "phi_90_faces": [{"face_index": 1}],
+                "area_residual_cm2": 0.0,
+                "area_tolerance_cm2": 1.0e-6,
+            }
+            for name in EXPECTED_LAYER_ORDER
+        },
+    }
+    manifest["reference_volume_regression"] = {
+        "pass": True,
+        "reference_manifest": {
+            "path": str((tmp_path / "reference.json").resolve()),
+            "sha256": DIRECT90_REFERENCE_MANIFEST_SHA256,
+        },
+        "components": {
+            name: {
+                "pass": True,
+                "reference_volume_cm3": 1.0,
+                "candidate_volume_cm3": 1.0,
+                "relative_difference": 0.0,
+                "tolerance": 1.0e-7,
+            }
+            for name in EXPECTED_LAYER_ORDER
+        },
+    }
+    return manifest
+
+
 def test_complete_pairwise_audit_rejects_nonadjacent_overlap():
     components = {name: name for name in ("chamber", "lts", "gap", "magnets")}
 
@@ -350,6 +513,43 @@ def test_manifest_rejects_31x61_and_generic_example_hashes(tmp_path):
         validate_wistell_d_manifest(manifest)
 
 
+def test_manifest_rejects_90_degree_geometry_without_direct_parastell_build(
+    tmp_path,
+):
+    manifest = _accepted_manifest(tmp_path)
+    manifest["model"]["toroidal_extent_degrees"] = 90.0
+    manifest["model"]["source_cad_grid"] = [80, 90]
+    with pytest.raises(GeometryProvenanceError, match="constructed directly"):
+        validate_wistell_d_manifest(manifest)
+    manifest = _direct90_manifest(tmp_path)
+    validate_wistell_d_manifest(manifest)
+    manifest["adjacent_pair_audit"]["pairs"][0]["left"] = "duplicated"
+    with pytest.raises(GeometryProvenanceError, match="adjacent radial-pair"):
+        validate_wistell_d_manifest(manifest)
+
+
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "container_runtime",
+        "cad_periodicity",
+        "reference_volume_regression",
+    ],
+)
+def test_direct90_manifest_requires_all_geometry_proofs(tmp_path, missing_key):
+    manifest = _direct90_manifest(tmp_path)
+    manifest.pop(missing_key)
+    with pytest.raises(GeometryProvenanceError):
+        validate_wistell_d_manifest(manifest)
+
+
+def test_direct90_manifest_requires_live_vmec_proof(tmp_path):
+    manifest = _direct90_manifest(tmp_path)
+    manifest["source"].pop("live_vmec_metadata")
+    with pytest.raises(GeometryProvenanceError, match="live VMEC"):
+        validate_wistell_d_manifest(manifest)
+
+
 def test_manifest_rejects_example_path_and_has_no_fallback(tmp_path):
     manifest = _accepted_manifest(tmp_path)
     manifest["artifacts"]["source_step"]["path"] = str(
@@ -403,6 +603,123 @@ def test_parametric_geometry_configuration_is_hash_bound_and_fail_closed(
     config_path.write_text(json.dumps(config), encoding="utf-8")
     with pytest.raises(ValueError, match="authoritative-input hashes"):
         load_geometry_configuration(config_path)
+
+
+def test_direct90_configuration_is_distinct_from_half_period_configuration():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "wistell_d_direct90_80x90.json"
+    )
+    config, _ = load_geometry_configuration(path)
+    construction = config["construction"]
+    assert construction["canonical_control_grid"] == [16, 31]
+    assert construction["resolved_control_grid"] == [80, 90]
+    assert construction["cad_grid"] == [80, 90]
+    assert construction["model_extent_degrees"] == [0.0, 90.0]
+    assert construction["derived_from_finished_45_degree_CAD"] is False
+
+
+def test_direct90_radial_build_reconstructs_7200_ordered_locations(tmp_path):
+    from scripts.wistell_d_geometry_lane import (
+        load_geometry_only_parastell,
+        make_direct90_radial_build,
+    )
+
+    np.save(tmp_path / "nwl.npy", np.linspace(1.0, 2.0, 452))
+    np.save(tmp_path / "blanket_boundary.npy", np.full(452, 100.0))
+    np.save(tmp_path / "magnet_boundary.npy", np.full(452, 120.0))
+    load_geometry_only_parastell()
+    _, arrays, diagnostics = make_direct90_radial_build(
+        tmp_path, _geometry_build_config()
+    )
+    assert all(values.shape == (80, 90) for values in arrays.values())
+    assert diagnostics["resolved_matrix_locations_per_layer"] == 7200
+    assert diagnostics["all_thicknesses_strictly_positive"] is True
+    assert diagnostics["strict_radial_order_at_all_resolved_locations"] is True
+    assert diagnostics[
+        "minimum_blanket_to_magnet_clearance_cm"
+    ] == pytest.approx(20.0, abs=1.0e-12)
+    assert max(diagnostics["full_period_symmetry"].values()) == 0.0
+    assert (
+        max(
+            abs(diagnostics["outer_blanket_residual_cm"]["min"]),
+            abs(diagnostics["outer_blanket_residual_cm"]["max"]),
+            abs(diagnostics["magnet_boundary_residual_cm"]["min"]),
+            abs(diagnostics["magnet_boundary_residual_cm"]["max"]),
+        )
+        < 1.0e-10
+    )
+
+
+def test_direct90_runtime_receipt_and_environment_must_match(
+    tmp_path, monkeypatch
+):
+    from scripts.wistell_d_geometry_lane import (
+        validate_direct90_container_runtime,
+    )
+
+    image = DIRECT90_DOCKER_IMAGE_ID
+    revision = "b" * 40
+    receipt_path = (
+        Path(__file__).resolve().parents[1]
+        / "reports"
+        / "geometry_recovery"
+        / "DIRECT90_DOCKER_RUNTIME_RECEIPT.json"
+    )
+    container_marker = tmp_path / ".dockerenv"
+    container_marker.touch()
+    environment = {
+        "PARASTELL_CONTAINER_IMAGE_ID": image,
+        "PARASTELL_CONTAINER_NETWORK": "none",
+        "PARASTELL_MOUNTED_SOURCE_REVISION": revision,
+        "PARASTELL_DOCKER_ATTESTATION": "direct90-create-only-v1",
+    }
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    result = validate_direct90_container_runtime(
+        image,
+        receipt_path,
+        revision,
+        container_marker=container_marker,
+    )
+    assert result["launch_attestation"] == environment
+    monkeypatch.setenv("PARASTELL_CONTAINER_NETWORK", "bridge")
+    with pytest.raises(RuntimeError, match="in-container launch attestation"):
+        validate_direct90_container_runtime(
+            image,
+            receipt_path,
+            revision,
+            container_marker=container_marker,
+        )
+
+
+def test_direct90_runtime_rejects_host_execution(monkeypatch, tmp_path):
+    from scripts.wistell_d_geometry_lane import (
+        validate_direct90_container_runtime,
+    )
+
+    revision = "b" * 40
+    for name, value in {
+        "PARASTELL_CONTAINER_IMAGE_ID": DIRECT90_DOCKER_IMAGE_ID,
+        "PARASTELL_CONTAINER_NETWORK": "none",
+        "PARASTELL_MOUNTED_SOURCE_REVISION": revision,
+        "PARASTELL_DOCKER_ATTESTATION": "direct90-create-only-v1",
+    }.items():
+        monkeypatch.setenv(name, value)
+    receipt_path = (
+        Path(__file__).resolve().parents[1]
+        / "reports"
+        / "geometry_recovery"
+        / "DIRECT90_DOCKER_RUNTIME_RECEIPT.json"
+    )
+    with pytest.raises(RuntimeError, match="not executing in Docker"):
+        validate_direct90_container_runtime(
+            DIRECT90_DOCKER_IMAGE_ID,
+            receipt_path,
+            revision,
+            container_marker=tmp_path / "absent-dockerenv",
+        )
 
 
 def test_canonical_controls_are_not_renumbered_for_symmetry_instances():

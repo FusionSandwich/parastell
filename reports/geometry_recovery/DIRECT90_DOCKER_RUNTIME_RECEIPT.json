@@ -1,0 +1,45 @@
+{
+  "schema": "wistell_d.docker_runtime_receipt/v1.0.0",
+  "generated_utc": "2026-08-28T06:24:00Z",
+  "status": "QUALIFIED_EXISTING_RUNTIME",
+  "acquisition": {
+    "download_bytes": 0,
+    "installed_or_upgraded": false,
+    "reason": "the already-local image contains the required ParaStell, CAD, DAGMC, and OpenMC 0.16.0 stack"
+  },
+  "docker": {
+    "desktop_version": "4.47.0",
+    "engine_version": "28.4.0",
+    "image_tag": "parastell-openmc:0.16.0",
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "image_size_bytes": 4008320326,
+    "platform": "linux/amd64",
+    "required_network_mode": "none"
+  },
+  "python": {
+    "version": "3.12.13",
+    "executable": "/opt/openmc-v0.16.0-venv/bin/python",
+    "executable_sha256": "471e252a756d7c3131fdec419700e740f95061cff7f00431cf1400427491437b"
+  },
+  "modules": {
+    "ParaStell": {"version": "0.1.0-image-package", "sha256": "4b6c2ae9cfbb76fc9838b8d557227182981b4229206f57027f38fa1b485b1edb"},
+    "CadQuery": {"version": "2.7.0", "sha256": "9ea3dc8cf59c82a76b908771a2607c5a6badebf9f4fc1cbda2903407c5e848db"},
+    "OCP": {"version": "7.8.1.2", "sha256": "62810ce351491dd12e2bd9adaab15ece28bc345522da5e50d307a7bb8fab0e51"},
+    "SciPy": {"version": "1.17.1", "sha256": "335bc6e0a9909dc7534f9569a3685a92dc8001cb8c63a6da4c239849ff02d4d0"},
+    "NumPy": {"version": "1.26.4", "sha256": "22cd1535fa14d74ef6f457cca149ffdc80875f460be313b8f895273f78bc402e"},
+    "cad_to_dagmc": {"version": "0.11.5", "sha256": "98644fa80db7f5400f5d8df0c9579fb6174c0d6cf820f2798498d305e5407b1f"},
+    "Gmsh": {"version": "4.15.0", "sha256": "5ad4457c65310163a67bb9fea6191291589ff0e97d88e1cbbec8a529d4067a2c"},
+    "PyMOAB": {"version": "5.5.1", "sha256": "b14b3ea882712820413461e0c708262026f12b6106a64c9ae063cd75d73f6b5a"},
+    "PyDAGMC": {"version": "0.0.1-image-package", "sha256": "6f4912135e66bf804ad91a8c7615b8da8735170360baeceb3e26ed0dd670f931"},
+    "OpenMC": {"version": "0.16.0", "sha256": "95af072254639449e819477b50189f907535ad8bda1d06640a174c549e52a0b8"}
+  },
+  "host_preflight": {
+    "ram_total_gib": 31.91,
+    "ram_free_gib": 15.41,
+    "c_free_gib": 208.5,
+    "d_free_gib": 451.2,
+    "existing_python": "3.12.10",
+    "existing_local_parastell_checkout": "D:/Scratch/parastell",
+    "docker_cache_reused": true
+  }
+}
