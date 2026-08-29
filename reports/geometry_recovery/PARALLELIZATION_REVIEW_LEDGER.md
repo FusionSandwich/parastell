@@ -366,3 +366,22 @@
 - Shared-artifact risks: remote attempt roots and local generated plans remain
   create-only and outside Git; only compact code/config/tests/reports enter the
   branch. `wistell-d-openmc` remains untouched and out of scope.
+
+## 2026-08-29 06:05 EDT — Parametric exporter launch review
+
+- Serial/root-owned: v8 remains the only selectable source-CAD audit, and only
+  root may accept its terminal evidence or authorize meshing.
+- Safe parallel work: an independent read-only reviewer found that the
+  historical bounded exporter omitted the parametric manifest/audit/seal
+  contract. Root added a separate parametric runner; the reviewer then cleared
+  its exact module invocation, hashes, 32-core lease, thread environment,
+  timeout/reaping, four-output inventory, and no-successor receipt. Focused
+  verification passes 11 tests.
+- Active remote work: the four-core, 40 GiB-capped v8 audit remains within its
+  cgroup and has completed all 28 reactor-component checks without a physical
+  overlap. It is auditing magnet/component pairs; no mesh or OpenMC process has
+  started.
+- Shared-state risk: the new runner does not itself authorize remote work. A
+  mesh remains conditional on a terminal PASS, independent receipt review,
+  fresh create-only root, live zero-ledger/headroom check, and a separate hard
+  memory cgroup with swap disabled.
