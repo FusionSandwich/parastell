@@ -71,6 +71,36 @@ def _max_difference(first: list[float], second: list[float]) -> float:
     return max(abs(left - right) for left, right in zip(first, second))
 
 
+def _component_bindings(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
+    components = plan.get("components")
+    materials = plan.get("materials")
+    if (
+        not isinstance(components, list)
+        or len(components) != 2
+        or not isinstance(materials, list)
+        or len(materials) != 2
+    ):
+        raise ValueError("local component/material records are incomplete")
+    material_ids = {str(row.get("material_id", "")) for row in materials}
+    normalized = []
+    for row in components:
+        if not isinstance(row, Mapping) or set(row) != {
+            "component_id",
+            "role",
+            "material_id",
+        }:
+            raise ValueError("local component binding is invalid")
+        normalized.append(dict(row))
+    if (
+        {row["role"] for row in normalized} != {"outer_casing", "winding_pack"}
+        or len({row["component_id"] for row in normalized}) != 2
+        or {row["material_id"] for row in normalized} != material_ids
+        or "" in material_ids
+    ):
+        raise ValueError("local component/material mapping is ambiguous")
+    return sorted(normalized, key=lambda row: row["role"])
+
+
 def _construct_set(
     magnet_class: Any,
     request: Mapping[str, Any],
@@ -165,6 +195,7 @@ def build_continuous_local_magnet_geometry(
     ):
         raise ValueError("local geometry plan is not accepted")
     request = plan["local_geometry_request"]
+    component_bindings = _component_bindings(plan)
     transform = plan.get("surface_source", {}).get("transform", {})
     if not np.allclose(
         transform.get("rotation_global_to_local"),
@@ -189,10 +220,11 @@ def build_continuous_local_magnet_geometry(
     ):
         raise ValueError("CAD tolerances must be finite and nonnegative")
     output = Path(output_root).resolve()
-    output.mkdir(parents=True, exist_ok=False)
-
+    bindings = plan.get("bindings")
+    if not isinstance(bindings, Mapping) or "local_coil_input" not in bindings:
+        raise ValueError("bound local coil input inventory is missing")
     before = {}
-    for name, row in plan.get("bindings", {}).items():
+    for name, row in bindings.items():
         path = Path(str(row.get("path", ""))).resolve(strict=True)
         digest = sha256_file(path)
         if digest != row.get("sha256"):
@@ -204,6 +236,7 @@ def build_continuous_local_magnet_geometry(
             "bytes": path.stat().st_size,
             "sha256": digest,
         }
+    output.mkdir(parents=True, exist_ok=False)
 
     cq, magnet_class = _dependencies()
     index = _selected_index(magnet_class, request)
@@ -333,6 +366,8 @@ def build_continuous_local_magnet_geometry(
         "filament_id": filament_id,
         "source_plan_sha256": _canonical_sha256(dict(plan)),
         "local_geometry_request": dict(request),
+        "component_bindings": component_bindings,
+        "material_records": list(plan["materials"]),
         "source_filament_identity": split_identity,
         "solid_metrics": metrics,
         "casing_winding_intersection_volume_cm3": intersection,

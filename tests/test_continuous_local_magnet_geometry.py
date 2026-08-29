@@ -139,7 +139,12 @@ def _plan(tmp_path, coords):
             "path": str(case),
             "bytes": case.stat().st_size,
             "sha256": _sha(case),
-        }
+        },
+        "local_coil_input": {
+            "path": str(coil),
+            "bytes": coil.stat().st_size,
+            "sha256": _sha(coil),
+        },
     }
     return {
         "schema": "parastell.continuous_local_magnet_case_plan/v1.0.0",
@@ -173,6 +178,22 @@ def _plan(tmp_path, coords):
                 "translation_cm": [0.0, 0.0, 0.0],
             }
         },
+        "components": [
+            {
+                "component_id": "case",
+                "role": "outer_casing",
+                "material_id": "case-material",
+            },
+            {
+                "component_id": "winding",
+                "role": "winding_pack",
+                "material_id": "winding-material",
+            },
+        ],
+        "materials": [
+            {"material_id": "case-material"},
+            {"material_id": "winding-material"},
+        ],
         "bindings": bindings,
         "claims": {"global_swept_coils": False},
     }
@@ -191,6 +212,10 @@ def test_builds_local_split_with_only_same_local_input_parity(
     )
     assert manifest["claims"]["global_swept_coils"] is False
     assert manifest["claims"]["transport_executed"] is False
+    assert {row["role"] for row in manifest["component_bindings"]} == {
+        "outer_casing",
+        "winding_pack",
+    }
 
 
 @pytest.mark.parametrize(
@@ -217,3 +242,15 @@ def test_builder_rejects_unapplied_nonidentity_transform(
         geometry.build_continuous_local_magnet_geometry(
             plan, tmp_path / "output"
         )
+
+
+def test_builder_rejects_mutated_bound_coil_source(tmp_path, monkeypatch):
+    coords = _install_fakes(monkeypatch)
+    plan = _plan(tmp_path, coords)
+    Path(plan["local_geometry_request"]["coil_input"]["path"]).write_text(
+        "changed", encoding="utf-8"
+    )
+    output = tmp_path / "output"
+    with pytest.raises(ValueError, match="local_coil_input changed"):
+        geometry.build_continuous_local_magnet_geometry(plan, output)
+    assert not output.exists()
