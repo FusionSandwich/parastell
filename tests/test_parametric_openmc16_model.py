@@ -38,6 +38,7 @@ def _packet(tmp_path):
             "raw_h5m_sha256_before": _sha(dagmc),
             "raw_h5m_sha256_after": _sha(dagmc),
             "h5m_unchanged": True,
+            "native_id_inventory": {"native_id_gate_pass": True},
             "check_watertight": {
                 "pass": True,
                 "unmatched_edge_count": 0,

@@ -136,6 +136,8 @@ def _validate_evidence(control: Mapping[str, Any]) -> dict[str, Path]:
         or gate.get("raw_h5m_sha256_before") != dagmc_hash
         or gate.get("raw_h5m_sha256_after") != dagmc_hash
         or gate.get("h5m_unchanged") is not True
+        or gate.get("native_id_inventory", {}).get("native_id_gate_pass")
+        is not True
         or watertight.get("pass") is not True
         or watertight.get("unmatched_edge_count") != 0
         or watertight.get("unsealed_surface_count") != 0

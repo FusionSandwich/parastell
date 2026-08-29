@@ -111,6 +111,7 @@ def test_builds_complete_surface_and_normal_manifest(tmp_path, monkeypatch):
     assert result["status"] == "PASS"
     assert result["magnet_count"] == 18
     assert result["all_surface_ids"] == list(range(100, 118))
+    assert result["magnets"][0]["centroid_cm"] == [105.0, 25.0, 0.0]
     assert (
         result["magnets"][1]["surfaces"][0]["magnet_outward_normal_multiplier"]
         == -1

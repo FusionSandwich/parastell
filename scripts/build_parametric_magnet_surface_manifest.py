@@ -31,7 +31,9 @@ EXPECTED_SEMANTIC_ROLES = (
 )
 
 
-def _frame(bounding_box: dict[str, Any]) -> tuple[list[float], ...]:
+def _frame(
+    bounding_box: dict[str, Any],
+) -> tuple[list[float], list[float], list[float], list[float]]:
     lower = np.asarray(bounding_box["lower"], dtype=float)
     upper = np.asarray(bounding_box["upper"], dtype=float)
     if lower.shape != (3,) or upper.shape != (3,):
@@ -46,7 +48,12 @@ def _frame(bounding_box: dict[str, Any]) -> tuple[list[float], ...]:
     plasma = -radial
     toroidal = np.asarray([-radial[1], radial[0], 0.0])
     poloidal = np.cross(plasma, toroidal)
-    return plasma.tolist(), toroidal.tolist(), poloidal.tolist()
+    return (
+        center.tolist(),
+        plasma.tolist(),
+        toroidal.tolist(),
+        poloidal.tolist(),
+    )
 
 
 def build_manifest(
@@ -117,12 +124,13 @@ def build_manifest(
             or row.get("surface_count") != len(surface_ids)
         ):
             raise ValueError("magnet identity/order/closure is invalid")
-        plasma, toroidal, poloidal = _frame(row["bounding_box_cm"])
+        centroid, plasma, toroidal, poloidal = _frame(row["bounding_box_cm"])
         requests.append(
             {
                 "volume_id": int(row["volume_id"]),
                 "envelope_id": f"{magnet_id}-outer-envelope",
                 "magnet_id": magnet_id,
+                "centroid_cm": centroid,
                 "plasma_direction_global": plasma,
                 "toroidal_direction_global": toroidal,
                 "poloidal_direction_global": poloidal,
@@ -134,7 +142,9 @@ def build_manifest(
         raise ValueError("envelope extractor did not return 18 magnets")
     rows = []
     all_surface_ids: list[int] = []
-    for source, extracted in zip(magnets, envelopes, strict=True):
+    for source, extracted, request in zip(
+        magnets, envelopes, requests, strict=True
+    ):
         envelope = extracted.envelope
         surface_ids = sorted(int(value) for value in envelope.surface_ids)
         declared = sorted(
@@ -173,6 +183,7 @@ def build_manifest(
             {
                 "magnet": source["magnet_id"],
                 "dagmc_volume_id": int(source["volume_id"]),
+                "centroid_cm": list(request["centroid_cm"]),
                 "dagmc_surface_ids": surface_ids,
                 "surfaces": surfaces,
                 "closed": True,

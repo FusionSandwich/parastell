@@ -45,6 +45,68 @@ def _frame(centroid) -> tuple[list[float], list[float], list[float]]:
     return plasma.tolist(), toroidal.tolist(), poloidal.tolist()
 
 
+def _native_gate_accepts(gate: dict, dagmc_hash: str) -> bool:
+    if gate.get("schema") == "parastell.dagmc_native_qualification/v1.0.0":
+        watertight = gate.get("check_watertight", {})
+        overlaps = gate.get("overlap_checks")
+        return bool(
+            gate.get("native_dagmc_gate_pass") is True
+            and gate.get("raw_h5m_sha256_before") == dagmc_hash
+            and gate.get("raw_h5m_sha256_after") == dagmc_hash
+            and gate.get("h5m_unchanged") is True
+            and gate.get("native_id_inventory", {}).get("native_id_gate_pass")
+            is True
+            and watertight.get("pass") is True
+            and watertight.get("unmatched_edge_count") == 0
+            and watertight.get("unsealed_surface_count") == 0
+            and watertight.get("unsealed_volume_count") == 0
+            and isinstance(overlaps, list)
+            and sorted(row.get("points_per_edge") for row in overlaps)
+            == [1, 2, 4]
+            and all(
+                row.get("pass") is True
+                and row.get("terminal_overlap_location_count") == 0
+                and row.get("parsed_overlap_location_count") == 0
+                for row in overlaps
+            )
+        )
+    return False
+
+
+def _validated_magnets(surface_manifest: dict) -> list[dict]:
+    magnets = surface_manifest.get("magnets")
+    if not isinstance(magnets, list) or len(magnets) != 18:
+        raise ValueError("surface manifest must contain exactly 18 magnets")
+    seen_surfaces: set[int] = set()
+    for index, row in enumerate(magnets):
+        expected_id = f"magnet-{index:04d}"
+        expected_volume = index + 9
+        surface_ids = row.get("dagmc_surface_ids")
+        centroid = np.asarray(row.get("centroid_cm"), dtype=float)
+        if (
+            row.get("magnet") != expected_id
+            or row.get("dagmc_volume_id") != expected_volume
+            or row.get("closed") is not True
+            or row.get("coupling_interface")
+            != "homogenized_magnet_outer_boundary"
+            or not isinstance(surface_ids, list)
+            or not surface_ids
+            or len(surface_ids) != len(set(surface_ids))
+            or any(
+                not isinstance(value, int) or value <= 0
+                for value in surface_ids
+            )
+            or seen_surfaces.intersection(surface_ids)
+            or centroid.shape != (3,)
+            or not np.all(np.isfinite(centroid))
+        ):
+            raise ValueError(
+                f"surface manifest magnet mapping is invalid: {expected_id}"
+            )
+        seen_surfaces.update(surface_ids)
+    return magnets
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("dagmc_h5m", type=Path)
@@ -68,22 +130,25 @@ def main() -> None:
 
     gate = json.loads(gate_path.read_text(encoding="utf-8"))
     dagmc_hash = _sha256(dagmc)
-    if (
-        gate.get("geometry_gate_pass") is not True
-        or gate.get("dagmc", {}).get("unchanged") is not True
-        or gate.get("dagmc", {}).get("sha256_before") != dagmc_hash
-        or gate.get("dagmc", {}).get("sha256_after") != dagmc_hash
-    ):
+    if not _native_gate_accepts(gate, dagmc_hash):
         raise ValueError("native geometry gate does not accept the exact H5M")
 
     surface_manifest = json.loads(
         surface_manifest_path.read_text(encoding="utf-8")
     )
-    if surface_manifest.get("dagmc_sha256") != dagmc_hash:
+    if (
+        surface_manifest.get("schema")
+        != "parastell.parametric_magnet_surface_manifest/v1.0.0"
+        or surface_manifest.get("status") != "PASS"
+        or surface_manifest.get("dagmc_sha256") != dagmc_hash
+        or surface_manifest.get("coupling_interface")
+        != "homogenized_magnet_outer_boundary"
+        or surface_manifest.get("magnet_count") != 18
+        or surface_manifest.get("all_envelopes_close") is not True
+        or surface_manifest.get("physical_h5m_mutation") is not False
+    ):
         raise ValueError("surface manifest H5M hash mismatch")
-    magnets = surface_manifest.get("magnets")
-    if not isinstance(magnets, list) or not magnets:
-        raise ValueError("surface manifest has no magnets")
+    magnets = _validated_magnets(surface_manifest)
     material_tag = str(
         surface_manifest.get("selected_material_group", "")
     ).strip()
@@ -94,7 +159,7 @@ def main() -> None:
 
     requests = []
     components = []
-    for row in sorted(magnets, key=lambda item: int(item["dagmc_volume_id"])):
+    for row in magnets:
         volume_id = int(row["dagmc_volume_id"])
         magnet_id = str(row.get("magnet", "")).strip()
         if volume_id <= 0 or not magnet_id:
