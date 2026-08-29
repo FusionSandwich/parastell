@@ -14,6 +14,7 @@ import json
 from typing import Any, Mapping, Sequence
 
 from .reaction_identity import canonicalize_nuclide_mt_requests
+from .reaction_identity import MATERIAL_MT_SCHEMA
 
 
 SCHEMA = "parastell.transport_response_plan/v1.0.0"
@@ -163,11 +164,43 @@ def build_response_plan(
     photon_energy_edges_eV: Sequence[float],
     proof_level: str = "DECLARED",
     nuclide_mt_requests: Mapping[str, Sequence[str | int]] | None = None,
+    nuclide_mt_derivation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build and validate a stable, hashable response plan."""
     response_rows = [
         asdict(item) for item in default_magnet_response_requirements()
     ]
+    requests = canonicalize_nuclide_mt_requests(nuclide_mt_requests or {})
+    if nuclide_mt_derivation is not None:
+        derivation = dict(nuclide_mt_derivation)
+        if (
+            derivation.get("schema") != MATERIAL_MT_SCHEMA
+            or derivation.get("status")
+            != "MATERIAL_ISOTOPE_MT_REQUESTS_DERIVED"
+            or derivation.get("nuclide_mt_requests") != requests
+        ):
+            raise ValueError(
+                "material-derived nuclide/MT requests are not bound"
+            )
+        derivation_hash = str(derivation.get("derivation_sha256", ""))
+        unsigned = dict(derivation)
+        unsigned.pop("derivation_sha256", None)
+        canonical_derivation = json.dumps(
+            unsigned, sort_keys=True, separators=(",", ":")
+        )
+        if (
+            derivation_hash
+            != hashlib.sha256(canonical_derivation.encode()).hexdigest()
+        ):
+            raise ValueError(
+                "material-derived nuclide/MT receipt hash is invalid"
+            )
+        request_origin = derivation
+    else:
+        request_origin = {
+            "kind": "explicit_or_empty",
+            "missing_semantics": "MISSING_IS_NOT_ZERO",
+        }
     payload = {
         "schema": SCHEMA,
         "case_id": str(case_id).strip(),
@@ -178,9 +211,8 @@ def build_response_plan(
             "neutron": [float(value) for value in neutron_energy_edges_eV],
             "photon": [float(value) for value in photon_energy_edges_eV],
         },
-        "nuclide_mt_requests": canonicalize_nuclide_mt_requests(
-            nuclide_mt_requests or {}
-        ),
+        "nuclide_mt_requests": requests,
+        "nuclide_mt_request_origin": request_origin,
         "responses": response_rows,
         "missing_response_semantics": "MISSING_IS_NOT_ZERO",
         "covariance_policy": (
@@ -253,6 +285,34 @@ def validate_response_plan(plan: Mapping[str, Any]) -> None:
     )
     if canonical != plan.get("nuclide_mt_requests"):
         raise ValueError("nuclide/MT requests are not canonical")
+    origin = plan.get("nuclide_mt_request_origin")
+    if origin is None:
+        # Existing v1 plans predate the explicit origin field.  They remain
+        # valid only as legacy explicit requests, never as material-derived.
+        return
+    if not isinstance(origin, Mapping):
+        raise ValueError("nuclide/MT request origin is missing")
+    if origin.get("schema") == MATERIAL_MT_SCHEMA:
+        if (
+            origin.get("status") != "MATERIAL_ISOTOPE_MT_REQUESTS_DERIVED"
+            or origin.get("nuclide_mt_requests") != canonical
+        ):
+            raise ValueError(
+                "material-derived nuclide/MT origin is inconsistent"
+            )
+        digest = str(origin.get("derivation_sha256", ""))
+        unsigned = dict(origin)
+        unsigned.pop("derivation_sha256", None)
+        encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":"))
+        if digest != hashlib.sha256(encoded.encode()).hexdigest():
+            raise ValueError(
+                "material-derived nuclide/MT origin hash is invalid"
+            )
+    elif origin != {
+        "kind": "explicit_or_empty",
+        "missing_semantics": "MISSING_IS_NOT_ZERO",
+    }:
+        raise ValueError("nuclide/MT request origin is unsupported")
 
 
 def bind_response_plan(

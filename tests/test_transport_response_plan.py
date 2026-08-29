@@ -4,6 +4,7 @@ import copy
 
 import pytest
 
+from parastell.reaction_identity import derive_material_nuclide_mt_requests
 from parastell.transport_response_plan import (
     bind_response_plan,
     build_response_plan,
@@ -77,3 +78,33 @@ def test_cardinality_estimate_scales_with_local_mesh_and_surface_count():
     )
     assert fine["total_response_bins"] > coarse["total_response_bins"]
     assert fine["stored_moment_values"] == 2 * fine["total_response_bins"]
+
+
+def test_response_plan_binds_material_derived_mt_receipt():
+    derivation = derive_material_nuclide_mt_requests(
+        [
+            {
+                "material_id": "winding",
+                "composition_sha256": "a" * 64,
+                "isotopes": {"Cu63": 0.7, "Cu65": 0.3},
+            }
+        ],
+        default_mts=[2, 102],
+    )
+    plan = build_response_plan(
+        case_id="derived",
+        magnet_ids=["magnet-0000"],
+        neutron_energy_edges_eV=[0.0, 2.0e7],
+        photon_energy_edges_eV=[0.0, 2.0e7],
+        nuclide_mt_requests=derivation["nuclide_mt_requests"],
+        nuclide_mt_derivation=derivation,
+    )
+    assert plan["nuclide_mt_request_origin"]["derivation_sha256"] == (
+        derivation["derivation_sha256"]
+    )
+
+
+def test_legacy_v1_explicit_plan_without_origin_remains_readable():
+    plan = _plan()
+    plan.pop("nuclide_mt_request_origin")
+    validate_response_plan(plan)

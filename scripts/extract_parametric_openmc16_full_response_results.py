@@ -8,6 +8,12 @@ from pathlib import Path
 
 from parastell.openmc16_response_results import read_openmc16_response_set
 from parastell.openmc16_response_results import validate_response_coverage
+from parastell.openmc16_response_handoff import (
+    build_openmc16_radiation_consumer_handoff,
+)
+from parastell.radiation_consumer_handoff import (
+    validate_radiation_consumer_handoff,
+)
 from parastell.parametric_openmc16_model import _canonical_sha
 from parastell.transport_response_plan import validate_response_plan
 from scripts.run_parametric_openmc16_geometry_debug import sha256_file
@@ -15,6 +21,8 @@ from scripts.run_parametric_openmc16_geometry_debug import sha256_file
 
 SCHEMA = "parastell.parametric_full_response_result_bundle/v1.0.0"
 SMOKE_SCHEMA = "parastell.parametric_openmc16_full_response_smoke/v1.0.0"
+TALLY_BINDING_SCHEMA = "parastell.openmc16_exact_tally_bindings/v1.0.0"
+CONSUMER_INPUT_SCHEMA = "parastell.openmc16_consumer_handoff_input/v1.0.0"
 
 
 def _load_smoke_receipt(path: Path, expected_sha256: str) -> dict:
@@ -120,6 +128,103 @@ def extract(
     return result
 
 
+def _load_json_binding(path: Path, expected_sha256: str, label: str) -> dict:
+    path = path.resolve(strict=True)
+    if sha256_file(path) != str(expected_sha256).lower():
+        raise ValueError(f"{label} hash mismatch")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return value
+
+
+def build_consumer_handoff(
+    extraction: dict,
+    *,
+    tally_bindings_path: Path,
+    expected_tally_bindings_sha256: str,
+    consumer_input_path: Path,
+    expected_consumer_input_sha256: str,
+) -> dict:
+    """Convert the exact extracted statepoint into the validated handoff."""
+    bindings = _load_json_binding(
+        tally_bindings_path,
+        expected_tally_bindings_sha256,
+        "tally bindings",
+    )
+    required_tallies = set(extraction["response_plan"]["wired_tally_names"])
+    binding_digest = bindings.get("bindings_sha256")
+    unsigned_bindings = dict(bindings)
+    unsigned_bindings.pop("bindings_sha256", None)
+    if (
+        bindings.get("schema") != TALLY_BINDING_SCHEMA
+        or bindings.get("status") != "PASS"
+        or bindings.get("statepoint_sha256")
+        != extraction["statepoint"]["sha256"]
+        or bindings.get("model_xml_sha256") is None
+        or not isinstance(bindings.get("tallies"), dict)
+        or set(bindings["tallies"]) != required_tallies
+        or binding_digest != _canonical_sha(unsigned_bindings)
+    ):
+        raise ValueError(
+            "exact tally bindings are incomplete or run-mismatched"
+        )
+    model_hash = str(bindings["model_xml_sha256"]).lower()
+    if len(model_hash) != 64 or any(
+        c not in "0123456789abcdef" for c in model_hash
+    ):
+        raise ValueError("tally-binding model XML hash is invalid")
+    consumer = _load_json_binding(
+        consumer_input_path,
+        expected_consumer_input_sha256,
+        "consumer input",
+    )
+    if (
+        consumer.get("schema") != CONSUMER_INPUT_SCHEMA
+        or consumer.get("status") != "PASS"
+        or set(consumer)
+        != {
+            "schema",
+            "status",
+            "provenance",
+            "materials",
+            "boundary_phase_space",
+            "activation_schedule_reference",
+        }
+    ):
+        raise ValueError("consumer handoff input is incomplete")
+    provenance = consumer["provenance"]
+    if (
+        not isinstance(provenance, dict)
+        or provenance.get("statepoint_sha256")
+        != extraction["statepoint"]["sha256"]
+        or provenance.get("model_xml_sha256") != model_hash
+        or int(provenance.get("source_histories", -1))
+        != int(extraction["response_set"]["source_histories"])
+    ):
+        raise ValueError("consumer provenance is not extraction/tally bound")
+    handoff = build_openmc16_radiation_consumer_handoff(
+        response_set=extraction["response_set"],
+        tally_bindings=bindings["tallies"],
+        provenance=provenance,
+        materials=consumer["materials"],
+        boundary_phase_space=consumer["boundary_phase_space"],
+        activation_schedule_reference=consumer[
+            "activation_schedule_reference"
+        ],
+    )
+    handoff["extraction_binding"] = {
+        "result_bundle_sha256": extraction["bundle_content_sha256"],
+        "tally_bindings_sha256": str(expected_tally_bindings_sha256).lower(),
+        "consumer_input_sha256": str(expected_consumer_input_sha256).lower(),
+    }
+    unsigned = dict(handoff)
+    unsigned.pop("handoff_content_sha256", None)
+    handoff["handoff_content_sha256"] = _canonical_sha(unsigned)
+    validate_radiation_consumer_handoff(handoff)
+    return handoff
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("smoke_receipt", type=Path)
@@ -127,6 +232,11 @@ def main() -> None:
     parser.add_argument("output", type=Path)
     parser.add_argument("--expected-smoke-receipt-sha256", required=True)
     parser.add_argument("--expected-statepoint-sha256", required=True)
+    parser.add_argument("--tally-bindings", type=Path)
+    parser.add_argument("--expected-tally-bindings-sha256")
+    parser.add_argument("--consumer-input", type=Path)
+    parser.add_argument("--expected-consumer-input-sha256")
+    parser.add_argument("--consumer-handoff-output", type=Path)
     args = parser.parse_args()
     smoke = args.smoke_receipt.resolve(strict=True)
     statepoint = args.statepoint.resolve(strict=True)
@@ -138,9 +248,44 @@ def main() -> None:
         expected_smoke_receipt_sha256=args.expected_smoke_receipt_sha256,
         expected_statepoint_sha256=args.expected_statepoint_sha256,
     )
+    consumer_arguments = (
+        args.tally_bindings,
+        args.expected_tally_bindings_sha256,
+        args.consumer_input,
+        args.expected_consumer_input_sha256,
+        args.consumer_handoff_output,
+    )
+    handoff = None
+    handoff_output = None
+    if any(value is not None for value in consumer_arguments):
+        if any(value is None for value in consumer_arguments):
+            raise ValueError("consumer handoff CLI arguments must be complete")
+        handoff = build_consumer_handoff(
+            value,
+            tally_bindings_path=args.tally_bindings,
+            expected_tally_bindings_sha256=args.expected_tally_bindings_sha256,
+            consumer_input_path=args.consumer_input,
+            expected_consumer_input_sha256=args.expected_consumer_input_sha256,
+        )
+        handoff_output = args.consumer_handoff_output.resolve()
+        if handoff_output.exists():
+            raise FileExistsError(
+                f"create-only consumer handoff exists: {handoff_output}"
+            )
+    if output.exists():
+        raise FileExistsError(
+            f"create-only extraction output exists: {output}"
+        )
     with output.open("x", encoding="utf-8") as stream:
         json.dump(value, stream, indent=2, sort_keys=True, allow_nan=False)
         stream.write("\n")
+    if handoff is not None:
+        handoff_output.parent.mkdir(parents=True, exist_ok=True)
+        with handoff_output.open("x", encoding="utf-8") as stream:
+            json.dump(
+                handoff, stream, indent=2, sort_keys=True, allow_nan=False
+            )
+            stream.write("\n")
     print(output)
 
 

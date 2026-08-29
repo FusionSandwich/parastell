@@ -128,3 +128,79 @@ def test_rejects_mutated_or_unpassed_smoke_receipt(tmp_path):
             expected_smoke_receipt_sha256=_sha(receipt),
             expected_statepoint_sha256=_sha(statepoint),
         )
+
+
+def test_runnable_consumer_handoff_requires_exact_run_bound_inputs(
+    tmp_path, monkeypatch
+):
+    extraction = {
+        "bundle_content_sha256": "f" * 64,
+        "statepoint": {"sha256": "a" * 64},
+        "response_plan": {"wired_tally_names": ["flux"]},
+        "response_set": {"source_histories": 30},
+    }
+    tally_bindings = tmp_path / "bindings.json"
+    binding_payload = {
+        "schema": "parastell.openmc16_exact_tally_bindings/v1.0.0",
+        "status": "PASS",
+        "statepoint_sha256": "a" * 64,
+        "model_xml_sha256": "b" * 64,
+        "tallies": {"flux": {"definition": "bound"}},
+    }
+    binding_payload["bindings_sha256"] = _canonical_sha(binding_payload)
+    tally_bindings.write_text(json.dumps(binding_payload), encoding="utf-8")
+    consumer = tmp_path / "consumer.json"
+    consumer.write_text(
+        json.dumps(
+            {
+                "schema": "parastell.openmc16_consumer_handoff_input/v1.0.0",
+                "status": "PASS",
+                "provenance": {
+                    "statepoint_sha256": "a" * 64,
+                    "model_xml_sha256": "b" * 64,
+                    "source_histories": 30,
+                },
+                "materials": [],
+                "boundary_phase_space": {},
+                "activation_schedule_reference": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_builder(**kwargs):
+        captured.update(kwargs)
+        return {"schema": "test-handoff", "status": "PASS"}
+
+    monkeypatch.setattr(
+        extractor, "build_openmc16_radiation_consumer_handoff", fake_builder
+    )
+    monkeypatch.setattr(
+        extractor, "validate_radiation_consumer_handoff", lambda value: None
+    )
+    handoff = extractor.build_consumer_handoff(
+        extraction,
+        tally_bindings_path=tally_bindings,
+        expected_tally_bindings_sha256=_sha(tally_bindings),
+        consumer_input_path=consumer,
+        expected_consumer_input_sha256=_sha(consumer),
+    )
+    assert captured["tally_bindings"] == {"flux": {"definition": "bound"}}
+    assert handoff["extraction_binding"]["result_bundle_sha256"] == "f" * 64
+    assert len(handoff["handoff_content_sha256"]) == 64
+
+    changed = json.loads(tally_bindings.read_text(encoding="utf-8"))
+    changed["statepoint_sha256"] = "0" * 64
+    unsigned = dict(changed)
+    unsigned.pop("bindings_sha256")
+    changed["bindings_sha256"] = _canonical_sha(unsigned)
+    tally_bindings.write_text(json.dumps(changed), encoding="utf-8")
+    with pytest.raises(ValueError, match="run-mismatched"):
+        extractor.build_consumer_handoff(
+            extraction,
+            tally_bindings_path=tally_bindings,
+            expected_tally_bindings_sha256=_sha(tally_bindings),
+            consumer_input_path=consumer,
+            expected_consumer_input_sha256=_sha(consumer),
+        )

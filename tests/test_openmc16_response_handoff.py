@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from parastell.openmc16_response_handoff import (
+    build_exact_tally_bindings,
     build_openmc16_radiation_consumer_handoff,
 )
 from parastell.openmc16_response_results import read_openmc16_response_set
@@ -308,6 +309,32 @@ def test_statepoint_results_reach_existing_consumer_validator(tmp_path):
         (1.0e6, 2.0e7),
     }
     assert {row["produced_particle"] for row in produced} == {"photon"}
+
+
+def test_exact_bindings_capture_axes_and_require_reaction_mt_control(tmp_path):
+    path = tmp_path / "statepoint.3.h5"
+    _statepoint(path)
+    response_set = read_openmc16_response_set(path, TALLY_NAMES)
+    bindings = build_exact_tally_bindings(
+        response_set,
+        model_xml_sha256="a" * 64,
+        reaction_mt_by_tally={
+            "reaction": {"(n,elastic)": 2, "(n,gamma)": 102}
+        },
+    )
+    assert bindings["status"] == "PASS"
+    assert set(bindings["tallies"]) == set(TALLY_NAMES)
+    assert bindings["tallies"]["reaction"]["reaction_mt_by_bin"] == {
+        "(n,elastic)": 2,
+        "(n,gamma)": 102,
+    }
+    assert len(bindings["tallies"]["flux"]["tally_definition_sha256"]) == 64
+    with pytest.raises(ValueError, match="ReactionFilter MT control"):
+        build_exact_tally_bindings(
+            response_set,
+            model_xml_sha256="a" * 64,
+            reaction_mt_by_tally={"reaction": {"(n,elastic)": 2}},
+        )
 
 
 def test_adapter_rejects_missing_reaction_mt_identity(tmp_path):

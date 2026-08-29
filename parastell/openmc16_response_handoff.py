@@ -24,6 +24,7 @@ from .reaction_identity import canonical_mt, canonical_nuclide, mt_label
 
 SCHEMA = "parastell.openmc16_response_handoff_adapter/v1.0.0"
 RESPONSE_SET_SCHEMA = "parastell.openmc16_response_set/v1.0.0"
+TALLY_BINDING_SCHEMA = "parastell.openmc16_exact_tally_bindings/v1.0.0"
 _ALLOWED_FILTERS = {
     "cell",
     "particle",
@@ -109,6 +110,96 @@ def _validate_response_set(
         if result.get("covariance", {}).get("status") != "UNAVAILABLE":
             raise ValueError("unexpected statepoint covariance claim")
     return responses
+
+
+def build_exact_tally_bindings(
+    response_set: Mapping[str, Any],
+    *,
+    model_xml_sha256: str,
+    reaction_mt_by_tally: Mapping[str, Mapping[str, int | str]] | None = None,
+) -> dict[str, Any]:
+    """Bind every statepoint tally axis to one immutable model definition.
+
+    ReactionFilter display labels do not themselves carry an unambiguous MT
+    number, so reaction tallies require an explicit exact label-to-MT control.
+    All other identity axes are copied from the OpenMC 0.16 statepoint.
+    """
+    model_hash = _digest(model_xml_sha256, "model XML")
+    if (
+        response_set.get("schema") != RESPONSE_SET_SCHEMA
+        or response_set.get("status") != "SMOKE_RESULT"
+    ):
+        raise ValueError("response set is not a completed OpenMC result")
+    statepoint_hash = _digest(
+        response_set.get("statepoint_sha256"), "statepoint"
+    )
+    controls = reaction_mt_by_tally or {}
+    if not isinstance(controls, Mapping):
+        raise ValueError("reaction MT control must be a mapping")
+    outputs: dict[str, dict[str, Any]] = {}
+    reaction_tallies: set[str] = set()
+    for result in response_set.get("responses", ()):
+        if (
+            not isinstance(result, Mapping)
+            or result.get("schema") != RESULT_SCHEMA
+        ):
+            raise ValueError("response set contains an invalid tally result")
+        tally_id = str(result.get("tally_id", "")).strip()
+        if not tally_id or tally_id in outputs:
+            raise ValueError("response tally identities are invalid")
+        filters = result.get("filters")
+        if not isinstance(filters, list) or not filters:
+            raise ValueError(f"{tally_id} filters are missing")
+        filter_types = [str(row.get("type", "")) for row in filters]
+        if any(not value for value in filter_types):
+            raise ValueError(f"{tally_id} filter identity is incomplete")
+        definition = {
+            "model_xml_sha256": model_hash,
+            "tally_id": tally_id,
+            "estimator": str(result.get("estimator", "")),
+            "filters": filters,
+            "scores": [str(value) for value in result.get("scores", ())],
+            "nuclides": [str(value) for value in result.get("nuclides", ())],
+        }
+        binding = {
+            "filter_types": filter_types,
+            "scores": definition["scores"],
+            "nuclides": definition["nuclides"],
+            "tally_definition_sha256": _canonical_sha256(definition),
+        }
+        if "reaction" in filter_types:
+            reaction_tallies.add(tally_id)
+            reaction_filter = filters[filter_types.index("reaction")]
+            labels = [str(value) for value in reaction_filter.get("bins", ())]
+            control = controls.get(tally_id)
+            if not isinstance(control, Mapping) or set(control) != set(labels):
+                raise ValueError(
+                    f"{tally_id} ReactionFilter MT control is incomplete"
+                )
+            binding["reaction_mt_by_bin"] = {
+                label: canonical_mt(control[label]) for label in labels
+            }
+        elif tally_id in controls:
+            raise ValueError(
+                f"{tally_id} has MT controls but no ReactionFilter"
+            )
+        outputs[tally_id] = binding
+    unexpected = sorted(set(controls) - reaction_tallies)
+    if unexpected:
+        raise ValueError(
+            "reaction MT controls name non-reaction tallies: "
+            + ", ".join(unexpected)
+        )
+    result = {
+        "schema": TALLY_BINDING_SCHEMA,
+        "status": "PASS",
+        "statepoint_sha256": statepoint_hash,
+        "model_xml_sha256": model_hash,
+        "tallies": outputs,
+        "missing_reaction_identity_semantics": "MISSING_IS_NOT_ZERO",
+    }
+    result["bindings_sha256"] = _canonical_sha256(result)
+    return result
 
 
 def _filter_map(
