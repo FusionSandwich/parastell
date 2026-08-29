@@ -50,6 +50,39 @@ def _run(command: list[str], *, timeout_seconds: int) -> dict:
         }
 
 
+def _supports_short_option(executable: str, option: str) -> bool:
+    """Return whether the installed executable advertises a short option."""
+
+    result = subprocess.run(
+        [executable, "--help"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    for line in result.stdout.splitlines():
+        tokens = line.replace(",", " ").split()
+        if option in tokens:
+            return True
+    return False
+
+
+def _overlap_command(
+    executable: str,
+    *,
+    precision: int,
+    threads: int,
+    dagmc_path: Path,
+    thread_option_supported: bool,
+) -> list[str]:
+    command = [executable, "-p", str(int(precision))]
+    if thread_option_supported:
+        command.extend(["-t", str(int(threads))])
+    command.append(str(dagmc_path))
+    return command
+
+
 def run(
     dagmc_path: Path,
     output_dir: Path,
@@ -79,17 +112,23 @@ def run(
         raise ValueError(
             "native overlap precisions are not preregistered [1,2,4]"
         )
+    executables = {}
     for executable in ("check_watertight", "overlap_check"):
-        if shutil.which(executable) is None:
+        resolved = shutil.which(executable)
+        if resolved is None:
             raise RuntimeError(
                 f"required native executable is unavailable: {executable}"
             )
+        executables[executable] = resolved
+    overlap_thread_option_supported = _supports_short_option(
+        executables["overlap_check"], "-t"
+    )
     output_dir.mkdir(parents=True, exist_ok=False)
 
     derived = output_dir / "watertight_checked.NONAUTHORITATIVE.h5m"
     watertight_run = _run(
         [
-            "check_watertight",
+            executables["check_watertight"],
             "-v",
             "-o",
             str(derived),
@@ -117,14 +156,13 @@ def run(
     overlap_results = []
     for precision in precision_levels:
         native = _run(
-            [
-                "overlap_check",
-                "-p",
-                str(precision),
-                "-t",
-                str(int(threads)),
-                str(dagmc_path),
-            ],
+            _overlap_command(
+                executables["overlap_check"],
+                precision=precision,
+                threads=threads,
+                dagmc_path=dagmc_path,
+                thread_option_supported=overlap_thread_option_supported,
+            ),
             timeout_seconds=timeout_seconds,
         )
         (output_dir / f"overlap_check_p{precision}_t{threads}.log").write_text(
@@ -141,6 +179,13 @@ def run(
         parsed["timed_out"] = native["timed_out"]
         parsed["command"] = native["command"]
         parsed["wall_time_seconds"] = native["wall_time_seconds"]
+        parsed["native_thread_option_supported"] = (
+            overlap_thread_option_supported
+        )
+        parsed["native_threads_argument_used"] = (
+            overlap_thread_option_supported
+        )
+        parsed["requested_threads"] = int(threads)
         overlap_results.append(parsed)
 
     after = sha256_file(dagmc_path)
@@ -155,6 +200,8 @@ def run(
         "acceptance_criteria_sha256": actual_criteria,
         "native_id_inventory": native_ids,
         "threads": int(threads),
+        "native_executables": executables,
+        "overlap_thread_option_supported": overlap_thread_option_supported,
         "per_command_timeout_seconds": int(timeout_seconds),
         "check_watertight": watertight,
         "overlap_checks": overlap_results,
