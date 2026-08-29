@@ -1,0 +1,88 @@
+{
+  "schema": "parastell.magnet_tape_stack_definition/v1.0.0",
+  "stack_id": "provisional-rebco-163p2um-verification-fixture",
+  "magnet_id": "user-selected-magnet-id",
+  "classification": "PROVISIONAL_VERIFICATION_FIXTURE_NOT_MANUFACTURER_SPECIFICATION",
+  "geometry": {
+    "tape_width_mm": "4",
+    "longitudinal_mode": "unit_length_normalization",
+    "model_length_mm": "10",
+    "stack_axis": "local_z",
+    "reference_plane": "rebco_midplane",
+    "layer_order": "below_to_above"
+  },
+  "material_bindings": {
+    "silver": "USER_SUPPLIED_SILVER",
+    "buffer": "USER_SUPPLIED_BUFFER",
+    "copper": "USER_SUPPLIED_COPPER",
+    "hastelloy": "USER_SUPPLIED_HASTELLOY",
+    "insulation": "USER_SUPPLIED_INSULATION",
+    "rebco": "USER_SUPPLIED_REBCO",
+    "solder": "USER_SUPPLIED_SOLDER"
+  },
+  "layers": [
+    {
+      "layer_id": "front-copper",
+      "role": "stabilizer",
+      "side": "below_rebco",
+      "material_binding": "copper",
+      "thickness_um": "20"
+    },
+    {
+      "layer_id": "silver-cap",
+      "role": "silver_cap",
+      "side": "below_rebco",
+      "material_binding": "silver",
+      "thickness_um": "2"
+    },
+    {
+      "layer_id": "rebco",
+      "role": "rebco_active",
+      "side": "rebco",
+      "material_binding": "rebco",
+      "thickness_um": "1"
+    },
+    {
+      "layer_id": "buffer",
+      "role": "buffer",
+      "side": "above_rebco",
+      "material_binding": "buffer",
+      "thickness_um": "0.2"
+    },
+    {
+      "layer_id": "hastelloy-substrate",
+      "role": "substrate",
+      "side": "above_rebco",
+      "material_binding": "hastelloy",
+      "thickness_um": "50"
+    },
+    {
+      "layer_id": "rear-copper",
+      "role": "stabilizer",
+      "side": "above_rebco",
+      "material_binding": "copper",
+      "thickness_um": "20"
+    },
+    {
+      "layer_id": "solder",
+      "role": "solder",
+      "side": "above_rebco",
+      "material_binding": "solder",
+      "thickness_um": "20"
+    },
+    {
+      "layer_id": "insulation",
+      "role": "insulation",
+      "side": "above_rebco",
+      "material_binding": "insulation",
+      "thickness_um": "50"
+    }
+  ],
+  "provenance": {
+    "source": "historical eight-layer cross-solver verification fixture",
+    "citation": "PROMPT2_LOCAL_TRANSPORT_RECOVERY_PLAN.md section 5.4",
+    "provisional": true,
+    "design_authority": false,
+    "manufacturer_specification": false
+  }
+}
