@@ -1,0 +1,37 @@
+{
+  "schema": "parastell.continuous90_source_build_attempt/v1.0.0",
+  "attempt_id": "prompt7r-continuous-direct90-sourcecad-v2-20260829T125300Z",
+  "status": "FAIL_CLOSED_DOCKER_OOM",
+  "selectable": false,
+  "source_revision": "1161b4d7eb61aa22286474b04ab8becd969fbc28",
+  "docker": {
+    "container_id": "7955e02fc1e63f62641abb46dda0077e3764243faffb4b4acec13c7800d7a877",
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "network": "none",
+    "cpu_limit": 4,
+    "memory_limit_bytes": 8589934592,
+    "swap_limit_bytes": 8589934592,
+    "docker_event": "oom",
+    "exit_code": 137,
+    "execution_seconds": 73,
+    "operator_stop": false
+  },
+  "geometry_contract": {
+    "config_sha256": "53b51ee02e66f921562c34782d9f05c36bd7b225ee2a74c75b3ea6058a495b2d",
+    "resolved_plan_sha256": "555f396a9bd2820070725ae0d46011e4e71ba5af837a80b6abf1b0808db624d9",
+    "extent_degrees": 90.0,
+    "component_count_expected": 9,
+    "magnet_representation": "radial_envelope"
+  },
+  "partial_artifacts": [
+    {"path": "BUILD_STARTED.json", "bytes": 1815, "sha256": "351aa04428d69054b08a12e376de971f88e82a7f735e424baa0be821a350e094"}
+  ],
+  "next_attempt_basis": {
+    "memory_limit_bytes": 10737418240,
+    "justification": "The 8 GiB hard limit produced a native Docker OOM. The first 12 GiB attempt passed this stage but was operator-stopped on host headroom. A 10 GiB cap is the smallest evidence-based bounded intermediate allocation after releasing idle WSL/Docker memory."
+  },
+  "automatic_retry": false,
+  "meshing_launched": false,
+  "openmc_launched": false,
+  "external_root": "D:/parastell-artifacts/prompt7r-continuous-direct90-sourcecad-v2-20260829T125300Z"
+}
