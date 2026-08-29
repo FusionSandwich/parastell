@@ -19,6 +19,28 @@ def test_intersection_gate_is_numeric_and_fail_closed():
     assert not _intersection_pass({"status": "MEASURED", "volume_cm3": None})
 
 
+def test_positive_exact_distance_skips_boolean_common(monkeypatch):
+    monkeypatch.setattr(
+        audit_module,
+        "_distance",
+        lambda *args, **kwargs: {
+            "status": "MEASURED",
+            "minimum_distance_cm": 2.0,
+        },
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "_intersection",
+        lambda *args, **kwargs: pytest.fail("common operation was requested"),
+    )
+    result, separation = audit_module._distance_first_intersection(
+        object(), object()
+    )
+    assert result["status"] == "EXACT_BREP_DISTANCE_DISJOINT"
+    assert result["volume_cm3"] == 0.0
+    assert separation["minimum_distance_cm"] == 2.0
+
+
 def test_source_manifest_binds_artifacts_components_and_all_magnets(tmp_path):
     artifact = tmp_path / "chamber.step"
     artifact.write_bytes(b"cad")

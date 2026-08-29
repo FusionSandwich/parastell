@@ -29,6 +29,7 @@ from scripts.audit_source_cad_candidate import _shape_row
 
 SCHEMA = "parastell.parametric_source_cad_audit/v1.0.0"
 INTERSECTION_TOLERANCE_CM3 = 1.0e-6
+POSITIVE_SEPARATION_TOLERANCE_CM = 1.0e-8
 _COMPONENTS: dict[str, Any] | None = None
 _MAGNETS: list[Any] | None = None
 
@@ -101,34 +102,64 @@ def _intersection_pass(row: dict) -> bool:
     )
 
 
+def _distance_first_intersection(
+    first: Any, second: Any, *, witnesses_required: bool = False
+) -> tuple[dict, dict]:
+    separation = _distance(
+        first,
+        second,
+        multithread=False,
+        witnesses_required=witnesses_required,
+    )
+    if (
+        separation.get("status") == "MEASURED"
+        and _finite_number(separation.get("minimum_distance_cm"))
+        and separation["minimum_distance_cm"]
+        > POSITIVE_SEPARATION_TOLERANCE_CM
+    ):
+        return (
+            {
+                "status": "EXACT_BREP_DISTANCE_DISJOINT",
+                "volume_cm3": 0.0,
+                "result_boundary_area_cm2": 0.0,
+                "connected_solid_count": 0,
+                "minimum_distance_cm": separation["minimum_distance_cm"],
+            },
+            separation,
+        )
+    return _intersection(first, second, multithread=False), separation
+
+
 def _component_pair(task: tuple[str, str]) -> dict:
     first, second = task
-    result = _intersection(
-        _COMPONENTS[first], _COMPONENTS[second], multithread=False
+    result, separation = _distance_first_intersection(
+        _COMPONENTS[first], _COMPONENTS[second]
     )
-    row = {"components": [first, second], **result}
+    row = {
+        "components": [first, second],
+        **result,
+        "separation_distance": separation,
+    }
     row["pass"] = _intersection_pass(row)
     return row
 
 
 def _magnet_component(task: tuple[int, str]) -> dict:
     index, component = task
-    result = _intersection(
-        _MAGNETS[index], _COMPONENTS[component], multithread=False
+    result, separation = _distance_first_intersection(
+        _MAGNETS[index],
+        _COMPONENTS[component],
+        witnesses_required=component == "vacuum_gap",
     )
     row = {
         "magnet_id": f"magnet-{index:04d}",
         "component": component,
         **result,
+        "separation_distance": separation,
     }
     row["pass"] = _intersection_pass(row)
     if component == "vacuum_gap":
-        row["minimum_clearance"] = _distance(
-            _MAGNETS[index],
-            _COMPONENTS[component],
-            multithread=False,
-            witnesses_required=True,
-        )
+        row["minimum_clearance"] = separation
     return row
 
 
