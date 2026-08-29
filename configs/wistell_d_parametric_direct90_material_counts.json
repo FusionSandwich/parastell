@@ -1,0 +1,10 @@
+{
+  "Vacuum": 2,
+  "back_wall": 1,
+  "breeder": 1,
+  "first_wall": 1,
+  "high_temperature_shield": 1,
+  "low_temperature_shield": 1,
+  "magnets": 18,
+  "vacuum_vessel": 1
+}

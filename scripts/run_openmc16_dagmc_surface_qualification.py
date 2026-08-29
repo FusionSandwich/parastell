@@ -14,8 +14,6 @@ import json
 from pathlib import Path
 import subprocess
 
-import openmc
-
 from parastell.surface_source_instrumentation import (
     apply_openmc16_surface_instrumentation,
     build_surface_instrumentation_spec,
@@ -30,13 +28,33 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _surface_signs(path: Path) -> dict[int, int]:
+def _surface_signs(path: Path, dagmc_path: Path) -> dict[int, int]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     magnets = payload.get("magnets")
-    if not isinstance(magnets, list) or not magnets:
-        raise ValueError("surface manifest has no magnets")
+    if (
+        payload.get("schema")
+        != "parastell.parametric_magnet_surface_manifest/v1.0.0"
+        or payload.get("status") != "PASS"
+        or payload.get("dagmc_sha256") != _sha256(dagmc_path)
+        or payload.get("coupling_interface")
+        != "homogenized_magnet_outer_boundary"
+        or payload.get("magnet_count") != 18
+        or payload.get("all_envelopes_close") is not True
+        or payload.get("physical_h5m_mutation") is not False
+        or not isinstance(magnets, list)
+        or len(magnets) != 18
+    ):
+        raise ValueError("surface manifest is not bound to qualified DAGMC")
     signs: dict[int, int] = {}
-    for magnet in magnets:
+    for index, magnet in enumerate(magnets):
+        if (
+            magnet.get("magnet") != f"magnet-{index:04d}"
+            or magnet.get("dagmc_volume_id") != index + 9
+            or magnet.get("closed") is not True
+            or magnet.get("coupling_interface")
+            != "homogenized_magnet_outer_boundary"
+        ):
+            raise ValueError("surface manifest magnet identity is invalid")
         for surface in magnet.get("surfaces", ()):
             surface_id = int(surface["dagmc_surface_id"])
             sign = int(surface["magnet_outward_normal_multiplier"])
@@ -53,7 +71,9 @@ def _surface_signs(path: Path) -> dict[int, int]:
     return signs
 
 
-def _replace_dagmc_filename(model: openmc.Model, dagmc_path: Path) -> int:
+def _replace_dagmc_filename(model, dagmc_path: Path) -> int:
+    import openmc
+
     universes = model.geometry.get_all_universes()
     dagmc_universes = [
         universe
@@ -69,6 +89,8 @@ def _replace_dagmc_filename(model: openmc.Model, dagmc_path: Path) -> int:
 
 
 def main() -> None:
+    import openmc
+
     parser = argparse.ArgumentParser()
     parser.add_argument("model_xml", type=Path)
     parser.add_argument("dagmc_h5m", type=Path)
@@ -102,7 +124,7 @@ def main() -> None:
     ):
         raise ValueError("run controls must be positive integers")
 
-    signs = _surface_signs(surface_manifest)
+    signs = _surface_signs(surface_manifest, dagmc_path)
     model = openmc.Model.from_model_xml(model_xml)
     dagmc_universe_id = _replace_dagmc_filename(model, dagmc_path)
     model.settings.run_mode = "fixed source"

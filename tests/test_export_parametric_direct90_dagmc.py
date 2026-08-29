@@ -7,6 +7,20 @@ import numpy as np
 from scripts import export_parametric_direct90_dagmc as exporter
 
 
+def test_committed_material_counts_match_export_contract():
+    path = (
+        exporter.REPOSITORY_ROOT
+        / "configs"
+        / "wistell_d_parametric_direct90_material_counts.json"
+    )
+    observed = json.loads(path.read_text(encoding="utf-8"))
+    expected = {
+        material: exporter.MATERIAL_TAGS.count(material)
+        for material in set(exporter.MATERIAL_TAGS)
+    }
+    assert observed == expected
+
+
 def _write_json(path, value):
     path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
     return hashlib.sha256(path.read_bytes()).hexdigest()
