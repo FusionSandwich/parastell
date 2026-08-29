@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import as_completed
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 import itertools
 import json
+import math
 from pathlib import Path
 import sys
 from typing import Any
@@ -98,13 +100,95 @@ def _intersection_pass(row: dict) -> bool:
     return bool(
         row.get("status") != "ERROR"
         and _finite_number(row.get("volume_cm3"))
+        and float(row["volume_cm3"]) >= 0.0
         and float(row["volume_cm3"]) <= INTERSECTION_TOLERANCE_CM3
+    )
+
+
+def _aabb_separation(first: Any, second: Any) -> dict:
+    """Return a conservative disjointness proof from finite OCC AABBs."""
+    try:
+        first_box = first.BoundingBox()
+        second_box = second.BoundingBox()
+        axes = (
+            (first_box.xmin, first_box.xmax, second_box.xmin, second_box.xmax),
+            (first_box.ymin, first_box.ymax, second_box.ymin, second_box.ymax),
+            (first_box.zmin, first_box.zmax, second_box.zmin, second_box.zmax),
+        )
+        values = [value for axis in axes for value in axis]
+        if not all(_finite_number(value) for value in values):
+            raise ValueError("non-finite bounding-box coordinate")
+        if any(low > high for low, high, _, _ in axes) or any(
+            low > high for _, _, low, high in axes
+        ):
+            raise ValueError("inverted bounding-box bounds")
+        gaps = [
+            max(low_second - high_first, low_first - high_second, 0.0)
+            for low_first, high_first, low_second, high_second in axes
+        ]
+    except Exception as error:
+        return {
+            "status": "ERROR",
+            "reason": f"invalid OCC bounding box: {error}",
+        }
+    distance = math.sqrt(sum(gap * gap for gap in gaps))
+    return {
+        "status": (
+            "CONSERVATIVE_AABB_DISJOINT"
+            if distance > POSITIVE_SEPARATION_TOLERANCE_CM
+            else "AABB_OVERLAP_OR_TOUCH"
+        ),
+        "minimum_distance_lower_bound_cm": distance,
+        "axis_gaps_cm": gaps,
+    }
+
+
+def _clearance_witness_pass(separation: dict) -> bool:
+    witnesses = separation.get("witnesses")
+    return bool(
+        separation.get("status") == "MEASURED"
+        and separation.get("witnesses_required") is True
+        and _finite_number(separation.get("minimum_distance_cm"))
+        and separation["minimum_distance_cm"]
+        > POSITIVE_SEPARATION_TOLERANCE_CM
+        and isinstance(witnesses, list)
+        and len(witnesses) == separation.get("solution_count")
+        and witnesses
+        and all(
+            witness.get("distance_reconstruction_pass") is True
+            and witness.get("point_membership_pass") is True
+            for witness in witnesses
+        )
     )
 
 
 def _distance_first_intersection(
     first: Any, second: Any, *, witnesses_required: bool = False
 ) -> tuple[dict, dict]:
+    if not witnesses_required:
+        aabb = _aabb_separation(first, second)
+        if aabb.get("status") == "ERROR":
+            return (
+                {
+                    "status": "ERROR",
+                    "reason": aabb["reason"],
+                    "volume_cm3": None,
+                    "result_boundary_area_cm2": None,
+                    "connected_solid_count": None,
+                },
+                aabb,
+            )
+        if aabb["status"] == "CONSERVATIVE_AABB_DISJOINT":
+            return (
+                {
+                    "status": "CONSERVATIVE_AABB_DISJOINT",
+                    "volume_cm3": 0.0,
+                    "result_boundary_area_cm2": 0.0,
+                    "connected_solid_count": 0,
+                    **aabb,
+                },
+                aabb,
+            )
     separation = _distance(
         first,
         second,
@@ -146,17 +230,11 @@ def _component_pair(task: tuple[str, str]) -> dict:
 
 def _magnet_component(task: tuple[int, str]) -> dict:
     index, component = task
-    if component == "vacuum_gap":
-        result, separation = _distance_first_intersection(
-            _MAGNETS[index],
-            _COMPONENTS[component],
-            witnesses_required=True,
-        )
-    else:
-        result = _intersection(
-            _MAGNETS[index], _COMPONENTS[component], multithread=False
-        )
-        separation = {"status": "NOT_REQUIRED_INTERSECTION_GATE_ONLY"}
+    result, separation = _distance_first_intersection(
+        _MAGNETS[index],
+        _COMPONENTS[component],
+        witnesses_required=component == "vacuum_gap",
+    )
     row = {
         "magnet_id": f"magnet-{index:04d}",
         "component": component,
@@ -166,17 +244,19 @@ def _magnet_component(task: tuple[int, str]) -> dict:
     row["pass"] = _intersection_pass(row)
     if component == "vacuum_gap":
         row["minimum_clearance"] = separation
+        row["clearance_witness_pass"] = _clearance_witness_pass(separation)
     return row
 
 
 def _magnet_pair(task: tuple[int, int]) -> dict:
     first, second = task
-    result = _intersection(
-        _MAGNETS[first], _MAGNETS[second], multithread=False
+    result, separation = _distance_first_intersection(
+        _MAGNETS[first], _MAGNETS[second], witnesses_required=False
     )
     row = {
         "magnets": [f"magnet-{first:04d}", f"magnet-{second:04d}"],
         **result,
+        "separation_distance": separation,
     }
     row["pass"] = _intersection_pass(row)
     return row
@@ -185,6 +265,27 @@ def _magnet_pair(task: tuple[int, int]) -> dict:
 def _write_progress(path: Path, stage: str, row: dict) -> None:
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps({"stage": stage, "row": row}) + "\n")
+
+
+def _pair_tasks(component_names: list[str]) -> tuple[list, list, list]:
+    return (
+        list(itertools.combinations(component_names, 2)),
+        list(itertools.product(range(18), component_names)),
+        list(itertools.combinations(range(18), 2)),
+    )
+
+
+def _audit_pass(summary: dict, *, source_immutable: bool) -> bool:
+    return bool(
+        source_immutable
+        and summary["invalid_component_count"] == 0
+        and summary["invalid_magnet_count"] == 0
+        and summary["component_overlap_failures"] == 0
+        and summary["magnet_component_overlap_failures"] == 0
+        and summary["magnet_pair_overlap_failures"] == 0
+        and summary["clearance_measurement_count"] == 18
+        and summary["clearance_witness_pass_count"] == 18
+    )
 
 
 def _run_tasks(
@@ -208,9 +309,17 @@ def _run_tasks(
         initargs=initializer,
     ) as executor:
         for key, function, tasks in work:
-            for row in executor.map(function, tasks, chunksize=1):
-                rows[key].append(row)
+            futures = {
+                executor.submit(function, task): index
+                for index, task in enumerate(tasks)
+            }
+            completed: list[tuple[int, dict]] = []
+            for future in as_completed(futures):
+                row = future.result()
+                completed.append((futures[future], row))
                 _write_progress(progress, key, row)
+            for _, row in sorted(completed):
+                rows[key].append(row)
 
 
 def audit(
@@ -230,11 +339,9 @@ def audit(
     progress = output / "progress.jsonl"
     component_names = before["components"]
     initializer = (str(source), component_names)
-    component_tasks = list(itertools.combinations(component_names, 2))
-    magnet_component_tasks = list(
-        itertools.product(range(18), component_names)
+    component_tasks, magnet_component_tasks, magnet_tasks = _pair_tasks(
+        component_names
     )
-    magnet_tasks = list(itertools.combinations(range(18), 2))
     rows: dict[str, list[dict]] = {
         "component_pairs": [],
         "magnet_component_pairs": [],
@@ -273,6 +380,11 @@ def audit(
         if row.get("status") == "MEASURED"
         and _finite_number(row.get("minimum_distance_cm"))
     ]
+    clearance_witness_passes = [
+        row.get("clearance_witness_pass") is True
+        for row in rows["magnet_component_pairs"]
+        if row["component"] == "vacuum_gap"
+    ]
     summary = {
         "component_count": len(component_inventory),
         "magnet_count": len(magnet_inventory),
@@ -297,34 +409,26 @@ def audit(
             not row["pass"] for row in rows["magnet_pairs"]
         ),
         "clearance_measurement_count": len(clearances),
+        "clearance_witness_pass_count": sum(clearance_witness_passes),
         "minimum_vacuum_gap_to_magnet_clearance_cm": (
             min(clearances) if clearances else None
         ),
     }
     integrity_after = _validate_source(source, expected_manifest_sha256)
+    source_immutable = before["artifacts"] == integrity_after["artifacts"]
     report = {
         "schema": SCHEMA,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "status": (
             "PASS"
-            if all(
-                (
-                    summary["invalid_component_count"] == 0,
-                    summary["invalid_magnet_count"] == 0,
-                    summary["component_overlap_failures"] == 0,
-                    summary["magnet_component_overlap_failures"] == 0,
-                    summary["magnet_pair_overlap_failures"] == 0,
-                    summary["clearance_measurement_count"] == 18,
-                )
-            )
+            if _audit_pass(summary, source_immutable=source_immutable)
             else "BLOCKED_SOURCE_CAD_PHYSICAL_GATE"
         ),
         "source": str(source),
         "source_manifest_sha256": expected_manifest_sha256,
         "source_integrity_before": before["artifacts"],
         "source_integrity_after": integrity_after["artifacts"],
-        "source_immutable": before["artifacts"]
-        == integrity_after["artifacts"],
+        "source_immutable": source_immutable,
         "intersection_tolerance_cm3": INTERSECTION_TOLERANCE_CM3,
         "workers": workers,
         "component_inventory": component_inventory,
