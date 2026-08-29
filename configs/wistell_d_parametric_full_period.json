@@ -118,7 +118,7 @@
     "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
     "network": "none",
     "cpus": 4,
-    "memory_bytes": 12884901888
+    "memory_bytes": 10737418240
   },
   "safety": {
     "ports": false,
