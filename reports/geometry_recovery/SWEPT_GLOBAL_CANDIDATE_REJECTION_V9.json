@@ -1,0 +1,57 @@
+{
+  "schema": "parastell.geometry_recovery.swept_global_candidate_rejection/v1.0.0",
+  "attempt_id": "prompt7r-direct90-sourcecad-audit-v9-20260829T103000Z",
+  "status": "REJECTED_NONAUTHORITATIVE_SWEPT_GLOBAL_GEOMETRY",
+  "selectable": false,
+  "terminal": {
+    "return_code": 124,
+    "classification": "FAIL_CLOSED_TIMEOUT_INCOMPLETE_WITH_PHYSICAL_FAILURES",
+    "started_utc": "2026-08-29T10:31:59Z",
+    "finished_utc": "2026-08-29T12:27:09Z",
+    "elapsed_seconds": 6900,
+    "completed_progress_rows": 160,
+    "expected_total_pair_rows": 325,
+    "automatic_retry": false,
+    "meshing_launched": false,
+    "openmc_launched": false
+  },
+  "rejected_geometry": {
+    "representation": "18_explicit_swept_30x30_cm_coils_plus_8_radial_components",
+    "source_manifest_sha256": "a6162af45ca3e21f09eb7b3713fd64767f2faa2bb40dc739316b323823070271",
+    "repository_commit": "bc97e0cf4928784efa065ded454ea09a337e6e7d",
+    "reason_non_authoritative": "The accepted global WISTELL-D transport geometry is a continuous 30 cm radial magnet layer. The coil file is provenance for the boundary fields and is not permission to substitute explicit swept coils into the global H5M."
+  },
+  "observed_failures": [
+    {"magnet_id": "magnet-0006", "component": "low_temperature_shield", "boolean_common_volume_cm3": 49914.94311695689, "minimum_distance_cm": 1.2710574864626038e-13, "connected_solid_count": 4},
+    {"magnet_id": "magnet-0006", "component": "vacuum_gap", "boolean_common_volume_cm3": -268999.22970533295, "minimum_distance_cm": 0.0, "connected_solid_count": 3},
+    {"magnet_id": "magnet-0007", "component": "low_temperature_shield", "boolean_common_volume_cm3": -1665.2062370435597, "minimum_distance_cm": 1.1368683772161603e-13, "connected_solid_count": 6},
+    {"magnet_id": "magnet-0007", "component": "vacuum_gap", "boolean_common_volume_cm3": -164677.564480173, "minimum_distance_cm": 0.0, "connected_solid_count": 4},
+    {"magnet_id": "magnet-0009", "component": "low_temperature_shield", "boolean_common_volume_cm3": -7736.342097621491, "minimum_distance_cm": 1.7053025658242404e-13, "connected_solid_count": 4},
+    {"magnet_id": "magnet-0008", "component": "vacuum_gap", "boolean_common_volume_cm3": 965443.617327902, "minimum_distance_cm": 2.842170943040401e-14, "connected_solid_count": 4},
+    {"magnet_id": "magnet-0010", "component": "low_temperature_shield", "boolean_common_volume_cm3": 38121.54646835092, "minimum_distance_cm": 0.0, "connected_solid_count": 6},
+    {"magnet_id": "magnet-0009", "component": "vacuum_gap", "boolean_common_volume_cm3": 844616.4172895912, "minimum_distance_cm": 5.684341886080802e-14, "connected_solid_count": 4},
+    {"magnet_id": "magnet-0011", "component": "low_temperature_shield", "boolean_common_volume_cm3": 42348.53029109758, "minimum_distance_cm": 3.552713678800501e-15, "connected_solid_count": 4},
+    {"magnet_id": "magnet-0010", "component": "vacuum_gap", "boolean_common_volume_cm3": 137616.10057391133, "minimum_distance_cm": 0.0, "connected_solid_count": 4},
+    {"magnet_id": "magnet-0011", "component": "vacuum_gap", "boolean_common_volume_cm3": -14003.304315297522, "minimum_distance_cm": 0.0, "connected_solid_count": 3}
+  ],
+  "interpretation": {
+    "positive_common_volumes": "Definitive material penetrations in the rejected swept candidate.",
+    "negative_common_volumes": "Invalid/disconnected OCC Boolean results combined with zero or near-zero exact separation; they are failures, not negative physical overlap volumes.",
+    "current_authoritative_successor": "configs/wistell_d_parametric_full_period.json",
+    "current_authoritative_magnet_representation": "continuous_30_cm_radial_envelope"
+  },
+  "evidence": {
+    "external_root": "D:/parastell-artifacts/prompt7r-direct90-sourcecad-audit-v9-20260829T103000Z",
+    "launch_control_sha256": "83422d60164faf92c45385d2f189d560e01ae0614cb729a450084599ce37076a",
+    "launcher_sha256": "56b39a93eb66efe1f49e1bf229f6396a7c8031ab4a5625d072fc6b926cb69638",
+    "audit_implementation_sha256": "3cac55ed3fa1610daae66863c0c6de0538501cc53700557fd9098b97c351b098",
+    "progress_sha256": "62da7cd13ba67809a9930683da5971b12dc789364e819a7912c7c916b8a247a7",
+    "resource_usage_sha256": "b51303bd7eccc56f810c1d1c5bbedf6d10883566f098628261897b2b1ecb7f58",
+    "terminal_bindings_sha256": "15cc6cfcb635938950a49cb47d0c77e0d8ab593f9428767d20d73a9a04ccf143",
+    "scope_terminal": true,
+    "matching_processes_remaining": 0,
+    "ssh_poly_active_leases": 0,
+    "ssh_poly_reserved_threads": 0,
+    "ssh_poly_used_threads": 0
+  }
+}
