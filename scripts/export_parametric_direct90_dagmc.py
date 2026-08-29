@@ -1065,7 +1065,7 @@ def export(args: argparse.Namespace) -> None:
         for index, volume in enumerate(fragmented):
             signature = _gmsh_volume_signature(gmsh, volume)
             passed = _volume_signature_match(
-                source_signatures[index], signature
+                import_evidence[index]["imported_signature"], signature
             )
             fragment_evidence.append(
                 {
