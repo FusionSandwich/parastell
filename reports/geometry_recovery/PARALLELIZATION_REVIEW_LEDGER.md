@@ -319,3 +319,24 @@
   and input/output receipts now share one fail-closed API. The concrete
   WISTELL-D plan resolves to one full 90-degree period and passes live input,
   VMEC metadata, shape, positivity, and seam-closure validation.
+
+## 2026-08-29 — Direct-90 source audit and OpenMC handoff hardening
+
+- Serial/root-owned: accept or reject the exact 26-volume direct-90 H5M, then
+  authorize native DAGMC and bounded OpenMC gates in sequence. Meshing remains
+  forbidden until the source-CAD physical audit is terminal PASS.
+- Independently safe work completed: one reviewer cleared the 26-volume
+  exporter; a second review cycle found and closed surface-manifest/H5M,
+  writeback identity, material-role, and normal-sign consumer gaps; a third
+  design/review cycle cleared the generic 90-degree periodic OpenMC 0.16 model
+  builder after direct-export, premesh, native-gate, nuclear-data, source-rate,
+  and immutability bindings were added.
+- Active scheduler work: one Bateman source-CAD audit uses four physical cores,
+  a 40 GiB hard memory cap, no swap, a 10,800-second scientific timeout, and a
+  unique create-only v4 root. Completed rows are passing; no DAGMC meshing or
+  OpenMC transport successor has started.
+- Shared-artifact risks: v1 through v3 audits remain nonselectable evidence.
+  The new exporter, native qualification, topology/sign extraction, periodic
+  OpenMC model, and bounded surface transport each require distinct roots and
+  hash-bound receipts. No automatic successor and no overnight run are
+  authorized.

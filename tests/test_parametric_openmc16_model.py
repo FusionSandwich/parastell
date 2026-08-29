@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 import sys
 from types import SimpleNamespace
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -158,6 +160,24 @@ def test_accepts_hash_bound_direct90_evidence(tmp_path):
     control = builder._load_control(control_path, _sha(control_path))
     paths = builder._validate_evidence(control)
     assert paths["dagmc_h5m"].name == "dagmc.h5m"
+
+
+def test_committed_smoke_inputs_are_explicitly_nonproduction():
+    root = Path(__file__).resolve().parents[1]
+    source = json.loads(
+        (
+            root / "configs/wistell_d_parametric_openmc16_smoke_source.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert source["claim"] == "BOUNDED_SMOKE_ONLY"
+    materials = ET.parse(
+        root / "configs/wistell_d_parametric_openmc16_smoke_materials.xml"
+    ).getroot()
+    assert {row.get("name") for row in materials.findall("./material")} == (
+        builder.MATERIAL_NAMES
+    )
+    assert not materials.findall("./material/element")
+    assert not materials.findall("./material/sab")
 
 
 def test_rejects_half_period_or_assembled_extent(tmp_path):

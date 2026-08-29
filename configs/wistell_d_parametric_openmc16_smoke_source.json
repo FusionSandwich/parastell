@@ -1,0 +1,13 @@
+{
+  "angle": "isotropic",
+  "claim": "BOUNDED_SMOKE_ONLY",
+  "energy_eV": [
+    14100000.0
+  ],
+  "energy_law": "discrete",
+  "particle": "neutron",
+  "probability": [
+    1.0
+  ],
+  "schema": "parastell.source_physics_manifest/v1.0.0"
+}
