@@ -340,3 +340,29 @@
   OpenMC model, and bounded surface transport each require distinct roots and
   hash-bound receipts. No automatic successor and no overnight run are
   authorized.
+
+## 2026-08-29 05:40 EDT — Optimized source proof and full-response smoke wiring
+
+- Serial/root-owned: v8 is the only selectable source-CAD audit. Root alone
+  may accept its result and authorize a separately checked mesh attempt.
+- Active remote work: Bateman v8 holds four of 256 physical cores and a 40 GiB
+  hard cgroup limit, with swap disabled, `TasksMax=64`, a two-hour limit, and
+  all BLAS/OpenMP libraries capped at one thread. It has begun emitting passing
+  exact component-pair rows. No meshing or OpenMC process is running.
+- Safe parallel work completed: independent reviewers cleared the optimized
+  AABB/distance/Boolean proof cascade, geometry-debug runner, strict 18-magnet
+  inventory handoff, and arbitrary-magnet full-response smoke runner. Root
+  integrated and retested every change; reviewers did not edit this worktree.
+- Retired attempts: v4 was operationally nonviable; v5 and v6 were interrupted
+  before science during NFS/runtime import; v7 failed setup because this
+  systemd rejects `--wait` with `--scope`. Each is permanently nonselectable,
+  has zero live process/lease, and has no mesh or OpenMC successor.
+- Local verification: the current Docker suite passes 576 tests with 8 skips.
+  The full-response runner is capped at 100,000 histories/four threads/3,600
+  seconds, binds the executed model and selected nuclear data before/after,
+  wires activation-ready and isotope/MT responses plus the complete crossing
+  bank, and explicitly leaves statistics and bank content qualification to
+  later gates.
+- Shared-artifact risks: remote attempt roots and local generated plans remain
+  create-only and outside Git; only compact code/config/tests/reports enter the
+  branch. `wistell-d-openmc` remains untouched and out of scope.
