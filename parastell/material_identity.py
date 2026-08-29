@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ET
 
 
 SCHEMA = "parastell.material_identity/v1.0.0"
+SOURCE_KINDS = {"fusion-material-db-json", "openmc-materials-xml"}
 
 
 def _sha256(path: Path) -> str:
@@ -93,7 +94,65 @@ def _material_record(
             "isotopes": isotopes,
         }
     )
+    record["record_sha256"] = _canonical_sha256(record)
     return record
+
+
+def validate_material_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate and normalize one portable material-identity record."""
+    expected_keys = {
+        "schema",
+        "material_id",
+        "name",
+        "density_g_cm3",
+        "temperature_K",
+        "composition_basis",
+        "isotopes",
+        "citation",
+        "source",
+        "composition_sha256",
+        "record_sha256",
+    }
+    if set(record) != expected_keys:
+        raise ValueError("material-identity record keys differ")
+    if record.get("schema") != SCHEMA:
+        raise ValueError("unsupported material-identity schema")
+    source = record.get("source")
+    if not isinstance(source, Mapping) or set(source) != {
+        "kind",
+        "path",
+        "sha256",
+    }:
+        raise ValueError("material source provenance is required")
+    source_path = Path(str(source.get("path", ""))).resolve(strict=True)
+    source_hash = str(source.get("sha256", "")).lower()
+    if (
+        source.get("kind") not in SOURCE_KINDS
+        or len(source_hash) != 64
+        or any(char not in "0123456789abcdef" for char in source_hash)
+        or _sha256(source_path) != source_hash
+    ):
+        raise ValueError("material source provenance hash mismatch")
+    verified_source = {
+        "kind": source["kind"],
+        "path": str(source_path),
+        "sha256": source_hash,
+    }
+    normalized = _material_record(
+        material_id=record.get("material_id", ""),
+        name=record.get("name", ""),
+        density_g_cm3=record.get("density_g_cm3"),
+        temperature_K=record.get("temperature_K"),
+        composition=record.get("isotopes", {}),
+        composition_basis=str(record.get("composition_basis", "")),
+        source=verified_source,
+        citation=record.get("citation"),
+    )
+    if record.get("composition_sha256") != normalized["composition_sha256"]:
+        raise ValueError("material composition hash mismatch")
+    if record.get("record_sha256") != normalized["record_sha256"]:
+        raise ValueError("material record hash mismatch")
+    return normalized
 
 
 def read_fusion_material_db(
