@@ -8,12 +8,13 @@ cross-bin covariance: unavailable covariance is explicit in the result.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping, Sequence
+from itertools import pairwise
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import h5py
 import numpy as np
-
 
 SCHEMA = "parastell.openmc16_response_results/v1.0.0"
 SCORE_SEMANTICS = {
@@ -69,6 +70,92 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _read_filter(
+    node: h5py.Group, filter_id: int, tally_name: str
+) -> dict[str, Any]:
+    """Read one OpenMC filter without discarding compound bin identities."""
+    if "type" not in node or "n_bins" not in node:
+        raise ValueError(f"{tally_name} contains an invalid filter")
+    filter_type = _text(node["type"][()]).strip().lower()
+    n_bins = int(node["n_bins"][()])
+    if not filter_type or n_bins <= 0:
+        raise ValueError(f"{tally_name} contains an invalid filter")
+
+    if filter_type == "particleproduction":
+        if "particles" not in node:
+            raise ValueError(
+                f"{tally_name} particle-production identities are missing"
+            )
+        particles = [
+            _text(value).strip().lower() for value in node["particles"][:]
+        ]
+        if not particles or any(not value for value in particles):
+            raise ValueError(
+                f"{tally_name} particle-production identities are invalid"
+            )
+        energies = None
+        if "energies" in node:
+            numeric = np.asarray(node["energies"][:], dtype=float).reshape(-1)
+            if (
+                len(numeric) < 2
+                or np.any(~np.isfinite(numeric))
+                or np.any(np.diff(numeric) <= 0.0)
+            ):
+                raise ValueError(
+                    f"{tally_name} outgoing-energy edges are invalid"
+                )
+            energies = numeric.tolist()
+        energy_bins = 1 if energies is None else len(energies) - 1
+        if n_bins != len(particles) * energy_bins:
+            raise ValueError(
+                f"{tally_name} particle-production bin count is inconsistent"
+            )
+        bins: list[dict[str, Any]] = []
+        for particle in particles:
+            if energies is None:
+                bins.append({"produced_particle": particle})
+            else:
+                for low, high in pairwise(energies):
+                    bins.append(
+                        {
+                            "produced_particle": particle,
+                            "outgoing_energy_low_eV": low,
+                            "outgoing_energy_high_eV": high,
+                        }
+                    )
+        return {
+            "filter_id": filter_id,
+            "type": filter_type,
+            "n_bins": n_bins,
+            "bins": bins,
+            "particles": particles,
+            "outgoing_energy_edges_eV": energies,
+        }
+
+    if "bins" not in node:
+        raise ValueError(f"{tally_name} {filter_type} filter bins are missing")
+    bins = _native(node["bins"][:])
+    if filter_type == "energy":
+        numeric = np.asarray(bins, dtype=float).reshape(-1)
+        if (
+            len(numeric) != n_bins + 1
+            or np.any(~np.isfinite(numeric))
+            or np.any(np.diff(numeric) <= 0.0)
+        ):
+            raise ValueError(f"{tally_name} energy edges are invalid")
+        bins = numeric.tolist()
+    elif len(bins) != n_bins:
+        raise ValueError(
+            f"{tally_name} {filter_type} bin count is inconsistent"
+        )
+    return {
+        "filter_id": filter_id,
+        "type": filter_type,
+        "n_bins": n_bins,
+        "bins": bins,
+    }
 
 
 def _run_metadata(statepoint: h5py.File) -> dict[str, Any]:
@@ -128,7 +215,7 @@ def read_openmc16_tally(
         run = _run_metadata(statepoint)
         tallies = statepoint.get("tallies")
         if not isinstance(tallies, h5py.Group):
-            raise ValueError("statepoint has no tallies group")
+            raise TypeError("statepoint has no tallies group")
         tally = _find_tally(tallies, tally_name)
         required = {
             "score_bins",
@@ -152,28 +239,9 @@ def read_openmc16_tally(
         dimensions = []
         for filter_id in tally["filters"][:]:
             node = tallies[f"filters/filter {int(filter_id)}"]
-            filter_type = _text(node["type"][()]).strip()
-            n_bins = int(node["n_bins"][()])
-            if not filter_type or n_bins <= 0 or "bins" not in node:
-                raise ValueError(f"{tally_name} contains an invalid filter")
-            bins = _native(node["bins"][:])
-            if filter_type == "energy":
-                numeric = np.asarray(bins, dtype=float).reshape(-1)
-                if (
-                    len(numeric) != n_bins + 1
-                    or np.any(~np.isfinite(numeric))
-                    or np.any(np.diff(numeric) <= 0.0)
-                ):
-                    raise ValueError(f"{tally_name} energy edges are invalid")
-            filters.append(
-                {
-                    "filter_id": int(filter_id),
-                    "type": filter_type,
-                    "n_bins": n_bins,
-                    "bins": bins,
-                }
-            )
-            dimensions.append(n_bins)
+            filter_row = _read_filter(node, int(filter_id), tally_name)
+            filters.append(filter_row)
+            dimensions.append(int(filter_row["n_bins"]))
         realizations = int(tally["n_realizations"][()])
         if realizations <= 1:
             raise ValueError(
@@ -299,7 +367,7 @@ def tally_result_to_domain_estimators(
         raise ValueError("unsupported OpenMC response-result schema")
     filters = result.get("filters")
     if not isinstance(filters, list):
-        raise ValueError("response-result filters are missing")
+        raise TypeError("response-result filters are missing")
     types = [str(item.get("type")) for item in filters]
     if types.count("cell") != 1:
         raise ValueError("domain estimator requires exactly one cell filter")

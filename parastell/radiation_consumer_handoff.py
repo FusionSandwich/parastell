@@ -16,11 +16,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
-from .reaction_identity import canonical_mt, canonical_nuclide
-
+from .reaction_identity import canonical_mt, canonical_nuclide, mt_label
 
 SCHEMA = "parastell.radiation_consumer_handoff/v1.0.0"
 SCHEDULE_REFERENCE_SCHEMA = (
@@ -63,7 +63,9 @@ VOLUME_OBSERVABLES = {
     "hydrogen_production",
     "helium_production",
     "photon_production",
+    "particle_production",
     "reaction_rate",
+    "reaction_family_rate",
 }
 
 
@@ -193,6 +195,13 @@ def _file_sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def build_radiation_consumer_handoff(
@@ -441,6 +450,59 @@ def validate_radiation_consumer_handoff(bundle: Mapping[str, Any]) -> None:
         raise RadiationHandoffError(
             "deterministic projection replaced canonical bank"
         )
+    adapter = bundle.get("producer_adapter")
+    if adapter is not None:
+        if not isinstance(adapter, Mapping) or adapter.get("schema") != (
+            "parastell.openmc16_response_handoff_adapter/v1.0.0"
+        ):
+            raise RadiationHandoffError(
+                "statepoint adapter identity is invalid"
+            )
+        if adapter.get("status") != "STATEPOINT_RESULTS_BOUND":
+            raise RadiationHandoffError("statepoint results are not bound")
+        for key in (
+            "response_set_sha256",
+            "tally_bindings_sha256",
+            "volume_estimators_sha256",
+        ):
+            _sha256(adapter.get(key), f"statepoint adapter {key}")
+        if adapter.get("statepoint_sha256") != provenance.get(
+            "statepoint_sha256"
+        ):
+            raise RadiationHandoffError("statepoint adapter used another run")
+        if adapter.get("volume_estimators_sha256") != _canonical_sha256(
+            estimators
+        ):
+            raise RadiationHandoffError(
+                "statepoint estimator payload was modified"
+            )
+        if adapter.get("covariance_status") != "UNAVAILABLE_NOT_FABRICATED":
+            raise RadiationHandoffError(
+                "statepoint covariance claim is unsafe"
+            )
+        if adapter.get("integrated_totals_derived") is not False:
+            raise RadiationHandoffError(
+                "statepoint bins were combined without covariance"
+            )
+        for row in estimators:
+            if not isinstance(row, Mapping):
+                raise RadiationHandoffError(
+                    "estimator tally binding is missing"
+                )
+            _sha256(row.get("tally_binding_sha256"), "tally binding")
+            if row.get("covariance", {}).get("status") != "UNAVAILABLE":
+                raise RadiationHandoffError(
+                    "statepoint estimator covariance claim is unsafe"
+                )
+    content_sha256 = bundle.get("handoff_content_sha256")
+    if content_sha256 is not None:
+        _sha256(content_sha256, "radiation handoff content")
+        unhashed = dict(bundle)
+        del unhashed["handoff_content_sha256"]
+        if content_sha256 != _canonical_sha256(unhashed):
+            raise RadiationHandoffError(
+                "radiation handoff content was modified"
+            )
 
 
 def _validate_estimator(
@@ -539,27 +601,113 @@ def _validate_estimator(
             "hydrogen_production": "atoms/source_history",
             "helium_production": "atoms/source_history",
             "photon_production": "particles/source_history",
+            "particle_production": "particles/source_history",
             "reaction_rate": "reactions/source_history",
+            "reaction_family_rate": "reactions/source_history",
         }
-        if row.get("unit") != expected_units[observable]:
+        response_axes = row.get("response_axes")
+        if response_axes is not None:
+            if (
+                not isinstance(response_axes, list)
+                or len(response_axes) != 1
+                or not isinstance(response_axes[0], Mapping)
+                or response_axes[0].get("axis") != "incident_energy"
+                or response_axes[0].get("unit") != "eV"
+                or response_axes[0].get("bin_semantics")
+                != "integrated_over_bin"
+            ):
+                raise RadiationHandoffError(
+                    "response energy axis is ambiguous"
+                )
+            edges = response_axes[0].get("bin_edges")
+            if not isinstance(edges, list) or len(edges) != len(values) + 1:
+                raise RadiationHandoffError(
+                    "response energy bins are malformed"
+                )
+            numeric_edges = [float(value) for value in edges]
+            if any(
+                not math.isfinite(value) or value < 0.0
+                for value in numeric_edges
+            ) or numeric_edges != sorted(set(numeric_edges)):
+                raise RadiationHandoffError(
+                    "response energy bins must increase"
+                )
+            expected_unit = expected_units[observable] + "/bin"
+            if not str(row.get("integration_semantics", "")).strip():
+                raise RadiationHandoffError(
+                    "bin-integrated response semantics are missing"
+                )
+        else:
+            expected_unit = expected_units[observable]
+        if row.get("unit") != expected_unit:
             raise RadiationHandoffError(
                 f"{observable} estimator unit is invalid"
             )
-    if observable == "reaction_rate":
+    if observable in {"reaction_rate", "reaction_family_rate"}:
         if (
-            not str(row.get("nuclide", "")).strip()
+            not str(
+                row.get("reaction_filter_bin", row.get("reaction", ""))
+            ).strip()
             or not str(row.get("reaction", "")).strip()
             or row.get("mt") is None
         ):
             raise RadiationHandoffError("reaction-rate identity is incomplete")
         try:
-            if canonical_nuclide(row["nuclide"]) != row["nuclide"]:
-                raise ValueError("nuclide is not canonical")
-            canonical_mt(row["mt"])
+            if observable == "reaction_rate":
+                if canonical_nuclide(row["nuclide"]) != row["nuclide"]:
+                    raise ValueError("nuclide is not canonical")
+            elif row.get("nuclide") != "total":
+                raise ValueError("family reaction must use total nuclide")
+            mt = canonical_mt(row["mt"])
+            if "tally_binding_sha256" in row and row.get(
+                "reaction"
+            ) != mt_label(mt):
+                raise ValueError("reaction label does not match MT")
         except ValueError as exc:
             raise RadiationHandoffError(
                 "reaction-rate identity is incomplete"
             ) from exc
+    if observable in {"hydrogen_production", "helium_production"}:
+        expected = {
+            "H1-production": ("hydrogen_production", "H1", "hydrogen"),
+            "H2-production": ("hydrogen_production", "H2", "hydrogen"),
+            "H3-production": ("hydrogen_production", "H3", "hydrogen"),
+            "He3-production": ("helium_production", "He3", "helium"),
+            "He4-production": ("helium_production", "He4", "helium"),
+        }.get(row.get("score"))
+        if expected != (
+            observable,
+            row.get("gas_isotope"),
+            row.get("gas_element"),
+        ):
+            raise RadiationHandoffError(
+                "gas-production identity is incomplete"
+            )
+    if observable == "particle_production":
+        if not str(row.get("produced_particle", "")).strip():
+            raise RadiationHandoffError(
+                "produced-particle identity is missing"
+            )
+        outgoing_bin = row.get("outgoing_energy_bin_eV")
+        outgoing_total = row.get("outgoing_energy_integration")
+        if (outgoing_bin is None) == (outgoing_total is None):
+            raise RadiationHandoffError(
+                "outgoing-energy identity is ambiguous"
+            )
+        if outgoing_bin is not None:
+            if not isinstance(outgoing_bin, list) or len(outgoing_bin) != 2:
+                raise RadiationHandoffError("outgoing-energy bin is malformed")
+            low, high = [float(value) for value in outgoing_bin]
+            if not (
+                math.isfinite(low)
+                and math.isfinite(high)
+                and 0.0 <= low < high
+            ):
+                raise RadiationHandoffError("outgoing-energy bin is invalid")
+        elif outgoing_total != "all_outgoing_energies":
+            raise RadiationHandoffError(
+                "outgoing-energy integration is invalid"
+            )
 
 
 def spectra_pka_inputs(bundle: Mapping[str, Any]) -> list[dict[str, Any]]:
