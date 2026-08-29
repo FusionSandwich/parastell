@@ -1,0 +1,45 @@
+{
+  "schema": "parastell.continuous90_source_build_attempt/v1.0.0",
+  "attempt_id": "prompt7r-continuous-direct90-sourcecad-v1-20260829T124000Z",
+  "status": "FAIL_CLOSED_HOST_MEMORY_FLOOR_STOP",
+  "selectable": false,
+  "source_revision": "01ab1843d796286f3644bf3662249401598cee03",
+  "docker": {
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "network": "none",
+    "cpu_limit": 4,
+    "memory_limit_bytes": 12884901888,
+    "swap_limit_bytes": 12884901888,
+    "return_code": 137,
+    "operator_stop": true,
+    "oom_claim": "NOT_MADE_CONTAINER_REMOVED_BEFORE_FINAL_INSPECT"
+  },
+  "geometry_contract": {
+    "config_sha256": "e55296e3ef97dc1a7fc47259536901451b257d8e50b4a9f6014b1f298fc0e4a3",
+    "resolved_plan_sha256": "96a8b31938b2ea83e22f298f6034dd407411a0ad4a937d09af57f47197f4bbc8",
+    "extent_degrees": 90.0,
+    "component_count_expected": 9,
+    "magnet_representation": "radial_envelope"
+  },
+  "resource_gate": {
+    "declared_host_free_memory_floor_gib": 2.0,
+    "last_observed_host_free_memory_gib": 1.84,
+    "action": "docker_stop_with_30_second_grace",
+    "post_stop_host_free_memory_gib": 10.18
+  },
+  "partial_artifacts": [
+    {"path": "BUILD_STARTED.json", "bytes": 1815, "sha256": "e46d2581443dc1311cfc3ba6584b04ed35e661c030414b6500aa7b2b6cae93e7"},
+    {"path": "chamber.step", "bytes": 59933816, "sha256": "7876839056b6d0115461a31fafa149367a7fc0083f36cfdfee033c6dec886144"},
+    {"path": "first_wall.step", "bytes": 120499351, "sha256": "25e8bbcbc711d6d2c51e8e76683b7e14e9c522971123dcaf58192676cfc3eae9"}
+  ],
+  "missing_required_outputs": [
+    "remaining seven component STEP files",
+    "PARAMETRIC_GEOMETRY_MANIFEST.json",
+    "source mesh",
+    "source-CAD audit and seal"
+  ],
+  "automatic_retry": false,
+  "meshing_launched": false,
+  "openmc_launched": false,
+  "external_root": "D:/parastell-artifacts/prompt7r-continuous-direct90-sourcecad-v1-20260829T124000Z"
+}
