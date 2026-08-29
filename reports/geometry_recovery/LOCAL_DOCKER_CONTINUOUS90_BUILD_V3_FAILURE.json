@@ -1,0 +1,41 @@
+{
+  "schema": "parastell.continuous90_source_build_attempt/v1.0.0",
+  "attempt_id": "prompt7r-continuous-direct90-sourcecad-v3-20260829T131000Z",
+  "status": "FAIL_CLOSED_HOST_MEMORY_FLOOR",
+  "selectable": false,
+  "source_revision": "b8b2a9f44258816b7b79cf15929b133dffd2d718",
+  "docker": {
+    "container_id": "755c03675846",
+    "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
+    "network": "none",
+    "cpu_limit": 4,
+    "memory_limit_bytes": 10737418240,
+    "swap_limit_bytes": 10737418240,
+    "oom_killed": false,
+    "exit_code": 137,
+    "started_utc": "2026-08-29T13:08:55.773294799Z",
+    "finished_utc": "2026-08-29T13:13:04.256192804Z",
+    "operator_stop": true,
+    "operator_stop_reason": "Host free physical memory fell below the preregistered 2 GiB reserve floor.",
+    "minimum_observed_host_free_bytes": 1886445568,
+    "last_observed_container_memory": "3.368 GiB / 10 GiB"
+  },
+  "geometry_contract": {
+    "config_sha256": "6a3e8673ce6cd4d244a4c895dc4d748ee696c6271ddd2959923d3ff675815fe6",
+    "resolved_plan_sha256": "b5ff0ecbf1cf012bfd02df310ca6937a69198aa1df9f5d013bffeef8d701b480",
+    "extent_degrees": 90.0,
+    "component_count_expected": 9,
+    "magnet_representation": "radial_envelope"
+  },
+  "partial_artifacts": [
+    {"path": "BUILD_STARTED.json", "bytes": 1815, "sha256": "7690929e776fe82499f8382916198c350c2e7f588ab7202e4c7f228e81266718"},
+    {"path": "chamber.step", "bytes": 59933816, "sha256": "b1c57ba0bd98077c4b3ae057c93720ed6ca65f88c5866b67f28361b99a682fab"},
+    {"path": "first_wall.step", "bytes": 120499351, "sha256": "01fc4b6a2fed0da2d78386c283c41247b7aee9e5e205bdf07a678bf4f4adeb59"},
+    {"path": "breeder.step", "bytes": 120271540, "sha256": "cf1c1eee8345e36ddaa7d1014428c7ac92dd455491d3d6c8dafe98e4531da391"}
+  ],
+  "terminal_conclusion": "The exact direct-90 source construction exceeds the safe local Docker memory envelope. Continue only in a separately qualified higher-memory runtime; do not reuse this partial root.",
+  "automatic_retry": false,
+  "meshing_launched": false,
+  "openmc_launched": false,
+  "external_root": "D:/parastell-artifacts/prompt7r-continuous-direct90-sourcecad-v3-20260829T131000Z"
+}
