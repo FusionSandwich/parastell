@@ -1,0 +1,52 @@
+{
+  "case_id": "wistell-d-parametric-direct90-full-response-smoke",
+  "magnet_ids": [
+    "magnet-0000",
+    "magnet-0001",
+    "magnet-0002",
+    "magnet-0003",
+    "magnet-0004",
+    "magnet-0005",
+    "magnet-0006",
+    "magnet-0007",
+    "magnet-0008",
+    "magnet-0009",
+    "magnet-0010",
+    "magnet-0011",
+    "magnet-0012",
+    "magnet-0013",
+    "magnet-0014",
+    "magnet-0015",
+    "magnet-0016",
+    "magnet-0017"
+  ],
+  "energy_axes_eV": {
+    "neutron": [
+      0.0,
+      0.5,
+      100000.0,
+      1000000.0,
+      20000000.0
+    ],
+    "photon": [
+      0.0,
+      100000.0,
+      1000000.0,
+      20000000.0
+    ]
+  },
+  "nuclide_mt_requests": {
+    "Cu63": [
+      2,
+      16,
+      102,
+      103,
+      107
+    ]
+  },
+  "local_mesh_bins_per_magnet": 0,
+  "reaction_family_count": 6,
+  "scope": "BOUNDED_SOFTWARE_AND_GEOMETRY_SMOKE_ONLY",
+  "statistics_qualified": false,
+  "production_authorized": false
+}
