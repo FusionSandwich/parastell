@@ -1,4 +1,5 @@
 import argparse
+from collections.abc import Mapping, Set
 import math
 from pathlib import Path
 from abc import ABC
@@ -292,6 +293,10 @@ class MagnetSetFromFilaments(MagnetSet):
             (defaults to 3).
         sample_mod (int): sampling modifier for filament points (defaults to
             1). For a user-defined value n, every nth point will be sampled.
+        filament_indices (iterable of int): optional zero-based indices in the
+            toroidally sorted, extent-filtered filament inventory. This is an
+            explicit geometry-selection hook; callers must bind the selected
+            index to an independently verified filament identity.
         scale (float): a scaling factor between input and output data
             (defaults to m2cm = 100).
         mat_tag (str or iterable of str): DAGMC material tag(s) to use for
@@ -317,6 +322,7 @@ class MagnetSetFromFilaments(MagnetSet):
 
         self.start_line = 3
         self.sample_mod = 1
+        self.filament_indices = None
         self.scale = m2cm
 
         self.width = width
@@ -339,10 +345,44 @@ class MagnetSetFromFilaments(MagnetSet):
         for name in kwargs.keys() & (
             "start_line",
             "sample_mod",
+            "filament_indices",
             "scale",
             "mat_tag",
         ):
             self.__setattr__(name, kwargs[name])
+
+    @property
+    def filament_indices(self):
+        return self._filament_indices
+
+    @filament_indices.setter
+    def filament_indices(self, values):
+        if values is None:
+            self._filament_indices = None
+            return
+        if isinstance(values, (str, bytes, Mapping, Set)):
+            raise TypeError("filament_indices must be an iterable of integers")
+        try:
+            indices = tuple(values)
+        except TypeError as exc:
+            raise TypeError(
+                "filament_indices must be an iterable of integers"
+            ) from exc
+        if not indices:
+            raise ValueError("filament_indices cannot be empty")
+        if any(
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or int(value) < 0
+            for value in indices
+        ):
+            raise ValueError(
+                "filament_indices must contain nonnegative integers"
+            )
+        normalized = tuple(int(value) for value in indices)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("filament_indices cannot contain duplicates")
+        self._filament_indices = normalized
 
     @property
     def width(self):
@@ -474,6 +514,19 @@ class MagnetSetFromFilaments(MagnetSet):
                 )
             )
 
+    def _select_filaments(self):
+        """Apply an explicit selection to the filtered, sorted inventory."""
+        if self.filament_indices is None:
+            return
+        count = len(self.filaments)
+        if any(index >= count for index in self.filament_indices):
+            raise IndexError(
+                "filament index is outside the filtered, sorted inventory"
+            )
+        self.filaments = [
+            self.filaments[index] for index in self.filament_indices
+        ]
+
     def _compute_radial_distance_data(self):
         """Computes average and maximum radial distance of filament points.
         (Internal function not intended to be called externally)
@@ -529,6 +582,7 @@ class MagnetSetFromFilaments(MagnetSet):
         # Multiply by factor of 2 to be conservative
         tol = 2 * np.arctan2(self.max_cs_len, self.average_radial_distance)
         self._filter_filaments(tol=tol)
+        self._select_filaments()
         self._instantiate_coils()
 
     def build_magnet_coils(self):

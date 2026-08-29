@@ -385,3 +385,22 @@
   mesh remains conditional on a terminal PASS, independent receipt review,
   fresh create-only root, live zero-ledger/headroom check, and a separate hard
   memory cgroup with swap disabled.
+
+## 2026-08-29 06:18 EDT — Source-audit v8 retirement and v9 review
+
+- Serial/root-owned: v8 was retired after measured throughput proved it could
+  not complete before its frozen timeout. Its exact timeout PID received TERM;
+  the scope is inactive/dead, all six scientific PIDs are gone, and the shared
+  ledger is zero. It remains permanently nonselectable.
+- Preserved evidence: 54/54 completed rows passed (all 28 component pairs and
+  26 magnet/component pairs), with zero failed rows. No final audit/seal, H5M,
+  native DAGMC, or OpenMC successor exists. The terminal bindings, resource
+  usage, progress log, and compact failure classification are hash-bound.
+- Safe parallel work: the bounded audit worker ceiling is raised from 4 to 16
+  without changing task definitions, completion ordering, tolerances, or pass
+  criteria. Focused audit tests pass 15/15. An independent reviewer is checking
+  the proposed 16-core/96 GiB/swap-off v9 controls before any launch.
+- Shared-state risk: v9 must use a fresh source extraction, root, tmp directory,
+  systemd unit, nonce, PID/log identities, and ssh-poly lease. It cannot launch
+  until a live zero-ledger, physical-core, MemTotal, filesystem, and root
+  absence check passes. Meshing remains forbidden.

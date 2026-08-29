@@ -206,6 +206,50 @@ def test_full_torus_filter_preserves_all_filaments():
     assert len(magnet_set.filaments) == 3
 
 
+def test_explicit_filament_selection_uses_filtered_sorted_index():
+    magnet_set = magnet_coils.MagnetSetFromFilaments.__new__(
+        magnet_coils.MagnetSetFromFilaments
+    )
+    magnet_set.filaments = [object(), object(), object()]
+    expected = magnet_set.filaments[1]
+    magnet_set.filament_indices = [1]
+    magnet_set._select_filaments()
+    assert magnet_set.filaments == [expected]
+
+
+@pytest.mark.parametrize(
+    "selection,error",
+    [
+        ([], ValueError),
+        ([0, 0], ValueError),
+        ([-1], ValueError),
+        ([True], ValueError),
+        ([0.5], ValueError),
+        ("0", TypeError),
+        ({0, 1}, TypeError),
+        ({0: "first", 1: "second"}, TypeError),
+    ],
+)
+def test_explicit_filament_selection_rejects_ambiguous_values(
+    selection, error
+):
+    magnet_set = magnet_coils.MagnetSetFromFilaments.__new__(
+        magnet_coils.MagnetSetFromFilaments
+    )
+    with pytest.raises(error):
+        magnet_set.filament_indices = selection
+
+
+def test_explicit_filament_selection_rejects_unknown_index():
+    magnet_set = magnet_coils.MagnetSetFromFilaments.__new__(
+        magnet_coils.MagnetSetFromFilaments
+    )
+    magnet_set.filaments = [object()]
+    magnet_set.filament_indices = [1]
+    with pytest.raises(IndexError, match="outside"):
+        magnet_set._select_filaments()
+
+
 def test_sparse_filament_segment_crossing_sector_is_retained():
     """A crossing segment is conservative even when both vertices are out."""
     angles = np.deg2rad([350.0, 100.0])

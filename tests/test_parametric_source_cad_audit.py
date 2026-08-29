@@ -280,3 +280,16 @@ def test_one_worker_runs_in_process_without_constructing_pool(
     )
     assert initialized == [("source", ["component"])]
     assert rows["stage"] == [{"value": 1}, {"value": 2}]
+
+
+@pytest.mark.parametrize("workers", [0, 17])
+def test_audit_rejects_worker_count_outside_bounded_contract(
+    tmp_path, workers
+):
+    with pytest.raises(ValueError, match="between one and sixteen"):
+        audit_module.audit(
+            tmp_path / "source",
+            tmp_path / "output",
+            expected_manifest_sha256="0" * 64,
+            workers=workers,
+        )

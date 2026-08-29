@@ -331,8 +331,8 @@ def audit(
 ) -> dict:
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"create-only output exists: {output}")
-    if workers < 1 or workers > 4:
-        raise ValueError("workers must be between one and four")
+    if workers < 1 or workers > 16:
+        raise ValueError("workers must be between one and sixteen")
     source = source.resolve()
     before = _validate_source(source, expected_manifest_sha256)
     output.mkdir(parents=False)

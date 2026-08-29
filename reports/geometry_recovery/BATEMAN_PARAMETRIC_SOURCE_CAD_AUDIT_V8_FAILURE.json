@@ -1,0 +1,61 @@
+{
+  "schema": "parastell.parametric_source_cad_audit_attempt/v1.0.0",
+  "attempt_id": "prompt7r-direct90-sourcecad-audit-v8-20260829T093000Z",
+  "status": "FAIL_CLOSED_OPERATOR_RETIRED_PROJECTED_TIMEOUT_INCOMPLETE",
+  "selectable": false,
+  "remote_root": "/home/apollon/josma/data/codex-parastell/prompt7r-direct90-sourcecad-audit-v8-20260829T093000Z",
+  "started_utc": "2026-08-29T09:30:21Z",
+  "termination_requested_utc": "2026-08-29T10:17:17Z",
+  "terminal_utc": "2026-08-29T10:17:18Z",
+  "terminal_return_code": 143,
+  "retirement_reason": "Measured four-worker throughput could not complete the remaining 118 magnet/component and 153 magnet/magnet pairs before the frozen 6900-second limit.",
+  "bindings": {
+    "repository_commit_at_launch": "12081fc06488ca363e6b0b1a90ec605b9a115a37",
+    "source_bundle_sha256": "f3343574d4cfbe6b5d9d26b737e59cec5027a0fc327e8391c400dfd817b96f90",
+    "source_manifest_sha256": "a6162af45ca3e21f09eb7b3713fd64767f2faa2bb40dc739316b323823070271",
+    "audit_implementation_sha256": "c7ccd2a3dada75bb9833f96a1b5d210f8f6ec5967bccc5ec9ced0c48b1b1d619",
+    "launch_control_sha256": "f1d876f3a456595b76f94537f671449110fa4b58142fbbf272f84fc3c280140a",
+    "launcher_sha256": "90581d6af63b6265e5f5efdd0777c9426652652b4fe0d745fb1af472908627a2",
+    "terminal_bindings_sha256": "1bc408e79bda2fc5bfcc0f6c821c93b986ff6d5cb861198bec9761da179c5f08",
+    "resource_usage_sha256": "342a8b5cc6fca7dc0f6181b46ae22474665530dfd24ed11609df66ba66a8aee0",
+    "progress_sha256": "59dc16577fb3d0fa4f2b61266268ddad4562b1edac5bd1cfa5fc420f8d6f11ef"
+  },
+  "completed_evidence": {
+    "progress_row_count": 54,
+    "passing_row_count": 54,
+    "failing_row_count": 0,
+    "component_pair_count": 28,
+    "magnet_component_pair_count": 26,
+    "magnet_pair_count": 0
+  },
+  "missing_evidence": {
+    "magnet_component_pair_count": 118,
+    "magnet_pair_count": 153,
+    "final_source_immutability_check": true,
+    "audit_report": true,
+    "audit_seal": true
+  },
+  "resources": {
+    "physical_cores_requested": 4,
+    "memory_max_bytes": 42949672960,
+    "memory_peak_bytes": 22354583552,
+    "swap_enabled": false,
+    "elapsed_wall_seconds": 2799.74
+  },
+  "cleanup": {
+    "scope_active_state": "inactive",
+    "scope_sub_state": "dead",
+    "scientific_pids_remaining": 0,
+    "active_leases": 0,
+    "reserved_threads": 0,
+    "observed_unreserved_threads": 0,
+    "available_policy_threads": 64
+  },
+  "outputs": {
+    "dagmc_h5m_created": false,
+    "native_dagmc_started": false,
+    "openmc_started": false,
+    "automatic_successor_started": false
+  },
+  "next_action": "Use a fresh create-only attempt with independently reviewed higher worker parallelism and a live ssh-poly CPU/memory/lease check; do not reuse v8."
+}
