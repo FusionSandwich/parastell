@@ -107,6 +107,9 @@
     "poloidal_points": 81,
     "toroidal_points": 61
   },
+  "construction": {
+    "radial_build_mode": "isolated_cumulative_shells"
+  },
   "runtime": {
     "kind": "docker",
     "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",

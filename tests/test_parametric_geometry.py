@@ -633,6 +633,77 @@ def test_wistell_profile_preserves_accepted_component_identity():
         "start_line": 3,
         "scale": 100.0,
     }
+    assert config["construction"] == {
+        "radial_build_mode": "isolated_cumulative_shells"
+    }
+
+
+def test_isolated_shells_preserve_exact_cumulative_boundaries(
+    tmp_path, monkeypatch
+):
+    _, config_path, inputs = _fixture(tmp_path)
+    resolved = resolve_geometry(load_plan(config_path, inputs))
+    calls = []
+
+    class FakeSolid:
+        def Volume(self):
+            return 1.0
+
+        def Solids(self):
+            return [self]
+
+        def isValid(self):
+            return True
+
+    class FakeStellarator:
+        def __init__(self, vmec_path):
+            self.vmec_path = vmec_path
+
+        def construct_invessel_build(self, *args, **kwargs):
+            radial_build = args[3]
+            calls.append(
+                {
+                    name: np.array(row["thickness_matrix"], copy=True)
+                    for name, row in radial_build.items()
+                }
+            )
+            self.invessel_build = types.SimpleNamespace(
+                Components={
+                    name: FakeSolid()
+                    for name in ("chamber", *radial_build.keys())
+                }
+            )
+
+    fake_module = types.SimpleNamespace(Stellarator=FakeStellarator)
+    monkeypatch.setattr(
+        parametric_geometry,
+        "_export_step_solid",
+        lambda solid, path: path.write_bytes(b"isolated-shell"),
+    )
+    evidence, stages = (
+        parametric_geometry._construct_isolated_cumulative_shells(
+            ps=fake_module,
+            plan=resolved.plan,
+            resolved=resolved,
+            config=resolved.plan.config,
+            output_root=tmp_path,
+        )
+    )
+    layer_names = [row["name"] for row in resolved.plan.config["layers"]]
+    assert len(calls) == len(layer_names)
+    assert tuple(calls[0]) == (layer_names[0],)
+    cumulative = np.zeros(resolved.plan.grid_shape)
+    for index, name in enumerate(layer_names):
+        if index:
+            assert np.array_equal(
+                calls[index]["__cumulative_interior__"], cumulative
+            )
+        assert np.array_equal(calls[index][name], resolved.thickness_cm[name])
+        cumulative += resolved.thickness_cm[name]
+    assert set(evidence) == {"chamber", *layer_names}
+    assert [row["component"] for row in stages] == layer_names
+    assert (tmp_path / "chamber.step").is_file()
+    assert all((tmp_path / f"{name}.step").is_file() for name in layer_names)
 
 
 def test_direct_host_source_cad_build_is_rejected_before_output(tmp_path):

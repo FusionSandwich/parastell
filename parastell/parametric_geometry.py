@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import gc
 import hashlib
 import json
 import math
@@ -32,6 +33,7 @@ SAFETY_POLICY = {
 MAGNET_REPRESENTATIONS = frozenset({"radial_envelope", "swept_filaments"})
 SECTOR_MODES = frozenset({"stellarator_half_period", "full_periods", "direct"})
 CONTAINER_ATTESTATION = "parastell-parametric-create-only-v1"
+RADIAL_BUILD_MODES = frozenset({"monolithic", "isolated_cumulative_shells"})
 
 
 class ParametricGeometryError(ValueError):
@@ -198,6 +200,9 @@ class GeometryPlan:
             "grid_shape": list(self.grid_shape),
             "component_order": list(self.component_order),
             "magnet_representation": self.config["magnets"]["representation"],
+            "radial_build_mode": self.config.get("construction", {}).get(
+                "radial_build_mode", "monolithic"
+            ),
             "safety": dict(SAFETY_POLICY),
         }
 
@@ -500,6 +505,15 @@ def _validate_runtime_and_safety(config: Mapping[str, Any]) -> None:
     if source.get("enabled"):
         for key in ("radial_points", "poloidal_points", "toroidal_points"):
             _positive_integer(source.get(key), f"source_mesh.{key}", minimum=2)
+    construction = config.get("construction", {})
+    if not isinstance(construction, Mapping):
+        raise ParametricGeometryError("construction must be an object")
+    _require_exact_keys(construction, {"radial_build_mode"}, "construction")
+    mode = construction.get("radial_build_mode", "monolithic")
+    if mode not in RADIAL_BUILD_MODES:
+        raise ParametricGeometryError(
+            f"unsupported radial-build construction mode: {mode}"
+        )
 
 
 def load_plan(
@@ -531,6 +545,7 @@ def load_plan(
             "layers",
             "magnets",
             "source_mesh",
+            "construction",
             "runtime",
             "safety",
         },
@@ -798,6 +813,106 @@ def _solid_evidence(solid: Any, label: str) -> dict[str, Any]:
     return {"solid_count": 1, "brep_valid": True, "volume_cm3": volume}
 
 
+def _matrix_sha256(values: np.ndarray) -> str:
+    array = np.asarray(values, dtype="<f8")
+    digest = hashlib.sha256()
+    digest.update(np.asarray(array.shape, dtype="<i8").tobytes())
+    digest.update(array.tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def _export_step_solid(solid: Any, path: Path) -> None:
+    import cadquery as cq
+
+    cq.exporters.export(solid, str(path))
+
+
+def _construct_isolated_cumulative_shells(
+    *,
+    ps: Any,
+    plan: GeometryPlan,
+    resolved: ResolvedGeometry,
+    config: Mapping[str, Any],
+    output_root: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Construct exact cumulative boundaries while bounding live CAD.
+
+    ParaStell defines every radial surface from the cumulative thickness
+    matrix. For layer ``k`` the isolated build therefore uses the same
+    cumulative matrix through ``k-1`` as an unexported interior and the exact
+    layer-``k`` matrix as the target shell. This changes object lifetime only;
+    it does not change either bounding surface.
+    """
+    toroidal = np.linspace(0.0, plan.extent_degrees, plan.grid_shape[0])
+    poloidal = np.linspace(0.0, 360.0, plan.grid_shape[1])
+    cumulative = np.zeros(plan.grid_shape, dtype=float)
+    evidence: dict[str, Any] = {}
+    stages: list[dict[str, Any]] = []
+    for index, layer in enumerate(config["layers"]):
+        name = layer["name"]
+        target = resolved.thickness_cm[name]
+        radial_build: dict[str, dict[str, Any]] = {}
+        if index:
+            radial_build["__cumulative_interior__"] = {
+                "thickness_matrix": np.array(cumulative, copy=True),
+                "mat_tag": config["chamber_material"],
+            }
+        radial_build[name] = {
+            "thickness_matrix": target,
+            "mat_tag": layer["material"],
+        }
+        stellarator = ps.Stellarator(str(plan.input_files["vmec"]))
+        stellarator.construct_invessel_build(
+            toroidal,
+            poloidal,
+            float(config["wall_s"]),
+            radial_build,
+            split_chamber=False,
+            chamber_mat_tag=config["chamber_material"],
+            num_ribs=plan.grid_shape[0],
+            num_rib_pts=plan.grid_shape[1],
+        )
+        expected = (
+            ("chamber", name)
+            if index == 0
+            else ("chamber", "__cumulative_interior__", name)
+        )
+        actual = tuple(stellarator.invessel_build.Components)
+        if actual != expected:
+            raise RuntimeError(
+                f"isolated stage {name} components {actual} != {expected}"
+            )
+        if index == 0:
+            chamber = stellarator.invessel_build.Components["chamber"]
+            evidence["chamber"] = _solid_evidence(chamber, "component chamber")
+            _export_step_solid(chamber, output_root / "chamber.step")
+        target_solid = stellarator.invessel_build.Components[name]
+        evidence[name] = _solid_evidence(target_solid, f"component {name}")
+        _export_step_solid(target_solid, output_root / f"{name}.step")
+        cumulative_before = np.array(cumulative, copy=True)
+        cumulative += np.asarray(target, dtype=float)
+        stages.append(
+            {
+                "stage_index": index,
+                "component": name,
+                "cumulative_inner_matrix_sha256": _matrix_sha256(
+                    cumulative_before
+                ),
+                "layer_matrix_sha256": _matrix_sha256(target),
+                "cumulative_outer_matrix_sha256": _matrix_sha256(cumulative),
+                "unexported_helper_component": (
+                    "__cumulative_interior__" if index else None
+                ),
+                "exported_components": (
+                    ["chamber", name] if index == 0 else [name]
+                ),
+            }
+        )
+        del target_solid, stellarator
+        gc.collect()
+    return evidence, stages
+
+
 def _filament_identity(coords: Any) -> dict[str, Any]:
     """Return a coordinate-order-preserving identity for one source filament."""
     array = np.asarray(coords, dtype="<f8")
@@ -872,41 +987,60 @@ def build_source_cad(
         plan = resolved.plan
         config = plan.config
         live_vmec = read_vmec_metadata(plan)
-        stellarator = ps.Stellarator(str(plan.input_files["vmec"]))
-        toroidal = np.linspace(0.0, plan.extent_degrees, plan.grid_shape[0])
-        poloidal = np.linspace(0.0, 360.0, plan.grid_shape[1])
-        radial_build = {
-            layer["name"]: {
-                "thickness_matrix": resolved.thickness_cm[layer["name"]],
-                "mat_tag": layer["material"],
-            }
-            for layer in config["layers"]
-        }
-        stellarator.construct_invessel_build(
-            toroidal,
-            poloidal,
-            float(config["wall_s"]),
-            radial_build,
-            split_chamber=False,
-            chamber_mat_tag=config["chamber_material"],
-            num_ribs=plan.grid_shape[0],
-            num_rib_pts=plan.grid_shape[1],
-        )
         expected_invessel = (
             "chamber",
             *(layer["name"] for layer in config["layers"]),
         )
-        actual_invessel = tuple(stellarator.invessel_build.Components)
-        if actual_invessel != expected_invessel:
-            raise RuntimeError(
-                f"actual in-vessel components {actual_invessel} != {expected_invessel}"
+        radial_build_mode = config.get("construction", {}).get(
+            "radial_build_mode", "monolithic"
+        )
+        construction_stages: list[dict[str, Any]] = []
+        if radial_build_mode == "isolated_cumulative_shells":
+            component_evidence, construction_stages = (
+                _construct_isolated_cumulative_shells(
+                    ps=ps,
+                    plan=plan,
+                    resolved=resolved,
+                    config=config,
+                    output_root=output_root,
+                )
             )
-        component_evidence = {}
-        for name, solid in stellarator.invessel_build.Components.items():
-            component_evidence[name] = _solid_evidence(
-                solid, f"component {name}"
+            actual_invessel = expected_invessel
+            stellarator = ps.Stellarator(str(plan.input_files["vmec"]))
+        else:
+            stellarator = ps.Stellarator(str(plan.input_files["vmec"]))
+            toroidal = np.linspace(
+                0.0, plan.extent_degrees, plan.grid_shape[0]
             )
-        stellarator.export_invessel_build_step(export_dir=str(output_root))
+            poloidal = np.linspace(0.0, 360.0, plan.grid_shape[1])
+            radial_build = {
+                layer["name"]: {
+                    "thickness_matrix": resolved.thickness_cm[layer["name"]],
+                    "mat_tag": layer["material"],
+                }
+                for layer in config["layers"]
+            }
+            stellarator.construct_invessel_build(
+                toroidal,
+                poloidal,
+                float(config["wall_s"]),
+                radial_build,
+                split_chamber=False,
+                chamber_mat_tag=config["chamber_material"],
+                num_ribs=plan.grid_shape[0],
+                num_rib_pts=plan.grid_shape[1],
+            )
+            actual_invessel = tuple(stellarator.invessel_build.Components)
+            if actual_invessel != expected_invessel:
+                raise RuntimeError(
+                    f"actual in-vessel components {actual_invessel} != {expected_invessel}"
+                )
+            component_evidence = {}
+            for name, solid in stellarator.invessel_build.Components.items():
+                component_evidence[name] = _solid_evidence(
+                    solid, f"component {name}"
+                )
+            stellarator.export_invessel_build_step(export_dir=str(output_root))
         expected_steps = {f"{name}.step" for name in expected_invessel}
         magnets = config["magnets"]
         magnet_inventory = {
@@ -1023,6 +1157,8 @@ def build_source_cad(
             "live_vmec_metadata": live_vmec,
             "resolved_layers": resolved.statistics(),
             "actual_invessel_component_order": list(actual_invessel),
+            "radial_build_mode": radial_build_mode,
+            "radial_build_construction_stages": construction_stages,
             "component_evidence": component_evidence,
             "magnet_inventory": magnet_inventory,
             "artifacts": _artifact_rows(output_root),
