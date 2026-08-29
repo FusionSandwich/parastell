@@ -12,7 +12,14 @@ from parastell.openmc16_response_results import (
 )
 
 
-def _statepoint(path, *, names=("damage",), realizations=3):
+def _statepoint(
+    path,
+    *,
+    names=("damage",),
+    realizations=3,
+    score="damage-energy",
+    means=(2.0, 4.0),
+):
     with h5py.File(path, "w") as handle:
         handle.attrs["filetype"] = np.bytes_("statepoint")
         handle.attrs["version"] = [18, 2]
@@ -36,11 +43,11 @@ def _statepoint(path, *, names=("damage",), realizations=3):
             tally = tallies.create_group(f"tally {index}")
             tally["name"] = np.bytes_(name)
             tally["filters"] = [1, 2]
-            tally["score_bins"] = [np.bytes_("damage-energy")]
+            tally["score_bins"] = [np.bytes_(score)]
             tally["nuclides"] = [np.bytes_("W184")]
             tally["estimator"] = np.bytes_("tracklength")
             tally["n_realizations"] = realizations
-            means = np.asarray([2.0, 4.0])
+            means = np.asarray(means)
             deviations = np.asarray([0.2, 0.4])
             sums = realizations * means
             squares = realizations * (
@@ -83,6 +90,13 @@ def test_response_set_coverage_reports_missing_as_missing_not_zero(tmp_path):
     assert coverage["status"] == "INCOMPLETE"
     assert coverage["missing_tallies"] == ["gas"]
     assert coverage["missing_response_semantics"] == "MISSING_IS_NOT_ZERO"
+
+
+def test_generic_reader_accepts_signed_surface_current(tmp_path):
+    path = tmp_path / "statepoint.h5"
+    _statepoint(path, names=("current",), score="current", means=(-2.0, 4.0))
+    result = read_openmc16_tally(path, "current")
+    assert result["mean_per_source"] == [[[[-2.0]], [[4.0]]]]
 
 
 def test_generic_reader_needs_multiple_realizations(tmp_path):

@@ -203,7 +203,11 @@ def read_openmc16_tally(
         deviations = deviation.reshape(shape)
         if np.any(~np.isfinite(means)) or np.any(~np.isfinite(deviations)):
             raise ValueError(f"{tally_name} contains non-finite results")
-        if np.any(means < 0.0) or np.any(deviations < 0.0):
+        negative_unsigned = any(
+            score != "current" and np.any(means[..., index] < 0.0)
+            for index, score in enumerate(scores)
+        )
+        if negative_unsigned or np.any(deviations < 0.0):
             raise ValueError(f"{tally_name} contains negative result moments")
         output = {
             "schema": SCHEMA,
@@ -240,16 +244,23 @@ def read_openmc16_response_set(
     ):
         raise ValueError("tally names must be nonempty and unique")
     results = [read_openmc16_tally(statepoint_path, name) for name in names]
-    statepoint_hashes = {item["statepoint_sha256"] for item in results}
-    histories = {item["source_histories"] for item in results}
-    if len(statepoint_hashes) != 1 or len(histories) != 1:
+    metadata_keys = (
+        "statepoint_sha256",
+        "openmc_version",
+        "run_mode",
+        "particles_per_batch",
+        "batches",
+        "source_histories",
+        "seed",
+    )
+    metadata = {key: {item[key] for item in results} for key in metadata_keys}
+    if any(len(values) != 1 for values in metadata.values()):
         raise ValueError("response results are not from one run")
     return {
         "schema": "parastell.openmc16_response_set/v1.0.0",
         "status": "SMOKE_RESULT" if results else "MISSING",
         "normalization": "per_source_history",
-        "statepoint_sha256": next(iter(statepoint_hashes)),
-        "source_histories": next(iter(histories)),
+        **{key: next(iter(values)) for key, values in metadata.items()},
         "responses": results,
         "missing_response_semantics": "MISSING_IS_NOT_ZERO",
     }
