@@ -24,6 +24,7 @@ from .energy_groups import (
 SCHEMA = "parastell.alara_activation_handoff/v1.0.0"
 GROUP_STRUCTURE = "VITAMIN-J-175"
 GROUP_COUNT = 175
+DELAYED_PHOTON_EDGES_EV = (0.0, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e7)
 ALARA_SOURCE_COMMIT = "4d01679a9837d9e8a2882c7efa71bc0b5f9ade64"
 ALARA_BINARY_SHA256 = (
     "a28b8413a829e2df22e2a6a26d67328275511bfd66b6f85271b108a1c831e2d0"
@@ -145,10 +146,25 @@ def build_alara_handoff(
     campaign: Mapping[str, Any],
     group_structure_sha256: str,
     openmc_provenance: Mapping[str, Any],
+    delayed_photon_energy_edges_eV: Sequence[float] = (
+        DELAYED_PHOTON_EDGES_EV
+    ),
 ) -> dict[str, Any]:
     """Convert per-source OpenMC spectra to ALARA-order physical spectra."""
     validate_activation_campaign(campaign)
     runtime = qualified_alara_runtime()
+    photon_edges = [float(value) for value in delayed_photon_energy_edges_eV]
+    if (
+        len(photon_edges) < 2
+        or photon_edges[0] != 0.0
+        or photon_edges != sorted(set(photon_edges))
+        or any(
+            not math.isfinite(value) or value < 0.0 for value in photon_edges
+        )
+    ):
+        raise ValueError(
+            "delayed-photon energy edges must increase from zero eV"
+        )
     if group_structure_sha256 != VITAMIN_J_175_EDGES_SHA256:
         raise ValueError("group-structure hash is not OpenMC VITAMIN-J-175")
     rate = _positive(
@@ -264,6 +280,20 @@ def build_alara_handoff(
         },
         "campaign": dict(campaign),
         "zones": zones,
+        "delayed_photon_output": {
+            "particle": "photon",
+            "spatial_resolution": "activation_zone",
+            "alara_output_normalization": "per_cm3_from_units_Bq_cm3",
+            "nuclide_total_label": "TOTAL",
+            "group_count": len(photon_edges) - 1,
+            "energy_edges_eV": photon_edges,
+            "group_order": "ascending_energy",
+            "value_semantics": "bin_integrated_emission_rate_density",
+            "unit": "photons/cm3/s/bin",
+            "zone_integrated_rate_operation": (
+                "multiply_once_by_bound_zone_volume_cm3"
+            ),
+        },
         "output_units": "Bq cm3",
         "production_activation_authorized": False,
     }
@@ -329,6 +359,36 @@ def validate_alara_handoff(handoff: Mapping[str, Any]) -> None:
         _validated_constituents(
             {"alara_constituents": zone.get("constituents")}
         )
+    photon_output = handoff.get("delayed_photon_output")
+    if not isinstance(photon_output, Mapping):
+        raise ValueError("ALARA delayed-photon output contract is invalid")
+    photon_edges = [
+        float(value) for value in photon_output.get("energy_edges_eV", ())
+    ]
+    if (
+        len(photon_edges) < 2
+        or photon_edges[0] != 0.0
+        or photon_edges != sorted(set(photon_edges))
+        or any(
+            not math.isfinite(value) or value < 0.0 for value in photon_edges
+        )
+        or photon_output
+        != {
+            "particle": "photon",
+            "spatial_resolution": "activation_zone",
+            "alara_output_normalization": "per_cm3_from_units_Bq_cm3",
+            "nuclide_total_label": "TOTAL",
+            "group_count": len(photon_edges) - 1,
+            "energy_edges_eV": photon_edges,
+            "group_order": "ascending_energy",
+            "value_semantics": "bin_integrated_emission_rate_density",
+            "unit": "photons/cm3/s/bin",
+            "zone_integrated_rate_operation": (
+                "multiply_once_by_bound_zone_volume_cm3"
+            ),
+        }
+    ):
+        raise ValueError("ALARA delayed-photon output contract is invalid")
     if handoff.get("output_units") != "Bq cm3":
         raise ValueError("ALARA output must use Bq cm3 units")
     if handoff.get("production_activation_authorized") is not False:
@@ -385,6 +445,13 @@ def _render_input(handoff: Mapping[str, Any], *, irradiation_s: int) -> str:
         lines.append(f"  {zone['domain_id']}  material_{index:04d}")
     lines.extend(["end", "", "spatial_norm"])
     lines.extend("  1.0" for _ in zones)
+    photon_edges = handoff["delayed_photon_output"]["energy_edges_eV"]
+    photon_source = (
+        "  photon_source "
+        f"{runtime['library_base_path']} delayed_photon_source.txt "
+        f"{len(photon_edges) - 1} "
+        + " ".join(f"{float(value):.12g}" for value in photon_edges[1:])
+    )
     lines.extend(
         [
             "end",
@@ -428,11 +495,7 @@ def _render_input(handoff: Mapping[str, Any], *, irradiation_s: int) -> str:
             "  units Bq cm3",
             "  specific_activity",
             "  total_heat",
-            (
-                "  photon_source "
-                f"{runtime['library_base_path']} delayed_photon_source.txt "
-                "5 1e3 1e4 1e5 1e6 1e7"
-            ),
+            photon_source,
             "end",
             "",
             "truncation 1e-8",
@@ -494,6 +557,10 @@ def validate_alara_output_text(text: str) -> dict[str, Any]:
     """Apply portable output sanity gates without inventing physical claims."""
     if "Response Units: Bq /cm3" not in text:
         raise ValueError("ALARA output does not record Bq/cm3 response units")
+    if "Photon Source Distribution [gammas/s/cm3]" not in text:
+        raise ValueError(
+            "ALARA output does not record gammas/s/cm3 photon-source units"
+        )
     labels = sorted(
         set(re.findall(r"\b[a-z]{1,2}-[0-9]+(?:m[0-9]*)?\b", text))
     )
@@ -538,6 +605,7 @@ def validate_alara_output_text(text: str) -> dict[str, Any]:
         "input_units_directive": "Bq cm3",
         "reported_activity_units": "Bq/cm3",
         "reported_heat_units": "W/cm3",
+        "reported_delayed_photon_units": "gammas/s/cm3/bin",
         "isotope_label_count": len(labels),
         "all_isotope_labels_well_formed": True,
         "pre_irradiation_activity_and_heat_zero": True,
@@ -554,6 +622,10 @@ def validate_alara_result_files(
     delayed_photon_path: str | Path,
     input_manifest_sha256: str,
     remote_run_root: str,
+    irradiation_checkpoint_s: int | None = None,
+    alara_input_sha256: str | None = None,
+    activation_zone_ids: Sequence[str] | None = None,
+    cooling_offset_s: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     """Seal a terminal bounded result from the qualified ALARA runtime."""
     output = Path(output_path)
@@ -567,7 +639,7 @@ def validate_alara_result_files(
     if photon.stat().st_size <= 0:
         raise ValueError("ALARA delayed-photon output is empty")
     audit = validate_alara_output_text(output.read_text(encoding="utf-8"))
-    return {
+    result = {
         "schema": "parastell.alara_bounded_result/v1.0.0",
         "status": "PASSED",
         "claim": "WORKFLOW_SMOKE_ONLY",
@@ -607,3 +679,38 @@ def validate_alara_result_files(
         "mcnp_executed": False,
         "production_activation_authorized": False,
     }
+    execution_fields = (
+        irradiation_checkpoint_s,
+        alara_input_sha256,
+        activation_zone_ids,
+        cooling_offset_s,
+    )
+    if any(value is not None for value in execution_fields):
+        if any(value is None for value in execution_fields):
+            raise ValueError(
+                "ALARA delayed-source execution binding must be complete"
+            )
+        checkpoint = int(irradiation_checkpoint_s)
+        if checkpoint <= 0:
+            raise ValueError("irradiation checkpoint must be positive")
+        zone_ids = [str(value).strip() for value in activation_zone_ids]
+        if (
+            not zone_ids
+            or any(not value for value in zone_ids)
+            or len(set(zone_ids)) != len(zone_ids)
+        ):
+            raise ValueError("activation zone IDs must be nonempty and unique")
+        offsets = [int(value) for value in cooling_offset_s]
+        if not offsets or offsets[0] != 0 or offsets != sorted(set(offsets)):
+            raise ValueError(
+                "cooling offsets must be unique, ascending, and start at zero"
+            )
+        result["execution_binding"] = {
+            "irradiation_checkpoint_s": checkpoint,
+            "alara_input_sha256": _digest(
+                alara_input_sha256, "ALARA checkpoint input"
+            ),
+            "activation_zone_ids": zone_ids,
+            "cooling_offset_s": offsets,
+        }
+    return result

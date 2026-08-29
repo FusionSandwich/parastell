@@ -141,7 +141,7 @@ def test_alara_output_audit_requires_units_and_well_formed_isotopes():
         "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d\n"
         "cu-63 1 0 1 1 1 1 1\n"
         "total 0 0 1 1 1 1 1\n"
-        "*** Photon Source Distribution\n"
+        "*** Photon Source Distribution [gammas/s/cm3] : photons\n"
     )
     assert audit["status"] == "PASS"
     with pytest.raises(ValueError, match="units"):
@@ -162,7 +162,7 @@ def test_terminal_result_files_require_empty_stderr_and_delayed_photons(
         "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d\n"
         "cu-63 1 0 1 1 1 1 1\n"
         "total 0 0 1 1 1 1 1\n"
-        "*** Photon Source Distribution\n",
+        "*** Photon Source Distribution [gammas/s/cm3] : photons\n",
         encoding="utf-8",
     )
     stderr = tmp_path / "alara.stderr"
