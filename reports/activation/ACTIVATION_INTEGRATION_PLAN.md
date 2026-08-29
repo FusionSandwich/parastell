@@ -1,5 +1,11 @@
 # WISTELL-D activation integration
 
+> Superseded geometry note: the continuous 30 cm `magnet_envelope` described
+> below is rejected for the final lane. The accepted candidate is now a direct
+> 90-degree ParaStell build with individual swept 30 x 30 cm homogenized coil
+> solids. See `ALARA_WORKFLOW_QUALIFICATION.md` and
+> `EIGHT_PIECE_IMPLEMENTATION_STATUS.json` for the current path.
+
 The depletion data were found locally and their exact identities are now bound
 to a new geometry-neutral ParaStell producer contract. No activation transport
 or depletion calculation was launched.

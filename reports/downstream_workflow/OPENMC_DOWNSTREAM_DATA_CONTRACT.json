@@ -1,6 +1,6 @@
 {
   "schema": "parastell.openmc_downstream_data_contract_status/v1.0.0",
-  "status": "PARTIAL_WORKFLOW_IMPLEMENTATION",
+  "status": "INFRASTRUCTURE_IMPLEMENTED_PHYSICAL_GEOMETRY_PENDING",
   "statistics_scope": "WORKFLOW_SMOKE_ONLY",
   "global_magnet_representation": "homogenized",
   "producer_products": {
@@ -12,6 +12,7 @@
     "gas_production_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
     "reaction_family_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
     "nuclide_mt_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
+    "nuclide_mt_canonical_identity_and_matrix_export": "IMPLEMENTED_AND_UNIT_TESTED",
     "particle_production_tally_definition": "IMPLEMENTED_AND_UNIT_TESTED",
     "local_mesh_flux_heating_damage_gas": "IMPLEMENTED_AND_UNIT_TESTED",
     "declarative_response_plan": "IMPLEMENTED_AND_UNIT_TESTED",
@@ -19,6 +20,10 @@
     "generic_openmc16_statepoint_export": "IMPLEMENTED_AND_UNIT_TESTED",
     "material_identity_adapters": "IMPLEMENTED_AND_UNIT_TESTED",
     "spectra_pka_activation_reaction_replay_converters": "IMPLEMENTED_AND_UNIT_TESTED",
+    "activation_schedule_contract": "IMPLEMENTED_AND_UNIT_TESTED",
+    "alara_175_group_handoff_and_deck_export": "IMPLEMENTED_AND_UNIT_TESTED",
+    "alara_bounded_synthetic_runtime": "PASSED",
+    "alara_physical_wistell_d_runtime": "BLOCKED_GEOMETRY_GATE",
     "consumer_import_of_physical_smoke_artifact": "BLOCKED_GEOMETRY_GATE",
     "accepted_90_degree_physical_statepoint": "BLOCKED_GEOMETRY_GATE"
   },
@@ -32,7 +37,8 @@
   },
   "activation_schedule": {
     "owner": "DPA_workflow",
-    "schema": "dpa_workflow.activation_campaign_schedule/v1.0.0",
+    "producer_schema": "parastell.activation_campaign_schedule/v1.0.0",
+    "execution_owner_schema": "dpa_workflow.activation_campaign_schedule/v1.0.0",
     "year_definition": "Julian_year_365.25_days",
     "irradiation_checkpoint_s": [
       86400,

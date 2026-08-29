@@ -89,20 +89,17 @@
         "input": "resolved_thickness",
         "array_key": "gap"
       }
-    },
-    {
-      "name": "magnet_envelope",
-      "material": "magnet_envelope",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "magnets"
-      }
     }
   ],
   "magnets": {
-    "representation": "radial_envelope",
-    "layer": "magnet_envelope"
+    "representation": "swept_filaments",
+    "material": "homogenized_magnet",
+    "width_cm": 30.0,
+    "thickness_cm": 30.0,
+    "case_thickness_cm": 0.0,
+    "sample_mod": 1,
+    "start_line": 3,
+    "scale": 100.0
   },
   "source_mesh": {
     "enabled": true,

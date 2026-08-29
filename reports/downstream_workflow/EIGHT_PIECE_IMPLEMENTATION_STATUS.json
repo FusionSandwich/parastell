@@ -1,0 +1,114 @@
+{
+  "schema": "parastell.eight_piece_implementation_status/v1.0.0",
+  "status": "INFRASTRUCTURE_IMPLEMENTED_PHYSICAL_GEOMETRY_PENDING",
+  "statistics_scope": "WORKFLOW_SMOKE_ONLY",
+  "accepted_global_magnet_design": {
+    "configuration": "configs/wistell_d_parametric_full_period.json",
+    "modeled_toroidal_extent_degrees": 90.0,
+    "representation": "individual_swept_filament_coils",
+    "cross_section_cm": [
+      30.0,
+      30.0
+    ],
+    "material": "homogenized_magnet",
+    "casing_winding_split": false,
+    "continuous_winding_surface_layer": false,
+    "implementation": "WIRED_SOURCE_CAD_BUILD_AND_GEOMETRY_GATES_PENDING"
+  },
+  "pieces": [
+    {
+      "id": 1,
+      "name": "parametric_direct_90_degree_geometry",
+      "implementation": "WIRED",
+      "execution": "NOT_RUN_AFTER_DESIGN_CHANGE",
+      "evidence": [
+        "configs/wistell_d_parametric_full_period.json",
+        "parastell/parametric_geometry.py",
+        "tests/test_parametric_geometry.py"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "arbitrary_magnet_selection_and_stable_identity",
+      "implementation": "IMPLEMENTED_AND_UNIT_TESTED",
+      "execution": "PHYSICAL_IDS_PENDING_GEOMETRY_BUILD",
+      "evidence": [
+        "parastell/selected_case_instrumentation.py",
+        "parastell/parametric_geometry.py"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "complete_openmc_response_tally_plan",
+      "implementation": "IMPLEMENTED_AND_UNIT_TESTED",
+      "execution": "PHYSICAL_STATEPOINT_PENDING_GEOMETRY_GATE",
+      "includes": [
+        "neutron_scalar_flux",
+        "photon_scalar_flux",
+        "surface_current_and_correlated_phase_space",
+        "neutron_and_photon_heating",
+        "damage_energy",
+        "H1_H2_H3_He3_He4_production",
+        "reaction_families",
+        "nuclide_specific_MT_rates",
+        "neutron_photon_electron_positron_production",
+        "local_mesh_flux_heating_damage_and_gas"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "boundary_phase_space_and_local_replay_contract",
+      "implementation": "IMPLEMENTED_AND_BOUNDED_FIXTURE_TESTED",
+      "execution": "ACCEPTED_90_DEGREE_GEOMETRY_BANK_PENDING",
+      "canonical_weight_semantics": "raw_openmc_weight_divided_only_by_exact_source_histories"
+    },
+    {
+      "id": 5,
+      "name": "portable_statepoint_material_and_consumer_exports",
+      "implementation": "IMPLEMENTED_AND_UNIT_TESTED",
+      "execution": "PHYSICAL_IMPORT_PENDING",
+      "consumers": [
+        "activation",
+        "SPECTRA-PKA",
+        "Beyond-DPA",
+        "OpenMC local replay",
+        "MCNP6.3",
+        "Geant4",
+        "OpenSn",
+        "RADIANT"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "isotope_MT_reaction_identity_and_matrix_export",
+      "implementation": "IMPLEMENTED_AND_UNIT_TESTED",
+      "execution": "PHYSICAL_NUCLEAR_DATA_COVERAGE_AUDIT_PENDING",
+      "missing_semantics": "MISSING_IS_NOT_ZERO",
+      "evidence": [
+        "parastell/reaction_identity.py",
+        "parastell/downstream_response_export.py"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "activation_schedule_and_delayed_photon_separation",
+      "implementation": "IMPLEMENTED_AND_UNIT_TESTED",
+      "execution": "SYNTHETIC_ALARA_BRANCH_SMOKE_PASS",
+      "schedule": "configs/wistell_d_activation_schedule.json"
+    },
+    {
+      "id": 8,
+      "name": "qualified_ALARA_source_patch_library_and_runtime_path",
+      "implementation": "IMPLEMENTED_AND_SMOKE_EXECUTED",
+      "execution": "SYNTHETIC_ONE_ZONE_PASS_PHYSICAL_WISTELL_D_PENDING",
+      "result_receipt_sha256": "88ec3f7342183e1334a29a08f56d281bb7db0b6974abbd1e6578c5be6e4d5e38"
+    }
+  ],
+  "forbidden_provenance": {
+    "repository": "wistell-d-openmc",
+    "used_for_current_qualification": false,
+    "historical_receipts_from_that_lane": "REJECTED_REFERENCE_ONLY"
+  },
+  "next_gate": "BUILD_AND_QUALIFY_DIRECT_90_DEGREE_SWEPT_COIL_DAGMC_GEOMETRY",
+  "production_authorized": false
+}

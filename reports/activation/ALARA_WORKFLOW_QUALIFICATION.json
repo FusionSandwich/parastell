@@ -1,0 +1,67 @@
+{
+  "schema": "parastell.alara_workflow_qualification/v1.0.0",
+  "status": "ALARA_WORKFLOW_SMOKE_PASS_PHYSICAL_WISTELL_D_INPUT_PENDING",
+  "claim": "WORKFLOW_SMOKE_ONLY",
+  "host": "poly-bateman",
+  "runtime": {
+    "source_repository": "FusionSandwich/ALARA",
+    "source_commit": "4d01679a9837d9e8a2882c7efa71bc0b5f9ade64",
+    "binary_sha256": "a28b8413a829e2df22e2a6a26d67328275511bfd66b6f85271b108a1c831e2d0",
+    "compiler_patch_sha256": "cf93de3e57c52ed4a26a731daed94ceaf458ed79528b7dbcc78a173830d6fd0b",
+    "activation_library": "FENDL/A-2.0",
+    "decay_library": "FENDL/D-2.0",
+    "group_structure": "VITAMIN-J-175",
+    "group_count": 175,
+    "energy_edges_sha256": "c74fffa22297329830d5e08c9911cce4e0a1a9ec58495db2003622f742152db9",
+    "library_component_sha256": {
+      "fendl2.0-175.gam": "aa6fb8c64acb9cf86e224dcb7e698c6d54a2b134858007c9cb8b3e7512223bd8",
+      "fendl2.0-175.gdx": "695ef08febfd361ec86e5bf2f83f317820112d80ca09471b4e74d569cd38eb0d",
+      "fendl2.0-175.idx": "994507205078f712047c2ff2e9880cbbec6d071d3a40bb860bfb55e87abc2d4a",
+      "fendl2.0-175.lib": "b6e39841d89e2077510ee1c00e418c4fcb6049d315c2a81e33bfd3e3fd748488",
+      "nuclib.std": "9f7ea31135938a708bad12308fd74741ef3e24593bbdadcea654bd9fce2a47f1"
+    }
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "remote_root": "/home/apollon/josma/codex-runs/parastell-alara-workflow-smoke-20260829t005124z",
+      "status": "FAILED_CLOSED_INPUT_TIME_LABEL_FORMAT",
+      "input_manifest_sha256": "b32e4ca22a68ca1d5ce437663d43a88f195288a93a3ec779396f9d56b86ef4e8",
+      "failure": "ALARA report formatter stack-buffer abort with long raw-second labels",
+      "reused": false
+    },
+    {
+      "attempt": 2,
+      "remote_root": "/home/apollon/josma/codex-runs/parastell-alara-workflow-smoke-20260829t005758z",
+      "status": "PASSED",
+      "input_manifest_sha256": "80f9fb77aeb197ae198f571bd8aa7071fac0a90e4eead90fa3f4de2ba97189f8",
+      "result_receipt_sha256": "88ec3f7342183e1334a29a08f56d281bb7db0b6974abbd1e6578c5be6e4d5e38",
+      "output_sha256": "7b096ba18268e3888fcbf2e0a6ac8b538504a3119d1ddfad452a23fcf45394d5",
+      "delayed_photon_source_sha256": "9867bf1884b541f3c48f7cc69b162a0dcb7c731ae1fd97e35ae326a41a7281e4",
+      "stderr_size_bytes": 0,
+      "isotope_label_count": 16,
+      "pre_irradiation_activity_and_heat_zero": true,
+      "shutdown_and_one_day_activity_and_heat_positive": true,
+      "delayed_photon_source_nonempty": true
+    }
+  ],
+  "resource_controls": {
+    "physical_cores": 256,
+    "policy_core_limit": 64,
+    "active_leases_before_and_after": 0,
+    "requested_cores": 1,
+    "memory_max_bytes": 8589934592,
+    "memory_swap_max_bytes": 0,
+    "observed_peak_bytes": null,
+    "observed_peak_status": "NOT_RETAINED_AFTER_SCOPE_REAP"
+  },
+  "scientific_limits": {
+    "synthetic_flux": true,
+    "accepted_WISTELL_D_geometry_used": false,
+    "accepted_OpenMC_statepoint_used": false,
+    "cross_library_smoke_basis": true,
+    "MCNP_executed": false,
+    "production_activation_authorized": false
+  },
+  "forbidden_repository_provenance_used": false
+}

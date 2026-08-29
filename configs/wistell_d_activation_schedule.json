@@ -1,0 +1,38 @@
+{
+  "campaign_id": "wistell-d-full-power-checkpoints-v1",
+  "cooling_offset_s": [
+    0,
+    1,
+    60,
+    3600,
+    86400,
+    604800,
+    2592000,
+    31557600,
+    157788000,
+    315576000
+  ],
+  "cooling_semantics": "independent_zero_source_branch_from_each_end_of_irradiation",
+  "delayed_photon_source_separate_from_prompt": true,
+  "full_power_source_rate_binding": {
+    "copied_absolute_rate": false,
+    "json_pointer": "/provenance/physical_source_rate_per_s",
+    "multiplier": 1.0,
+    "scope_pointer": "/provenance/source_rate_scope"
+  },
+  "irradiation_checkpoint_s": [
+    86400,
+    604800,
+    31557600,
+    157788000,
+    315576000
+  ],
+  "irradiation_semantics": "independent_full_power_exposure_from_unirradiated_material",
+  "julian_year_s": 31557600,
+  "owner": "DPA_workflow",
+  "producer": "ParaStell",
+  "production_activation_authorized": false,
+  "prompt_source_during_cooling": false,
+  "schema": "parastell.activation_campaign_schedule/v1.0.0",
+  "year_definition": "Julian_year_365.25_days"
+}

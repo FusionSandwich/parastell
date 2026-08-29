@@ -6,8 +6,12 @@ Status date: 2026-08-28
 
 This lane qualifies workflow plumbing with bounded or synthetic fixtures. It
 does not claim useful statistics, source convergence, production readiness, or
-a heterogeneous global magnet. The global ParaStell magnet remains a
-homogenized material region.
+a heterogeneous global magnet. The global ParaStell magnets remain
+homogenized material regions. The selected 90-degree candidate now generates
+one swept 30 x 30 cm solid per WISTELL-D coil filament; it does not use a
+continuous winding-surface layer and does not split global coils into casing
+and winding-pack solids. That source-CAD change is wired and tested, but its
+new DAGMC artifact has not yet passed the native and OpenMC geometry gates.
 
 ParaStell owns the global geometry, source, OpenMC tallies, material-volume
 fields, and closed-boundary phase-space banks. `DPA_workflow` owns depletion,
@@ -49,6 +53,18 @@ OpenMC-replay, and deterministic local-model adapters.
   inputs for SPECTRA-PKA, activation, isotope/MT response matrices, and local
   OpenMC/MCNP/Geant4/OpenSn/RADIANT boundary replay. They prevent source-rate
   double application and prompt/delayed source-ID collisions.
+- `reaction_identity.py` makes every isotope-specific response carry a
+  canonical OpenMC nuclide, numeric MT, readable reaction label, and
+  nuclear-data hash. Ambiguous reaction names and repeated MT requests are
+  rejected rather than inferred.
+- `activation_campaign.py` and
+  `configs/wistell_d_activation_schedule.json` freeze the requested 1-day,
+  1-week, 1-year, 5-year, and 10-year full-power checkpoints and independent
+  cooling branches without copying an absolute source rate.
+- `alara_activation.py` pins OpenMC 0.16.0 VITAMIN-J-175 edges, reverses the
+  ascending OpenMC bins into descending ALARA order, requires explicit isotope
+  constituents, renders one independent deck per irradiation checkpoint, and
+  applies the accepted physical source rate exactly once.
 - `radiation_consumer_handoff.py` validates a solver-neutral bundle containing
   geometry/source/statepoint/data provenance, material identities, volume
   estimators, the canonical correlated boundary bank, and explicit consumer
@@ -101,6 +117,23 @@ OpenMC 0.16 does not expose genuine source-level event genealogy. Consumers
 must record parent history as unavailable; they must not fabricate it from row
 order or clusters.
 
+## Bounded ALARA runtime result
+
+A fresh ParaStell-owned one-zone synthetic fixture passed on `poly-bateman`
+with one core, an 8 GiB hard memory cap, and swap disabled. It used the
+qualified repaired ALARA executable and hash-bound FENDL/A-2.0 plus FENDL/D-2.0
+175-group files. The result has empty stderr, 16 well-formed isotope labels,
+zero pre-irradiation activity/heat, positive shutdown and one-day
+activity/heat, and a nonempty delayed-photon source. The sealed receipt
+SHA-256 is
+`88ec3f7342183e1334a29a08f56d281bb7db0b6974abbd1e6578c5be6e4d5e38`.
+
+This validates the workflow only. The input flux was synthetic and did not use
+the accepted WISTELL-D geometry or an OpenMC statepoint. The
+transport/activation cross-library combination is a smoke basis, not a
+qualified production comparison. No artifact from `wistell-d-openmc` was used
+to qualify it.
+
 ## Remaining bounded integration work
 
 1. Complete the accepted source-CAD/DAGMC 90-degree geometry gate. No physical
@@ -111,8 +144,9 @@ order or clusters.
 3. Convert one accepted physical smoke statepoint with the generic extractor
    and import its generated JSON in the real consumer packages. Unit fixtures
    pass, but a geometry-bound OpenMC statepoint does not yet exist.
-4. In an isolated `DPA_workflow` branch, implement the branched schedule schema
-   and update consumers to accept ParaStell boundary schema v2.2 without
+4. In an isolated `DPA_workflow` branch, bind its executable schedule to the
+   now-implemented ParaStell schedule contract and update consumers to accept
+   ParaStell boundary schema v2.2 without
    discarding facet, barycentric, topology, local-frame, or provenance fields.
 5. Exercise one bounded fixture through SPECTRA-PKA input generation and each
    local-source adapter. These are software-path checks, not physics results.
@@ -122,8 +156,9 @@ global magnet is authorized by this status.
 
 ## Verification
 
-- Focused downstream/activation suite: 42 passed.
-- Broad host-supported suite: 431 passed, 5 skipped, 5 failed only because the
+- Focused downstream/activation/ALARA/isotope-MT suite: 43 passed.
+- Parametric source-CAD geometry suite: 33 passed.
+- Broad host-supported suite: 446 passed, 5 skipped, 5 failed only because the
   host has incompatible optional `pydagmc`/`cad_to_dagmc` APIs; six additional
   legacy test modules cannot collect because host Python lacks PyMOAB, Gmsh,
   or OpenMC. No dependency environment was installed or modified.

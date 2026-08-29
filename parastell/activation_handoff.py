@@ -1,4 +1,9 @@
-"""Geometry-bound producer contract for downstream activation workflows.
+"""Legacy continuous-envelope activation contract retained as evidence.
+
+The final WISTELL-D lane uses :mod:`parastell.radiation_consumer_handoff` and
+:mod:`parastell.alara_activation` with individual swept homogenized coils.
+This module remains for regression coverage of the rejected nine-volume
+continuous-envelope candidate and must not qualify the new physical geometry.
 
 ParaStell owns geometry and transport-field provenance.  Activation execution
 belongs to DPA_workflow.  This module keeps that boundary explicit and, most

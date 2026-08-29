@@ -16,6 +16,7 @@ from .radiation_consumer_handoff import (
     spectra_pka_inputs,
     validate_radiation_consumer_handoff,
 )
+from .reaction_identity import reaction_matrix_identity
 
 
 SCHEMA = "parastell.downstream_response_exports/v1.0.0"
@@ -25,6 +26,7 @@ def _material_payload(material: Mapping[str, Any]) -> dict[str, Any]:
     required = (
         "material_id",
         "composition_sha256",
+        "volume_cm3",
         "density_g_cm3",
         "temperature_K",
         "composition_basis",
@@ -36,10 +38,13 @@ def _material_payload(material: Mapping[str, Any]) -> dict[str, Any]:
             "material identity is incomplete: " + ", ".join(missing)
         )
     density = float(material["density_g_cm3"])
+    volume = float(material["volume_cm3"])
     temperature = float(material["temperature_K"])
     isotopes = material["isotopes"]
     if (
-        not math.isfinite(density)
+        not math.isfinite(volume)
+        or volume <= 0.0
+        or not math.isfinite(density)
         or density <= 0.0
         or not math.isfinite(temperature)
         or temperature <= 0.0
@@ -49,7 +54,13 @@ def _material_payload(material: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(
             "material density, temperature, or isotopes are invalid"
         )
-    return {key: material[key] for key in required}
+    payload = {key: material[key] for key in required}
+    if "alara_constituents" in material:
+        constituents = material["alara_constituents"]
+        if not isinstance(constituents, list) or not constituents:
+            raise ValueError("ALARA constituents must be a nonempty list")
+        payload["alara_constituents"] = [dict(row) for row in constituents]
+    return payload
 
 
 def build_downstream_exports(
@@ -88,6 +99,7 @@ def build_downstream_exports(
                 {
                     "domain_id": domain_id,
                     "material": materials[domain_id],
+                    "volume_cm3": materials[domain_id]["volume_cm3"],
                     "energy_edges_eV": list(estimator["energy_edges_eV"]),
                     "bin_integrated_flux_per_source": list(
                         estimator["mean_per_source"]
@@ -111,11 +123,15 @@ def build_downstream_exports(
     for estimator in handoff["volume_estimators"]:
         if estimator.get("observable") != "reaction_rate":
             continue
+        identity = reaction_matrix_identity(
+            nuclide=estimator["nuclide"],
+            mt=estimator["mt"],
+            nuclear_data_sha256=provenance["nuclear_data_sha256"],
+        )
         reaction_matrix.append(
             {
                 "domain_id": estimator["domain_id"],
-                "nuclide": estimator["nuclide"],
-                "reaction": estimator["reaction"],
+                **identity,
                 "energy_edges_eV": estimator.get("energy_edges_eV"),
                 "mean_per_source": list(estimator["mean_per_source"]),
                 "std_dev_per_source": list(estimator["std_dev_per_source"]),

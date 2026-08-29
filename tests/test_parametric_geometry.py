@@ -522,10 +522,24 @@ def test_swept_source_cad_inventory_uses_grouped_coils(tmp_path, monkeypatch):
 
         def construct_magnets_from_filaments(self, *args, **kwargs):
             grouped = [[FakeSolid()], [FakeSolid()]]
+            coordinates = np.asarray(
+                [
+                    [100.0, 0.0, 0.0],
+                    [100.0, 1.0, 0.0],
+                    [100.0, 1.0, 1.0],
+                    [100.0, 0.0, 0.0],
+                ]
+            )
             self.magnet_set = types.SimpleNamespace(
                 coil_solids=grouped,
                 all_coil_solids=[
                     solid for group in grouped for solid in group
+                ],
+                magnet_coils=[
+                    types.SimpleNamespace(
+                        filament=types.SimpleNamespace(coords=coordinates)
+                    )
+                    for _ in grouped
                 ],
             )
 
@@ -562,7 +576,11 @@ def test_swept_source_cad_inventory_uses_grouped_coils(tmp_path, monkeypatch):
     )
     assert manifest["magnet_inventory"]["coil_count"] == 2
     assert manifest["magnet_inventory"]["solid_count"] == 2
-    assert len(manifest["magnet_inventory"]["solids"]) == 2
+    assert manifest["magnet_inventory"]["one_homogenized_solid_per_coil"]
+    assert len(manifest["magnet_inventory"]["magnets"]) == 2
+    assert manifest["magnet_inventory"]["magnets"][0]["magnet_id"] == (
+        "magnet-0000"
+    )
 
 
 def test_plan_and_resolved_arrays_are_rechecked_before_build(tmp_path):
@@ -604,11 +622,16 @@ def test_wistell_profile_preserves_accepted_component_identity():
         "vacuum_vessel",
         "low_temperature_shield",
         "vacuum_gap",
-        "magnet_envelope",
     ]
     assert config["magnets"] == {
-        "representation": "radial_envelope",
-        "layer": "magnet_envelope",
+        "representation": "swept_filaments",
+        "material": "homogenized_magnet",
+        "width_cm": 30.0,
+        "thickness_cm": 30.0,
+        "case_thickness_cm": 0.0,
+        "sample_mod": 1,
+        "start_line": 3,
+        "scale": 100.0,
     }
 
 

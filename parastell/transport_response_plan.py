@@ -13,6 +13,8 @@ import hashlib
 import json
 from typing import Any, Mapping, Sequence
 
+from .reaction_identity import canonicalize_nuclide_mt_requests
+
 
 SCHEMA = "parastell.transport_response_plan/v1.0.0"
 PROOF_LEVELS = (
@@ -176,19 +178,9 @@ def build_response_plan(
             "neutron": [float(value) for value in neutron_energy_edges_eV],
             "photon": [float(value) for value in photon_energy_edges_eV],
         },
-        "nuclide_mt_requests": {
-            str(nuclide): [
-                (
-                    int(reaction)
-                    if isinstance(reaction, int) or str(reaction).isdigit()
-                    else str(reaction)
-                )
-                for reaction in reactions
-            ]
-            for nuclide, reactions in sorted(
-                (nuclide_mt_requests or {}).items()
-            )
-        },
+        "nuclide_mt_requests": canonicalize_nuclide_mt_requests(
+            nuclide_mt_requests or {}
+        ),
         "responses": response_rows,
         "missing_response_semantics": "MISSING_IS_NOT_ZERO",
         "covariance_policy": (
@@ -256,6 +248,11 @@ def validate_response_plan(plan: Mapping[str, Any]) -> None:
         )
     if plan.get("missing_response_semantics") != "MISSING_IS_NOT_ZERO":
         raise ValueError("missing response semantics must fail closed")
+    canonical = canonicalize_nuclide_mt_requests(
+        plan.get("nuclide_mt_requests", {})
+    )
+    if canonical != plan.get("nuclide_mt_requests"):
+        raise ValueError("nuclide/MT requests are not canonical")
 
 
 def bind_response_plan(

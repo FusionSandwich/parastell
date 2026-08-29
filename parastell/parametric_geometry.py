@@ -798,6 +798,31 @@ def _solid_evidence(solid: Any, label: str) -> dict[str, Any]:
     return {"solid_count": 1, "brep_valid": True, "volume_cm3": volume}
 
 
+def _filament_identity(coords: Any) -> dict[str, Any]:
+    """Return a coordinate-order-preserving identity for one source filament."""
+    array = np.asarray(coords, dtype="<f8")
+    if (
+        array.ndim != 2
+        or array.shape[1] != 3
+        or len(array) < 4
+        or np.any(~np.isfinite(array))
+    ):
+        raise RuntimeError("magnet source filament coordinates are invalid")
+    digest = hashlib.sha256()
+    digest.update(np.asarray(array.shape, dtype="<i8").tobytes())
+    digest.update(array.tobytes(order="C"))
+    centroid_points = array[:-1] if np.allclose(array[0], array[-1]) else array
+    centroid = np.mean(centroid_points, axis=0)
+    return {
+        "coordinate_count": int(len(array)),
+        "coordinates_sha256": digest.hexdigest(),
+        "centroid_cm": centroid.tolist(),
+        "centroid_toroidal_angle_degrees": float(
+            np.degrees(np.arctan2(centroid[1], centroid[0])) % 360.0
+        ),
+    }
+
+
 def build_source_cad(
     resolved: ResolvedGeometry,
     output_root: str | Path,
@@ -912,15 +937,38 @@ def build_source_cad(
             flat_coil_solids = stellarator.magnet_set.all_coil_solids
             if not grouped_coil_solids or not flat_coil_solids:
                 raise RuntimeError("swept-filament build produced zero coils")
-            solid_evidence = [
-                _solid_evidence(solid, f"magnet solid {index}")
-                for index, solid in enumerate(flat_coil_solids)
-            ]
+            if any(len(solids) != 1 for solids in grouped_coil_solids):
+                raise RuntimeError(
+                    "homogenized swept-coil mode requires one solid per coil"
+                )
+            magnet_coils = stellarator.magnet_set.magnet_coils
+            if len(magnet_coils) != len(grouped_coil_solids):
+                raise RuntimeError(
+                    "coil solids lost their source-filament identity"
+                )
+            magnet_rows = []
+            for index, (coil, solids) in enumerate(
+                zip(magnet_coils, grouped_coil_solids)
+            ):
+                row = {
+                    "magnet_id": f"magnet-{index:04d}",
+                    "material": magnets["material"],
+                    "casing_winding_split": False,
+                    "cross_section_cm": {
+                        "width": float(magnets["width_cm"]),
+                        "thickness": float(magnets["thickness_cm"]),
+                    },
+                    **_filament_identity(coil.filament.coords),
+                    **_solid_evidence(solids[0], f"magnet solid {index}"),
+                }
+                magnet_rows.append(row)
             magnet_inventory.update(
                 {
                     "coil_count": len(grouped_coil_solids),
                     "solid_count": len(flat_coil_solids),
-                    "solids": solid_evidence,
+                    "one_homogenized_solid_per_coil": True,
+                    "casing_winding_split": False,
+                    "magnets": magnet_rows,
                 }
             )
         source = config.get("source_mesh", {})

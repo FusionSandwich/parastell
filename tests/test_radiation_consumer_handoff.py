@@ -117,6 +117,7 @@ def _estimators():
             "observable": "reaction_rate",
             "particle": "neutron",
             "nuclide": "W184",
+            "mt": 102,
             "reaction": "(n,gamma)",
             "estimator": "analog",
             "normalization": "per_source_history",
@@ -319,6 +320,10 @@ def test_downstream_export_adds_material_identity_and_preserves_ownership(
         "B10": 0.2,
         "B11": 0.8,
     }
+    assert exports["nuclide_mt_reaction_matrix"][0]["mt"] == 102
+    assert exports["nuclide_mt_reaction_matrix"][0]["reaction_label"] == (
+        "n,gamma"
+    )
     assert (
         exports["magnet_boundary_replay"][
             "source_rate_may_be_applied_more_than_once"

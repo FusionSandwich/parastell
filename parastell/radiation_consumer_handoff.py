@@ -19,6 +19,8 @@ import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .reaction_identity import canonical_mt, canonical_nuclide
+
 
 SCHEMA = "parastell.radiation_consumer_handoff/v1.0.0"
 SCHEDULE_REFERENCE_SCHEMA = (
@@ -547,8 +549,17 @@ def _validate_estimator(
         if (
             not str(row.get("nuclide", "")).strip()
             or not str(row.get("reaction", "")).strip()
+            or row.get("mt") is None
         ):
             raise RadiationHandoffError("reaction-rate identity is incomplete")
+        try:
+            if canonical_nuclide(row["nuclide"]) != row["nuclide"]:
+                raise ValueError("nuclide is not canonical")
+            canonical_mt(row["mt"])
+        except ValueError as exc:
+            raise RadiationHandoffError(
+                "reaction-rate identity is incomplete"
+            ) from exc
 
 
 def spectra_pka_inputs(bundle: Mapping[str, Any]) -> list[dict[str, Any]]:

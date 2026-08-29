@@ -1,6 +1,9 @@
 {
   "schema": "parastell.activation_integration_status/v1.0.0",
   "status": "BLOCKED_PENDING_ACCEPTED_GEOMETRY_AND_MEDIUM_FIELD",
+  "geometry_binding": "SUPERSEDED_CONTINUOUS_MAGNET_ENVELOPE",
+  "current_geometry_binding": "INDIVIDUAL_SWEPT_30X30_CM_HOMOGENIZED_COILS",
+  "current_alara_workflow_report": "reports/activation/ALARA_WORKFLOW_QUALIFICATION.json",
   "producer_contract_implemented": true,
   "bounded_activation_qualification_status": "BLOCKED_PENDING_ACCEPTED_GEOMETRY_AND_MEDIUM_FIELD",
   "production_activation_status": "BLOCKED_PRODUCTION_NUCLEAR_DATA",
