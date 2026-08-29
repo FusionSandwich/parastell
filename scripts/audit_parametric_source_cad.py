@@ -150,6 +150,32 @@ def _write_progress(path: Path, stage: str, row: dict) -> None:
         stream.write(json.dumps({"stage": stage, "row": row}) + "\n")
 
 
+def _run_tasks(
+    *,
+    work: tuple[tuple[str, Any, list], ...],
+    rows: dict[str, list[dict]],
+    progress: Path,
+    workers: int,
+    initializer: tuple[str, list[str]],
+) -> None:
+    if workers == 1:
+        _configure(*initializer)
+        for key, function, tasks in work:
+            for row in map(function, tasks):
+                rows[key].append(row)
+                _write_progress(progress, key, row)
+        return
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=_configure,
+        initargs=initializer,
+    ) as executor:
+        for key, function, tasks in work:
+            for row in executor.map(function, tasks, chunksize=1):
+                rows[key].append(row)
+                _write_progress(progress, key, row)
+
+
 def audit(
     source: Path,
     output: Path,
@@ -177,24 +203,20 @@ def audit(
         "magnet_component_pairs": [],
         "magnet_pairs": [],
     }
-    with ProcessPoolExecutor(
-        max_workers=workers,
-        initializer=_configure,
-        initargs=initializer,
-    ) as executor:
-        for key, function, tasks in (
-            ("component_pairs", _component_pair, component_tasks),
-            (
-                "magnet_component_pairs",
-                _magnet_component,
-                magnet_component_tasks,
-            ),
-            ("magnet_pairs", _magnet_pair, magnet_tasks),
-        ):
-            for row in executor.map(function, tasks, chunksize=1):
-                rows[key].append(row)
-                _write_progress(progress, key, row)
-    _configure(str(source), component_names)
+    work = (
+        ("component_pairs", _component_pair, component_tasks),
+        ("magnet_component_pairs", _magnet_component, magnet_component_tasks),
+        ("magnet_pairs", _magnet_pair, magnet_tasks),
+    )
+    _run_tasks(
+        work=work,
+        rows=rows,
+        progress=progress,
+        workers=workers,
+        initializer=initializer,
+    )
+    if workers != 1:
+        _configure(str(source), component_names)
     component_inventory = [
         _shape_row(_COMPONENTS[name], identity=name)
         for name in component_names

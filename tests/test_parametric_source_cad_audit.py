@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+import scripts.audit_parametric_source_cad as audit_module
 from scripts.audit_parametric_source_cad import _intersection_pass
 from scripts.audit_parametric_source_cad import _validate_source
 
@@ -45,3 +46,29 @@ def test_source_manifest_binds_artifacts_components_and_all_magnets(tmp_path):
     artifact.write_bytes(b"mutated")
     with pytest.raises(ValueError, match="integrity"):
         _validate_source(tmp_path, _sha(manifest_path))
+
+
+def test_one_worker_runs_in_process_without_constructing_pool(
+    tmp_path, monkeypatch
+):
+    initialized = []
+    monkeypatch.setattr(
+        audit_module,
+        "_configure",
+        lambda source, names: initialized.append((source, names)),
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "ProcessPoolExecutor",
+        lambda *args, **kwargs: pytest.fail("process pool was constructed"),
+    )
+    rows = {"stage": []}
+    audit_module._run_tasks(
+        work=(("stage", lambda value: {"value": value}, [1, 2]),),
+        rows=rows,
+        progress=tmp_path / "progress.jsonl",
+        workers=1,
+        initializer=("source", ["component"]),
+    )
+    assert initialized == [("source", ["component"])]
+    assert rows["stage"] == [{"value": 1}, {"value": 2}]
