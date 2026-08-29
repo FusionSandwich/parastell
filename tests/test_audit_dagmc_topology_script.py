@@ -5,6 +5,50 @@ import sys
 from scripts import audit_dagmc_topology
 
 
+def _closed_magnet(volume_id):
+    return {
+        "volume_id": volume_id,
+        "material_tag": "magnets",
+        "component_name": "",
+        "surface_ids": [volume_id],
+        "bounding_box_cm": {
+            "lower": [float(volume_id), 0.0, 0.0],
+            "upper": [float(volume_id + 1), 1.0, 1.0],
+        },
+        "volume_cm3": 1.0,
+        "signed_volume_cm3": 1.0,
+        "edge_multiplicity_error_count": 0,
+        "directed_edge_orientation_error_count": 0,
+        "vector_area_closure_relative": 0.0,
+        "degenerate_triangle_count": 0,
+        "closed": True,
+    }
+
+
+def test_semantic_writeback_mapping_controls_magnet_identity_order():
+    roles = [f"radial-{index}" for index in range(8)] + [
+        f"magnet-{index:04d}" for index in range(18)
+    ]
+    topology = {
+        "topology_gate_pass": True,
+        "volume_envelopes": [
+            _closed_magnet(volume_id) for volume_id in reversed(range(9, 27))
+        ],
+    }
+    result = audit_dagmc_topology._magnet_inventory(
+        topology,
+        dagmc_sha256="a" * 64,
+        criteria_sha256="b" * 64,
+        semantic_roles_by_global_volume_id=roles,
+    )
+    assert [row["magnet_id"] for row in result["magnets"]] == [
+        f"magnet-{index:04d}" for index in range(18)
+    ]
+    assert [row["volume_id"] for row in result["magnets"]] == list(
+        range(9, 27)
+    )
+
+
 def test_cli_exception_writes_failed_receipts_and_returns_nonzero(
     tmp_path, monkeypatch
 ):

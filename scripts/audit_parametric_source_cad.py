@@ -146,11 +146,17 @@ def _component_pair(task: tuple[str, str]) -> dict:
 
 def _magnet_component(task: tuple[int, str]) -> dict:
     index, component = task
-    result, separation = _distance_first_intersection(
-        _MAGNETS[index],
-        _COMPONENTS[component],
-        witnesses_required=component == "vacuum_gap",
-    )
+    if component == "vacuum_gap":
+        result, separation = _distance_first_intersection(
+            _MAGNETS[index],
+            _COMPONENTS[component],
+            witnesses_required=True,
+        )
+    else:
+        result = _intersection(
+            _MAGNETS[index], _COMPONENTS[component], multithread=False
+        )
+        separation = {"status": "NOT_REQUIRED_INTERSECTION_GATE_ONLY"}
     row = {
         "magnet_id": f"magnet-{index:04d}",
         "component": component,

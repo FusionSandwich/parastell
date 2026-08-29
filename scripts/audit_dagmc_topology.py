@@ -107,11 +107,14 @@ def _magnet_inventory(
     *,
     dagmc_sha256: str,
     criteria_sha256: str,
+    magnet_material: str = "magnets",
+    semantic_roles_by_global_volume_id: list[str] | None = None,
 ) -> dict[str, Any]:
     magnets = [
         row
         for row in topology.get("volume_envelopes", [])
-        if row["material_tag"].strip().lower() == "magnets"
+        if row["material_tag"].strip().lower()
+        == str(magnet_material).strip().lower()
     ]
 
     def order(row: dict[str, Any]) -> tuple[float, float, float, float]:
@@ -125,7 +128,25 @@ def _magnet_inventory(
             center[1],
         )
 
-    magnets.sort(key=order)
+    if semantic_roles_by_global_volume_id is None:
+        magnets.sort(key=order)
+        magnet_ids = [f"magnet-{index:04d}" for index in range(len(magnets))]
+    else:
+        role_by_volume_id = {
+            index + 1: str(role)
+            for index, role in enumerate(semantic_roles_by_global_volume_id)
+        }
+        expected_ids = [f"magnet-{index:04d}" for index in range(18)]
+        by_id = {
+            role_by_volume_id.get(int(row["volume_id"])): row
+            for row in magnets
+        }
+        if set(by_id) != set(expected_ids):
+            raise ValueError(
+                "semantic magnet/global-volume mapping is incomplete"
+            )
+        magnets = [by_id[magnet_id] for magnet_id in expected_ids]
+        magnet_ids = expected_ids
     all_close = len(magnets) == 18 and all(row["closed"] for row in magnets)
     inventory_gate_pass = (
         topology.get("topology_gate_pass") is True and all_close
@@ -139,7 +160,7 @@ def _magnet_inventory(
         "inventory_gate_pass": inventory_gate_pass,
         "magnets": [
             {
-                "magnet_id": f"magnet-{index:04d}",
+                "magnet_id": magnet_ids[index],
                 "volume_id": row["volume_id"],
                 "material_tag": row["material_tag"],
                 "component_name": row["component_name"],
@@ -175,6 +196,11 @@ def main() -> int:
     parser.add_argument("--expected-dagmc-sha256", required=True)
     parser.add_argument("--acceptance-criteria", required=True, type=Path)
     parser.add_argument("--expected-acceptance-criteria-sha256", required=True)
+    parser.add_argument("--magnet-material", default="magnets")
+    parser.add_argument("--expected-material-counts", type=Path)
+    parser.add_argument("--expected-material-counts-sha256")
+    parser.add_argument("--h5m-writeback", type=Path)
+    parser.add_argument("--expected-h5m-writeback-sha256")
     arguments = parser.parse_args()
 
     dagmc = arguments.dagmc.resolve()
@@ -201,10 +227,73 @@ def main() -> int:
         stage = "acceptance_criteria_parse"
         criteria = json.loads(criteria_path.read_text(encoding="utf-8"))
 
+        expected_material_counts = None
+        if bool(arguments.expected_material_counts) != bool(
+            arguments.expected_material_counts_sha256
+        ):
+            raise ValueError(
+                "material-count path/hash must be supplied together"
+            )
+        if arguments.expected_material_counts:
+            stage = "expected_material_counts"
+            counts_path = arguments.expected_material_counts.resolve()
+            if (
+                sha256_file(counts_path)
+                != arguments.expected_material_counts_sha256
+            ):
+                raise ValueError("expected-material-count hash mismatch")
+            expected_material_counts = json.loads(
+                counts_path.read_text(encoding="utf-8")
+            )
+            if (
+                not isinstance(expected_material_counts, dict)
+                or not expected_material_counts
+                or any(
+                    not isinstance(name, str)
+                    or not name
+                    or not isinstance(count, int)
+                    or count <= 0
+                    for name, count in expected_material_counts.items()
+                )
+            ):
+                raise ValueError("expected-material-count mapping is invalid")
+
+        semantic_roles = None
+        if bool(arguments.h5m_writeback) != bool(
+            arguments.expected_h5m_writeback_sha256
+        ):
+            raise ValueError(
+                "H5M-writeback path/hash must be supplied together"
+            )
+        if arguments.h5m_writeback:
+            stage = "h5m_writeback_binding"
+            writeback_path = arguments.h5m_writeback.resolve()
+            if (
+                sha256_file(writeback_path)
+                != arguments.expected_h5m_writeback_sha256
+            ):
+                raise ValueError("H5M-writeback hash mismatch")
+            writeback = json.loads(writeback_path.read_text(encoding="utf-8"))
+            if (
+                writeback.get("schema")
+                != "parastell.parametric_direct90_h5m_writeback/v1.0.0"
+                or writeback.get("pass") is not True
+                or writeback.get("h5m_sha256")
+                != arguments.expected_dagmc_sha256
+            ):
+                raise ValueError("H5M-writeback receipt is invalid")
+            semantic_roles = writeback.get(
+                "semantic_roles_by_global_volume_id"
+            )
+            if not isinstance(semantic_roles, list):
+                raise ValueError("H5M-writeback semantic roles are missing")
+
         stage = "native_and_pydagmc_topology_audit"
         topology = audit_dagmc_topology(
             dagmc,
+            magnet_material=arguments.magnet_material,
             expected_magnet_count=18,
+            expected_material_counts=expected_material_counts,
             vector_area_relative_tolerance=float(
                 criteria["magnet_envelopes"]["vector_area_relative_tolerance"]
             ),
@@ -217,6 +306,8 @@ def main() -> int:
             topology,
             dagmc_sha256=arguments.expected_dagmc_sha256,
             criteria_sha256=criteria_sha256,
+            magnet_material=arguments.magnet_material,
+            semantic_roles_by_global_volume_id=semantic_roles,
         )
 
         stage = "finite_json_serialization"

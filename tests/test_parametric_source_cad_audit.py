@@ -41,6 +41,41 @@ def test_positive_exact_distance_skips_boolean_common(monkeypatch):
     assert separation["minimum_distance_cm"] == 2.0
 
 
+def test_magnet_component_uses_distance_only_for_clearance(monkeypatch):
+    monkeypatch.setattr(audit_module, "_MAGNETS", [object()])
+    monkeypatch.setattr(
+        audit_module,
+        "_COMPONENTS",
+        {"chamber": object(), "vacuum_gap": object()},
+    )
+    calls = []
+    monkeypatch.setattr(
+        audit_module,
+        "_intersection",
+        lambda *args, **kwargs: {
+            "status": "EXACT_AABB_DISJOINT",
+            "volume_cm3": 0.0,
+        },
+    )
+    monkeypatch.setattr(
+        audit_module,
+        "_distance_first_intersection",
+        lambda *args, **kwargs: (
+            calls.append(kwargs)
+            or {
+                "status": "EXACT_BREP_DISTANCE_DISJOINT",
+                "volume_cm3": 0.0,
+            },
+            {"status": "MEASURED", "minimum_distance_cm": 1.0},
+        ),
+    )
+    chamber = audit_module._magnet_component((0, "chamber"))
+    gap = audit_module._magnet_component((0, "vacuum_gap"))
+    assert chamber["separation_distance"]["status"].startswith("NOT_REQUIRED")
+    assert gap["minimum_clearance"]["minimum_distance_cm"] == 1.0
+    assert calls == [{"witnesses_required": True}]
+
+
 def test_source_manifest_binds_artifacts_components_and_all_magnets(tmp_path):
     artifact = tmp_path / "chamber.step"
     artifact.write_bytes(b"cad")
