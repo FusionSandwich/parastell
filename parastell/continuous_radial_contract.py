@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections.abc import Mapping
+from itertools import pairwise
 from pathlib import Path
-from typing import Any, Mapping
-
+from typing import Any
 
 SOURCE_MANIFEST_SCHEMA = "parastell.parametric_source_cad/v1.0.0"
 SOURCE_AUDIT_SCHEMA = "parastell.continuous_radial_source_cad_audit/v1.0.0"
@@ -43,7 +44,7 @@ MATERIAL_TAGS = (
     "Vacuum",
     "homogenized_magnet",
 )
-ADJACENT_ROLE_PAIRS = tuple(zip(COMPONENT_ORDER, COMPONENT_ORDER[1:]))
+ADJACENT_ROLE_PAIRS = tuple(pairwise(COMPONENT_ORDER))
 NONADJACENT_ROLE_PAIRS = tuple(
     (left, right)
     for index, left in enumerate(COMPONENT_ORDER)
@@ -106,12 +107,17 @@ def validate_source_manifest(manifest: Mapping[str, Any]) -> None:
     ):
         raise ValueError("global magnet is not one continuous radial layer")
     evidence = manifest.get("component_evidence", {})
-    if tuple(evidence) != COMPONENT_ORDER or any(
-        row.get("brep_valid") is not True
-        or row.get("solid_count") != 1
-        or not math.isfinite(float(row.get("volume_cm3", math.nan)))
-        or float(row["volume_cm3"]) <= 0.0
-        for row in evidence.values()
+    # JSON object member order is not semantic and canonical ``sort_keys``
+    # serialization deliberately changes it. The authoritative order is the
+    # explicit component_order list validated above.
+    if set(evidence) != set(COMPONENT_ORDER) or any(
+        evidence[component].get("brep_valid") is not True
+        or evidence[component].get("solid_count") != 1
+        or not math.isfinite(
+            float(evidence[component].get("volume_cm3", math.nan))
+        )
+        or float(evidence[component]["volume_cm3"]) <= 0.0
+        for component in COMPONENT_ORDER
     ):
         raise ValueError("nine-volume source component evidence is invalid")
     stages = manifest.get("radial_build_construction_stages", ())
@@ -149,7 +155,7 @@ def validate_source_artifacts(
 ) -> list[dict[str, Any]]:
     root = Path(source_root)
     artifacts = manifest.get("artifacts", {})
-    if set(path.name for path in root.glob("*.step")) != set(
+    if {path.name for path in root.glob("*.step")} != set(
         expected_step_names()
     ):
         raise ValueError(

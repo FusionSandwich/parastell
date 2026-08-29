@@ -8,10 +8,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from parastell.continuous_radial_contract import COMPONENT_ORDER
-from parastell.continuous_radial_contract import COUPLING_INTERFACE
-from parastell.continuous_radial_contract import radial_separation_proof
-from parastell.continuous_radial_contract import validate_source_manifest
+from parastell.continuous_radial_contract import (
+    COMPONENT_ORDER,
+    COUPLING_INTERFACE,
+    radial_separation_proof,
+    validate_source_manifest,
+)
 from scripts.build_continuous_magnet_surface_manifest import (
     build_manifest,
     classify_surface_role,
@@ -88,6 +90,11 @@ def test_authoritative_manifest_accepts_only_continuous_nine_volume_model():
     assert len(proofs) == 28
     assert all(row["pass"] for row in proofs)
     assert all(row["exact_boolean_required"] is False for row in proofs)
+
+
+def test_authoritative_manifest_survives_canonical_json_key_order():
+    manifest = json.loads(json.dumps(_manifest(), sort_keys=True))
+    validate_source_manifest(manifest)
 
 
 @pytest.mark.parametrize(
