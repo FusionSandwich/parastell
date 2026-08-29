@@ -95,6 +95,22 @@ def test_command_propagates_all_physical_audit_bindings(tmp_path, monkeypatch):
         assert command[command.index(option) + 1] == value
 
 
+def test_same_bounded_wrapper_selects_authoritative_continuous_exporter(
+    tmp_path, monkeypatch
+):
+    args = _case(tmp_path, monkeypatch)
+    args.exporter = (
+        Path(runner.__file__).resolve().parent
+        / "export_continuous_parametric_direct90_dagmc.py"
+    )
+    args.expected_exporter_sha256 = _sha(args.exporter)
+    command = runner._command(args)
+    assert command[1:3] == [
+        "-m",
+        "scripts.export_continuous_parametric_direct90_dagmc",
+    ]
+
+
 def test_success_hashes_all_outputs_and_preserves_log(tmp_path, monkeypatch):
     args = _case(tmp_path, monkeypatch)
     launched = {}

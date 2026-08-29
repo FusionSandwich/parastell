@@ -19,7 +19,10 @@ requires only adjacent shared interfaces, verifies closed OCC shells and both
 periodic ends, and writes no tally or coupling solid into the H5M. It remains
 blocked on native DAGMC and OpenMC qualification after export. The existing
 26-volume `export_parametric_direct90_dagmc.py` is an alternate swept-coil
-candidate and is not accepted or relabelled by this lane.
+candidate and is not accepted or relabelled by this lane. The existing
+hash-bound, 32-core-lease, 21,600-second terminal wrapper now admits either
+exporter by its exact repository filename while preserving distinct module
+identities and the no-automatic-successor rule.
 
 The surface manifest records every surface of the closed continuous magnet
 volume for complete crossing capture. It separately selects the physical

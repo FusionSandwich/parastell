@@ -1,8 +1,9 @@
 """Run one hash-bound parametric direct-90 DAGMC export.
 
 This wrapper is intentionally separate from the historical direct-90 runner.
-It preserves the physical source-audit bindings required by the parametric
-exporter and never launches a native-DAGMC or OpenMC successor.
+It preserves the physical source-audit bindings required by either the
+alternate swept-coil exporter or the authoritative continuous-radial exporter
+and never launches a native-DAGMC or OpenMC successor.
 """
 
 from __future__ import annotations
@@ -48,6 +49,14 @@ THREAD_ENVIRONMENT = {
     "NUMEXPR_NUM_THREADS": "1",
     "VECLIB_MAXIMUM_THREADS": "1",
     "BLIS_NUM_THREADS": "1",
+}
+ALLOWED_EXPORTERS = {
+    "export_parametric_direct90_dagmc.py": (
+        "scripts.export_parametric_direct90_dagmc"
+    ),
+    "export_continuous_parametric_direct90_dagmc.py": (
+        "scripts.export_continuous_parametric_direct90_dagmc"
+    ),
 }
 
 
@@ -169,10 +178,13 @@ def _output_evidence(output_root: Path) -> dict[str, Any]:
 
 
 def _command(args: argparse.Namespace) -> list[str]:
+    module = ALLOWED_EXPORTERS.get(args.exporter.name)
+    if module is None:
+        raise ValueError("exporter is not an allowed direct-90 lane")
     return [
         sys.executable,
         "-m",
-        "scripts.export_parametric_direct90_dagmc",
+        module,
         "--source-root",
         str(args.source_root.resolve()),
         "--manifest-sha256",
@@ -227,8 +239,10 @@ def run(args: argparse.Namespace) -> int:
             raise ValueError("wrapper hash mismatch")
         if args.requested_threads != REQUESTED_THREADS:
             raise ValueError("requested thread count is not 32")
+        if args.exporter.name not in ALLOWED_EXPORTERS:
+            raise ValueError("exporter is not an allowed direct-90 lane")
         expected_exporter = (
-            repository_root / "scripts" / "export_parametric_direct90_dagmc.py"
+            repository_root / "scripts" / args.exporter.name
         ).resolve()
         if args.exporter.resolve() != expected_exporter:
             raise ValueError("exporter path is not the repository module")
