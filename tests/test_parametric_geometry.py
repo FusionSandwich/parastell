@@ -607,7 +607,7 @@ def test_input_bindings_are_read_only_and_canonical(tmp_path):
         plan.input_hashes["vmec"] = "0" * 64
 
 
-def test_wistell_profile_preserves_accepted_component_identity():
+def test_wistell_profile_preserves_authoritative_continuous_magnet_identity():
     config_path = (
         Path(__file__).resolve().parents[1]
         / "configs"
@@ -622,20 +622,37 @@ def test_wistell_profile_preserves_accepted_component_identity():
         "vacuum_vessel",
         "low_temperature_shield",
         "vacuum_gap",
+        "magnets",
     ]
     assert config["magnets"] == {
-        "representation": "swept_filaments",
-        "material": "homogenized_magnet",
-        "width_cm": 30.0,
-        "thickness_cm": 30.0,
-        "case_thickness_cm": 0.0,
-        "sample_mod": 1,
-        "start_line": 3,
-        "scale": 100.0,
+        "representation": "radial_envelope",
+        "layer": "magnets",
     }
+    assert config["layers"][-1]["material"] == "homogenized_magnet"
+    assert config["layers"][-1]["thickness"]["array_key"] == "magnets"
     assert config["construction"] == {
         "radial_build_mode": "isolated_cumulative_shells"
     }
+
+
+def test_swept_coil_candidate_is_separate_and_not_the_canonical_profile():
+    root = Path(__file__).resolve().parents[1] / "configs"
+    canonical = json.loads(
+        (root / "wistell_d_parametric_full_period.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    alternate = json.loads(
+        (
+            root / "wistell_d_parametric_full_period_swept_candidate.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert canonical["magnets"]["representation"] == "radial_envelope"
+    assert alternate["magnets"]["representation"] == "swept_filaments"
+    assert alternate["model_id"].endswith("-swept-candidate")
+    assert [layer["name"] for layer in canonical["layers"]][:-1] == [
+        layer["name"] for layer in alternate["layers"]
+    ]
 
 
 def test_isolated_shells_preserve_exact_cumulative_boundaries(

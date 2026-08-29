@@ -1,6 +1,6 @@
 {
   "schema": "parastell.parametric_geometry_plan/v1.0.0",
-  "model_id": "wistell-d-nwl-baseline-full-period-80x90",
+  "model_id": "wistell-d-nwl-baseline-full-period-80x90-swept-candidate",
   "device": "WISTELL-D",
   "inputs": {
     "vmec": {
@@ -30,79 +30,48 @@
     {
       "name": "first_wall",
       "material": "first_wall",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "first_wall"
-      }
+      "thickness": {"kind": "array", "input": "resolved_thickness", "array_key": "first_wall"}
     },
     {
       "name": "breeder",
       "material": "breeder",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "breeder"
-      }
+      "thickness": {"kind": "array", "input": "resolved_thickness", "array_key": "breeder"}
     },
     {
       "name": "back_wall",
       "material": "back_wall",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "back_wall"
-      }
+      "thickness": {"kind": "array", "input": "resolved_thickness", "array_key": "back_wall"}
     },
     {
       "name": "high_temperature_shield",
       "material": "high_temperature_shield",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "hts"
-      }
+      "thickness": {"kind": "array", "input": "resolved_thickness", "array_key": "hts"}
     },
     {
       "name": "vacuum_vessel",
       "material": "vacuum_vessel",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "vacuum_vessel"
-      }
+      "thickness": {"kind": "array", "input": "resolved_thickness", "array_key": "vacuum_vessel"}
     },
     {
       "name": "low_temperature_shield",
       "material": "low_temperature_shield",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "lts"
-      }
+      "thickness": {"kind": "array", "input": "resolved_thickness", "array_key": "lts"}
     },
     {
       "name": "vacuum_gap",
       "material": "Vacuum",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "gap"
-      }
-    },
-    {
-      "name": "magnets",
-      "material": "homogenized_magnet",
-      "thickness": {
-        "kind": "array",
-        "input": "resolved_thickness",
-        "array_key": "magnets"
-      }
+      "thickness": {"kind": "array", "input": "resolved_thickness", "array_key": "gap"}
     }
   ],
   "magnets": {
-    "representation": "radial_envelope",
-    "layer": "magnets"
+    "representation": "swept_filaments",
+    "material": "homogenized_magnet",
+    "width_cm": 30.0,
+    "thickness_cm": 30.0,
+    "case_thickness_cm": 0.0,
+    "sample_mod": 1,
+    "start_line": 3,
+    "scale": 100.0
   },
   "source_mesh": {
     "enabled": true,
@@ -110,9 +79,7 @@
     "poloidal_points": 81,
     "toroidal_points": 61
   },
-  "construction": {
-    "radial_build_mode": "isolated_cumulative_shells"
-  },
+  "construction": {"radial_build_mode": "isolated_cumulative_shells"},
   "runtime": {
     "kind": "docker",
     "image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191",
