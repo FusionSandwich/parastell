@@ -332,6 +332,12 @@ def build_delayed_photon_solver_handoff(
         raise DelayedPhotonSourceError(
             "ALARA result used another input manifest"
         )
+    if receipt.get("provenance_origin") != handoff["openmc_provenance"].get(
+        "provenance_origin"
+    ):
+        raise DelayedPhotonSourceError(
+            "ALARA result and OpenMC handoff provenance origins differ"
+        )
     photon_file = receipt.get("files", {}).get("delayed_photon_source", {})
     if (
         photon_file.get("sha256") != photon_sha256
@@ -594,6 +600,17 @@ def validate_delayed_photon_solver_handoff(bundle: Mapping[str, Any]) -> None:
         _digest(provenance.get(key), key)
     if provenance.get("alara_runtime") != qualified_alara_runtime():
         raise DelayedPhotonSourceError("ALARA runtime provenance is invalid")
+    origin = bundle.get("provenance_origin")
+    if (
+        origin
+        not in {
+            "SYNTHETIC_WORKFLOW_FIXTURE",
+            "PHYSICAL_OPENMC_STATEPOINT",
+        }
+        or provenance.get("openmc_provenance", {}).get("provenance_origin")
+        != origin
+    ):
+        raise DelayedPhotonSourceError("delayed source provenance is invalid")
     if bundle.get("uncertainty") != {
         "status": "UNAVAILABLE_NOT_PROPAGATED",
         "zero_uncertainty_may_be_claimed": False,

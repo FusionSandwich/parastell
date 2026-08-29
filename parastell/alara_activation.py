@@ -14,7 +14,11 @@ from pathlib import Path
 import re
 from typing import Any, Mapping, Sequence
 
-from .activation_campaign import validate_activation_campaign
+from .activation_campaign import (
+    COOLING_OFFSETS_S,
+    IRRADIATION_CHECKPOINTS_S,
+    validate_activation_campaign,
+)
 from .energy_groups import (
     VITAMIN_J_175_EDGES_EV,
     VITAMIN_J_175_EDGES_SHA256,
@@ -571,6 +575,13 @@ def validate_alara_output_text(text: str) -> dict[str, Any]:
         raise ValueError("ALARA output contains malformed isotope labels")
     if not labels:
         raise ValueError("ALARA output contains no isotope labels")
+    required_section_markers = (
+        "*** Specific Activity [Bq/cm3] ***",
+        "*** Total Decay Heat [W/cm3] ***",
+        "*** Photon Source Distribution",
+    )
+    if any(marker not in text for marker in required_section_markers):
+        raise ValueError("ALARA output is missing a required response section")
     sections = {
         "specific_activity": text.split(
             "*** Specific Activity [Bq/cm3] ***", 1
@@ -579,26 +590,47 @@ def validate_alara_output_text(text: str) -> dict[str, Any]:
             -1
         ].split("*** Photon Source Distribution", 1)[0],
     }
+    cooling_labels = [
+        _alara_duration(int(value)) for value in COOLING_OFFSETS_S if value > 0
+    ]
+    output_columns = ["pre-irrad", "shutdown", *cooling_labels]
+    expected_header = " ".join(["isotope", "t_1/2(s)", *output_columns])
     totals: dict[str, dict[str, float]] = {}
     for name, section in sections.items():
+        header_match = re.search(
+            r"^\s*isotope\s+(.+?)\s*$", section, flags=re.MULTILINE
+        )
+        if header_match is None:
+            raise ValueError(f"ALARA output is missing the {name} header")
+        actual_header = " ".join(("isotope " + header_match.group(1)).split())
+        if actual_header != expected_header:
+            raise ValueError(
+                f"ALARA {name} cooling columns differ from the contract"
+            )
         match = re.search(r"^total\s+(.+)$", section, flags=re.MULTILINE)
         if match is None:
             raise ValueError(f"ALARA output is missing the {name} total row")
         values = [float(value) for value in match.group(1).split()]
-        if len(values) < 4:
-            raise ValueError(f"ALARA {name} total row is incomplete")
-        pre_irradiation = values[1]
-        shutdown = values[2]
-        one_day = values[6]
+        expected_value_count = 1 + len(output_columns)
+        if len(values) != expected_value_count:
+            raise ValueError(
+                f"ALARA {name} total row does not match the cooling columns"
+            )
+        response_values = values[1:]
+        if any(
+            not math.isfinite(value) or value < 0.0
+            for value in response_values
+        ):
+            raise ValueError(f"ALARA {name} total row contains invalid data")
+        values_by_column = dict(zip(output_columns, response_values))
+        pre_irradiation = values_by_column["pre-irrad"]
+        shutdown = values_by_column["shutdown"]
+        one_day = values_by_column["1 d"]
         if pre_irradiation != 0.0:
             raise ValueError(f"ALARA {name} pre-irradiation value is nonzero")
         if min(shutdown, one_day) <= 0.0:
             raise ValueError(f"ALARA {name} endpoint is not positive")
-        totals[name] = {
-            "pre_irradiation": pre_irradiation,
-            "shutdown": shutdown,
-            "one_day": one_day,
-        }
+        totals[name] = dict(values_by_column)
     return {
         "schema": "parastell.alara_output_text_audit/v1.0.0",
         "status": "PASS",
@@ -610,6 +642,9 @@ def validate_alara_output_text(text: str) -> dict[str, Any]:
         "all_isotope_labels_well_formed": True,
         "pre_irradiation_activity_and_heat_zero": True,
         "shutdown_and_one_day_activity_and_heat_positive": True,
+        "cooling_schedule_columns_validated": True,
+        "cooling_offset_s": list(COOLING_OFFSETS_S),
+        "cooling_output_columns": output_columns,
         "totals": totals,
         "scientific_claim": "WORKFLOW_SMOKE_ONLY",
     }
@@ -622,6 +657,7 @@ def validate_alara_result_files(
     delayed_photon_path: str | Path,
     input_manifest_sha256: str,
     remote_run_root: str,
+    provenance_origin: str,
     irradiation_checkpoint_s: int | None = None,
     alara_input_sha256: str | None = None,
     activation_zone_ids: Sequence[str] | None = None,
@@ -638,12 +674,18 @@ def validate_alara_result_files(
         raise ValueError("ALARA stderr is not empty")
     if photon.stat().st_size <= 0:
         raise ValueError("ALARA delayed-photon output is empty")
+    if provenance_origin not in {
+        "PHYSICAL_OPENMC_STATEPOINT",
+        "SYNTHETIC_WORKFLOW_FIXTURE",
+    }:
+        raise ValueError("ALARA result provenance origin is invalid")
     audit = validate_alara_output_text(output.read_text(encoding="utf-8"))
     result = {
         "schema": "parastell.alara_bounded_result/v1.0.0",
         "status": "PASSED",
         "claim": "WORKFLOW_SMOKE_ONLY",
-        "provenance_origin": "SYNTHETIC_WORKFLOW_FIXTURE",
+        "provenance_origin": provenance_origin,
+        "provenance_assignment": "explicit_at_result_sealing",
         "host": "poly-bateman",
         "remote_run_root": str(remote_run_root),
         "runtime": qualified_alara_runtime(),
@@ -685,14 +727,22 @@ def validate_alara_result_files(
         activation_zone_ids,
         cooling_offset_s,
     )
+    if provenance_origin == "PHYSICAL_OPENMC_STATEPOINT" and any(
+        value is None for value in execution_fields
+    ):
+        raise ValueError(
+            "physical ALARA results require a complete execution binding"
+        )
     if any(value is not None for value in execution_fields):
         if any(value is None for value in execution_fields):
             raise ValueError(
                 "ALARA delayed-source execution binding must be complete"
             )
         checkpoint = int(irradiation_checkpoint_s)
-        if checkpoint <= 0:
-            raise ValueError("irradiation checkpoint must be positive")
+        if checkpoint not in IRRADIATION_CHECKPOINTS_S:
+            raise ValueError(
+                "irradiation checkpoint differs from the campaign contract"
+            )
         zone_ids = [str(value).strip() for value in activation_zone_ids]
         if (
             not zone_ids
@@ -701,9 +751,9 @@ def validate_alara_result_files(
         ):
             raise ValueError("activation zone IDs must be nonempty and unique")
         offsets = [int(value) for value in cooling_offset_s]
-        if not offsets or offsets[0] != 0 or offsets != sorted(set(offsets)):
+        if tuple(offsets) != COOLING_OFFSETS_S:
             raise ValueError(
-                "cooling offsets must be unique, ascending, and start at zero"
+                "cooling offsets differ from the campaign contract"
             )
         result["execution_binding"] = {
             "irradiation_checkpoint_s": checkpoint,

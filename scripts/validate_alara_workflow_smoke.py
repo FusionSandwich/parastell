@@ -26,6 +26,7 @@ def main() -> None:
         ),
         input_manifest_sha256=args.input_manifest_sha256,
         remote_run_root=args.remote_run_root,
+        provenance_origin="SYNTHETIC_WORKFLOW_FIXTURE",
     )
     args.receipt.write_text(
         json.dumps(receipt, indent=2, sort_keys=True, allow_nan=False) + "\n",

@@ -37,13 +37,34 @@ TIME_LABELS = (
     "5 y",
     "10 y",
 )
+OUTPUT_HEADER = (
+    "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d 1 w 30 d "
+    "1 y 5 y 10 y\n"
+)
+OUTPUT_DATA_ROW = "cu-63 1 0 1 1 1 1 1 1 1 1 1 1\n"
+OUTPUT_TOTAL_ROW = "total 0 0 1 1 1 1 1 1 1 1 1 1\n"
+
+
+def _alara_output_text():
+    return (
+        "Response Units: Bq /cm3\n"
+        "*** Specific Activity [Bq/cm3] ***\n"
+        + OUTPUT_HEADER
+        + OUTPUT_DATA_ROW
+        + OUTPUT_TOTAL_ROW
+        + "*** Total Decay Heat [W/cm3] ***\n"
+        + OUTPUT_HEADER
+        + OUTPUT_DATA_ROW
+        + OUTPUT_TOTAL_ROW
+        + "*** Photon Source Distribution [gammas/s/cm3] : photons\n"
+    )
 
 
 def _sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _provenance():
+def _provenance(provenance_origin="SYNTHETIC_WORKFLOW_FIXTURE"):
     return {
         "raw_h5m_sha256": "a" * 64,
         "canonical_geometry_fingerprint": "b" * 64,
@@ -53,7 +74,7 @@ def _provenance():
         "source_rate_scope": "modeled_90_degree_period",
         "normalization": "per_source_history",
         "statistics_classification": "WORKFLOW_SMOKE_ONLY",
-        "provenance_origin": "SYNTHETIC_WORKFLOW_FIXTURE",
+        "provenance_origin": provenance_origin,
     }
 
 
@@ -105,6 +126,7 @@ def _valid_files(
     photon_text=None,
     bind_result=True,
     delayed_photon_energy_edges_eV=None,
+    provenance_origin="SYNTHETIC_WORKFLOW_FIXTURE",
 ):
     campaign = build_activation_campaign()
     handoff_kwargs = {}
@@ -119,7 +141,7 @@ def _valid_files(
         ],
         campaign=campaign,
         group_structure_sha256=VITAMIN_J_175_EDGES_SHA256,
-        openmc_provenance=_provenance(),
+        openmc_provenance=_provenance(provenance_origin),
         **handoff_kwargs,
     )
     package_root = tmp_path / "alara-package"
@@ -134,17 +156,7 @@ def _valid_files(
         if row["path"] == relative_input
     )
     output = tmp_path / "alara.out"
-    output.write_text(
-        "Response Units: Bq /cm3\n"
-        "*** Specific Activity [Bq/cm3] ***\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Total Decay Heat [W/cm3] ***\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Photon Source Distribution [gammas/s/cm3] : photons\n",
-        encoding="utf-8",
-    )
+    output.write_text(_alara_output_text(), encoding="utf-8")
     stderr = tmp_path / "alara.stderr"
     stderr.write_text("", encoding="utf-8")
     photon = tmp_path / "delayed_photon_source.txt"
@@ -163,6 +175,7 @@ def _valid_files(
         delayed_photon_path=photon,
         input_manifest_sha256=_sha256(manifest_path),
         remote_run_root="/fresh/run",
+        provenance_origin=provenance_origin,
         **kwargs,
     )
     receipt_path = tmp_path / "result.json"
@@ -224,6 +237,35 @@ def test_bridge_preserves_zone_time_units_and_absolute_rates(tmp_path):
         "opensn",
         "radiant",
     }
+
+
+def test_bridge_preserves_physical_provenance_end_to_end(tmp_path):
+    photon, receipt, manifest = _valid_files(
+        tmp_path, provenance_origin="PHYSICAL_OPENMC_STATEPOINT"
+    )
+    bundle = build_delayed_photon_solver_handoff(
+        delayed_photon_path=photon,
+        alara_result_receipt_path=receipt,
+        alara_input_manifest_path=manifest,
+    )
+    assert bundle["provenance_origin"] == "PHYSICAL_OPENMC_STATEPOINT"
+    assert (
+        bundle["artifact_provenance"]["openmc_provenance"]["provenance_origin"]
+        == "PHYSICAL_OPENMC_STATEPOINT"
+    )
+
+
+def test_bridge_rejects_result_and_openmc_provenance_mismatch(tmp_path):
+    photon, receipt, manifest = _valid_files(tmp_path)
+    changed = json.loads(receipt.read_text(encoding="utf-8"))
+    changed["provenance_origin"] = "PHYSICAL_OPENMC_STATEPOINT"
+    receipt.write_text(json.dumps(changed) + "\n", encoding="utf-8")
+    with pytest.raises(DelayedPhotonSourceError, match="origins differ"):
+        build_delayed_photon_solver_handoff(
+            delayed_photon_path=photon,
+            alara_result_receipt_path=receipt,
+            alara_input_manifest_path=manifest,
+        )
 
 
 def test_bridge_writes_create_only_solver_contracts(tmp_path):
@@ -395,17 +437,7 @@ def test_handoff_validation_rejects_tampering(tmp_path):
 def test_result_binding_is_all_or_nothing(tmp_path):
     photon, _, manifest = _valid_files(tmp_path)
     output = tmp_path / "minimal.out"
-    output.write_text(
-        "Response Units: Bq /cm3\n"
-        "*** Specific Activity [Bq/cm3] ***\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Total Decay Heat [W/cm3] ***\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Photon Source Distribution [gammas/s/cm3] : photons\n",
-        encoding="utf-8",
-    )
+    output.write_text(_alara_output_text(), encoding="utf-8")
     stderr = tmp_path / "minimal.stderr"
     stderr.write_text("", encoding="utf-8")
     with pytest.raises(ValueError, match="must be complete"):
@@ -415,5 +447,6 @@ def test_result_binding_is_all_or_nothing(tmp_path):
             delayed_photon_path=photon,
             input_manifest_sha256=_sha256(manifest),
             remote_run_root="/fresh/run",
+            provenance_origin="SYNTHETIC_WORKFLOW_FIXTURE",
             irradiation_checkpoint_s=86_400,
         )

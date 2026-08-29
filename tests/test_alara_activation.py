@@ -20,6 +20,29 @@ from parastell.energy_groups import (
 )
 
 
+OUTPUT_HEADER = (
+    "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d 1 w 30 d "
+    "1 y 5 y 10 y\n"
+)
+OUTPUT_DATA_ROW = "cu-63 1 0 1 1 1 1 1 1 1 1 1 1\n"
+OUTPUT_TOTAL_ROW = "total 0 0 1 1 1 1 1 1 1 1 1 1\n"
+
+
+def _alara_output_text() -> str:
+    return (
+        "Response Units: Bq /cm3\n"
+        "*** Specific Activity [Bq/cm3] ***\n"
+        + OUTPUT_HEADER
+        + OUTPUT_DATA_ROW
+        + OUTPUT_TOTAL_ROW
+        + "*** Total Decay Heat [W/cm3] ***\n"
+        + OUTPUT_HEADER
+        + OUTPUT_DATA_ROW
+        + OUTPUT_TOTAL_ROW
+        + "*** Photon Source Distribution [gammas/s/cm3] : photons\n"
+    )
+
+
 def _provenance():
     return {
         "raw_h5m_sha256": "a" * 64,
@@ -131,40 +154,42 @@ def test_alara_runtime_identity_is_immutable():
 
 
 def test_alara_output_audit_requires_units_and_well_formed_isotopes():
-    audit = validate_alara_output_text(
-        "Response Units: Bq /cm3\n"
-        "*** Specific Activity [Bq/cm3] ***\n"
-        "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Total Decay Heat [W/cm3] ***\n"
-        "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Photon Source Distribution [gammas/s/cm3] : photons\n"
-    )
+    audit = validate_alara_output_text(_alara_output_text())
     assert audit["status"] == "PASS"
+    assert audit["cooling_output_columns"] == [
+        "pre-irrad",
+        "shutdown",
+        "1 s",
+        "60 s",
+        "1 h",
+        "1 d",
+        "1 w",
+        "30 d",
+        "1 y",
+        "5 y",
+        "10 y",
+    ]
     with pytest.raises(ValueError, match="units"):
         validate_alara_output_text("cu-63 1 0 1")
+
+
+@pytest.mark.parametrize(
+    "changed, message",
+    [(" 1 w", ""), (" 5 y 10 y", " 10 y 5 y")],
+)
+def test_alara_output_audit_rejects_missing_or_reordered_schedule_columns(
+    changed, message
+):
+    text = _alara_output_text().replace(changed, message)
+    with pytest.raises(ValueError, match="cooling columns"):
+        validate_alara_output_text(text)
 
 
 def test_terminal_result_files_require_empty_stderr_and_delayed_photons(
     tmp_path,
 ):
     output = tmp_path / "alara.out"
-    output.write_text(
-        "Response Units: Bq /cm3\n"
-        "*** Specific Activity [Bq/cm3] ***\n"
-        "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Total Decay Heat [W/cm3] ***\n"
-        "isotope t_1/2(s) pre-irrad shutdown 1 s 60 s 1 h 1 d\n"
-        "cu-63 1 0 1 1 1 1 1\n"
-        "total 0 0 1 1 1 1 1\n"
-        "*** Photon Source Distribution [gammas/s/cm3] : photons\n",
-        encoding="utf-8",
-    )
+    output.write_text(_alara_output_text(), encoding="utf-8")
     stderr = tmp_path / "alara.stderr"
     stderr.write_text("", encoding="utf-8")
     photons = tmp_path / "photons"
@@ -175,8 +200,10 @@ def test_terminal_result_files_require_empty_stderr_and_delayed_photons(
         delayed_photon_path=photons,
         input_manifest_sha256="a" * 64,
         remote_run_root="/fresh/run",
+        provenance_origin="SYNTHETIC_WORKFLOW_FIXTURE",
     )
     assert receipt["status"] == "PASSED"
+    assert receipt["provenance_origin"] == "SYNTHETIC_WORKFLOW_FIXTURE"
     stderr.write_text("failure", encoding="utf-8")
     with pytest.raises(ValueError, match="stderr"):
         validate_alara_result_files(
@@ -185,4 +212,69 @@ def test_terminal_result_files_require_empty_stderr_and_delayed_photons(
             delayed_photon_path=photons,
             input_manifest_sha256="a" * 64,
             remote_run_root="/fresh/run",
+            provenance_origin="SYNTHETIC_WORKFLOW_FIXTURE",
+        )
+
+
+def test_physical_result_preserves_provenance_and_requires_full_schedule(
+    tmp_path,
+):
+    output = tmp_path / "alara.out"
+    output.write_text(_alara_output_text(), encoding="utf-8")
+    stderr = tmp_path / "alara.stderr"
+    stderr.write_text("", encoding="utf-8")
+    photons = tmp_path / "photons"
+    photons.write_text("positive", encoding="utf-8")
+    campaign = build_activation_campaign()
+    receipt = validate_alara_result_files(
+        output_path=output,
+        stderr_path=stderr,
+        delayed_photon_path=photons,
+        input_manifest_sha256="a" * 64,
+        remote_run_root="/fresh/physical-run",
+        provenance_origin="PHYSICAL_OPENMC_STATEPOINT",
+        irradiation_checkpoint_s=campaign["irradiation_checkpoint_s"][0],
+        alara_input_sha256="b" * 64,
+        activation_zone_ids=["magnet-0000"],
+        cooling_offset_s=campaign["cooling_offset_s"],
+    )
+    assert receipt["provenance_origin"] == "PHYSICAL_OPENMC_STATEPOINT"
+    assert receipt["output_audit"]["cooling_schedule_columns_validated"]
+
+    with pytest.raises(ValueError, match="complete execution binding"):
+        validate_alara_result_files(
+            output_path=output,
+            stderr_path=stderr,
+            delayed_photon_path=photons,
+            input_manifest_sha256="a" * 64,
+            remote_run_root="/fresh/physical-run",
+            provenance_origin="PHYSICAL_OPENMC_STATEPOINT",
+        )
+
+    with pytest.raises(ValueError, match="cooling offsets differ"):
+        validate_alara_result_files(
+            output_path=output,
+            stderr_path=stderr,
+            delayed_photon_path=photons,
+            input_manifest_sha256="a" * 64,
+            remote_run_root="/fresh/physical-run",
+            provenance_origin="PHYSICAL_OPENMC_STATEPOINT",
+            irradiation_checkpoint_s=campaign["irradiation_checkpoint_s"][0],
+            alara_input_sha256="b" * 64,
+            activation_zone_ids=["magnet-0000"],
+            cooling_offset_s=campaign["cooling_offset_s"][:-1],
+        )
+
+    with pytest.raises(ValueError, match="irradiation checkpoint differs"):
+        validate_alara_result_files(
+            output_path=output,
+            stderr_path=stderr,
+            delayed_photon_path=photons,
+            input_manifest_sha256="a" * 64,
+            remote_run_root="/fresh/physical-run",
+            provenance_origin="PHYSICAL_OPENMC_STATEPOINT",
+            irradiation_checkpoint_s=2 * 86_400,
+            alara_input_sha256="b" * 64,
+            activation_zone_ids=["magnet-0000"],
+            cooling_offset_s=campaign["cooling_offset_s"],
         )
