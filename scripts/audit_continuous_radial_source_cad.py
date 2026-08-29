@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import gc
 import json
 from pathlib import Path
 import sys
@@ -58,17 +59,19 @@ def audit(
         raise FileExistsError(f"create-only output exists: {output}")
     before = _load_source(source, expected_manifest_sha256)
     output.mkdir(parents=False)
-    solids = {
-        name: _one_solid(source / f"{name}.step") for name in COMPONENT_ORDER
-    }
-    inventory = [
-        _shape_row(solids[name], identity=name) for name in COMPONENT_ORDER
-    ]
+    inventory = []
+    for name in COMPONENT_ORDER:
+        solid = _one_solid(source / f"{name}.step")
+        inventory.append(_shape_row(solid, identity=name))
+        del solid
+        gc.collect()
     adjacent = []
     for left, right in ADJACENT_ROLE_PAIRS:
+        left_solid = _one_solid(source / f"{left}.step")
+        right_solid = _one_solid(source / f"{right}.step")
         row = {
             "components": [left, right],
-            **_intersection(solids[left], solids[right], multithread=False),
+            **_intersection(left_solid, right_solid, multithread=False),
             "shared_boundary_proof": (
                 "consecutive cumulative outer/inner matrix SHA-256 identity"
             ),
@@ -79,6 +82,8 @@ def audit(
             and 0.0 <= float(row["volume_cm3"]) <= INTERSECTION_TOLERANCE_CM3
         )
         adjacent.append(row)
+        del left_solid, right_solid
+        gc.collect()
     nonadjacent = radial_separation_proof(before["manifest"])
     after = _load_source(source, expected_manifest_sha256)
     source_immutable = before["artifacts"] == after["artifacts"]
