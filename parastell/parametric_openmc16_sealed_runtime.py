@@ -343,7 +343,7 @@ def _validate_seal(
         evidence["source_mesh_h5m"]["sha256"],
     )
     materials = seal.get("materials")
-    expected_names = sorted(MATERIAL_NAMES | {"Vacuum"})
+    expected_names = sorted(MATERIAL_NAMES)
     if (
         not isinstance(materials, Mapping)
         or materials.get("names") != expected_names

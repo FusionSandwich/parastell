@@ -42,7 +42,10 @@ def _material_names_from_xml(path: Path) -> list[str]:
     folded = [name.casefold() for name in names]
     if any(not name for name in names) or len(folded) != len(set(folded)):
         raise ValueError("materials XML names must be nonempty and unique")
-    expected = MATERIAL_NAMES | {"Vacuum"}
+    # DAGMC's reserved ``mat:Vacuum`` volume is void and must not be exported
+    # as a physical OpenMC material.  The committed bounded-smoke materials
+    # therefore contain only the seven non-void material tags.
+    expected = MATERIAL_NAMES
     if set(names) != expected:
         raise ValueError(
             "materials XML names do not match DAGMC material tags"

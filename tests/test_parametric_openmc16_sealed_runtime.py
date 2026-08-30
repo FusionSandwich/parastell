@@ -67,7 +67,7 @@ def _install_fake_openmc(monkeypatch):
         def from_xml(cls, **_kwargs):
             return cls(
                 SimpleNamespace(name=name)
-                for name in sorted(runtime.MATERIAL_NAMES | {"Vacuum"})
+                for name in sorted(runtime.MATERIAL_NAMES)
             )
 
     class MeshSpatial:
@@ -199,7 +199,7 @@ def _packet(tmp_path):
             "volume_normalized": False,
         },
         "materials": {
-            "names": sorted(runtime.MATERIAL_NAMES | {"Vacuum"}),
+            "names": sorted(runtime.MATERIAL_NAMES),
             "nuclear_data_manifest": nuclear,
         },
         "run": {"particles": 100, "batches": 2, "seed": 20260829},

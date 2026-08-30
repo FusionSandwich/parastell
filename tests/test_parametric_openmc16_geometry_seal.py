@@ -32,7 +32,7 @@ def _case(tmp_path: Path, monkeypatch):
         path.write_bytes(name.encode())
         paths[name] = path
     materials = tmp_path / "materials.xml"
-    names = ["Vacuum", *sorted(seal.MATERIAL_NAMES)]
+    names = sorted(seal.MATERIAL_NAMES)
     materials.write_text(
         "<materials>"
         + "".join(
