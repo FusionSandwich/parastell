@@ -1,8 +1,28 @@
 import numpy as np
 
 from parastell.source_domain import SOURCE_QUADRATURE_BARYCENTRICS
+from parastell.source_domain import _ClosedSurface
 from parastell.source_domain import audit_source_tetrahedra_arrays
 from parastell.source_domain import select_source_volume
+
+
+def test_closed_surface_vtk_fallback_classifies_inside_and_outside_points():
+    triangles = np.asarray(
+        [
+            [[0, 0, 0], [0, 1, 0], [1, 0, 0]],
+            [[0, 0, 0], [1, 0, 0], [0, 0, 1]],
+            [[0, 0, 0], [0, 0, 1], [0, 1, 0]],
+            [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        ],
+        dtype=float,
+    )
+    surface = _ClosedSurface(triangles)
+    assert surface.n_open_edges == 0
+    selected, distance = surface.classify(
+        np.asarray([[0.1, 0.1, 0.1], [2.0, 2.0, 2.0]])
+    )
+    assert selected.tolist() == [1, 0]
+    assert distance[1] != 0.0
 
 
 def _two_tetrahedra():

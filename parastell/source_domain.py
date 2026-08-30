@@ -167,11 +167,113 @@ def select_source_volume(
     return volume
 
 
+class _ClosedSurface:
+    """Small backend-neutral closed-surface point classifier."""
+
+    def __init__(self, triangles: np.ndarray):
+        self.backend = "pyvista"
+        try:
+            import pyvista as pv
+
+            points = triangles.reshape((-1, 3))
+            faces = np.column_stack(
+                (
+                    np.full(len(triangles), 3, dtype=np.int64),
+                    np.arange(len(points), dtype=np.int64).reshape((-1, 3)),
+                )
+            ).reshape(-1)
+            self.surface = pv.PolyData(points, faces).clean(
+                point_merging=True, tolerance=1.0e-8, absolute=True
+            )
+            self.n_open_edges = int(self.surface.n_open_edges)
+            return
+        except ModuleNotFoundError:
+            self.backend = "vtk"
+
+        import vtk
+        from vtk.util.numpy_support import numpy_to_vtk
+
+        points = np.asarray(triangles, dtype=float).reshape((-1, 3))
+        vtk_points = vtk.vtkPoints()
+        vtk_points.SetData(numpy_to_vtk(points, deep=True))
+        cells = vtk.vtkCellArray()
+        for start in range(0, len(points), 3):
+            cell = vtk.vtkTriangle()
+            for local in range(3):
+                cell.GetPointIds().SetId(local, start + local)
+            cells.InsertNextCell(cell)
+        surface = vtk.vtkPolyData()
+        surface.SetPoints(vtk_points)
+        surface.SetPolys(cells)
+        clean = vtk.vtkCleanPolyData()
+        clean.SetInputData(surface)
+        clean.SetToleranceIsAbsolute(True)
+        clean.SetAbsoluteTolerance(1.0e-8)
+        clean.Update()
+        self.surface = clean.GetOutput()
+        edges = vtk.vtkFeatureEdges()
+        edges.SetInputData(self.surface)
+        edges.BoundaryEdgesOn()
+        edges.FeatureEdgesOff()
+        edges.ManifoldEdgesOff()
+        edges.NonManifoldEdgesOff()
+        edges.Update()
+        self.n_open_edges = int(edges.GetOutput().GetNumberOfCells())
+
+    def classify(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        values = np.asarray(points, dtype=float).reshape((-1, 3))
+        if self.backend == "pyvista":
+            import pyvista as pv
+
+            cloud = pv.PolyData(values)
+            selected = np.asarray(
+                cloud.select_enclosed_points(
+                    self.surface, tolerance=1.0e-9, check_surface=True
+                )["SelectedPoints"],
+                dtype=np.uint8,
+            )
+            distance = np.asarray(
+                cloud.compute_implicit_distance(self.surface, inplace=False)[
+                    "implicit_distance"
+                ],
+                dtype=float,
+            )
+            return selected, distance
+
+        import vtk
+        from vtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+
+        vtk_points = vtk.vtkPoints()
+        vtk_points.SetData(numpy_to_vtk(values, deep=True))
+        cloud = vtk.vtkPolyData()
+        cloud.SetPoints(vtk_points)
+        enclosed = vtk.vtkSelectEnclosedPoints()
+        enclosed.SetInputData(cloud)
+        enclosed.SetSurfaceData(self.surface)
+        enclosed.SetTolerance(1.0e-9)
+        enclosed.CheckSurfaceOn()
+        enclosed.Update()
+        selected = np.asarray(
+            vtk_to_numpy(
+                enclosed.GetOutput().GetPointData().GetArray("SelectedPoints")
+            ),
+            dtype=np.uint8,
+        )
+        distance = np.zeros(len(values), dtype=float)
+        outside = np.flatnonzero(selected == 0)
+        if len(outside):
+            implicit = vtk.vtkImplicitPolyDataDistance()
+            implicit.SetInput(self.surface)
+            distance[outside] = [
+                implicit.EvaluateFunction(values[index]) for index in outside
+            ]
+        return selected, distance
+
+
 def _source_volume_surface(
     dagmc_path: Path, volume_id: int, expected_material: str
 ):
     import pydagmc
-    import pyvista as pv
 
     model = pydagmc.Model(str(dagmc_path))
     volume = select_source_volume(
@@ -180,17 +282,8 @@ def _source_volume_surface(
     triangles = np.concatenate(
         [_triangles(surface.triangle_coords) for surface in volume.surfaces]
     )
-    points = triangles.reshape((-1, 3))
-    faces = np.column_stack(
-        (
-            np.full(len(triangles), 3, dtype=np.int64),
-            np.arange(len(points), dtype=np.int64).reshape((-1, 3)),
-        )
-    ).reshape(-1)
-    surface = pv.PolyData(points, faces).clean(
-        point_merging=True, tolerance=1.0e-8, absolute=True
-    )
-    if int(surface.n_open_edges) != 0:
+    surface = _ClosedSurface(triangles)
+    if surface.n_open_edges != 0:
         raise ValueError("declared source volume surface is not closed")
     return volume, surface
 
@@ -208,8 +301,6 @@ def audit_source_domain(
     boundary_tolerance_cm: float = 1.0e-6,
 ) -> dict[str, Any]:
     """Audit every source tet, its vertices, and five integration points."""
-    import pyvista as pv
-
     dagmc = Path(dagmc_path).resolve()
     source_mesh = Path(source_mesh_path).resolve()
     reference_source = Path(reference_source_mesh_path).resolve()
@@ -252,19 +343,10 @@ def audit_source_domain(
             tetrahedra[start:stop],
         ).reshape((-1, 3))
         points = np.concatenate((vertices, quadrature))
-        cloud = pv.PolyData(points)
-        selected = cloud.select_enclosed_points(
-            surface, tolerance=1.0e-9, check_surface=True
-        )["SelectedPoints"]
-        implicit_distance = cloud.compute_implicit_distance(
-            surface, inplace=False
-        )["implicit_distance"]
+        selected, implicit_distance = surface.classify(points)
         invalid = np.flatnonzero(
-            (np.asarray(selected, dtype=np.uint8) == 0)
-            & (
-                np.abs(np.asarray(implicit_distance, dtype=float))
-                > boundary_tolerance_cm
-            )
+            (selected == 0)
+            & (np.abs(implicit_distance) > boundary_tolerance_cm)
         )
         invalid_point_count += int(len(invalid))
         vertex_point_count = 4 * (stop - start)

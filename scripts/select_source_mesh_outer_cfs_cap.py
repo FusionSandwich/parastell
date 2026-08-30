@@ -85,7 +85,6 @@ def _outer_boundary_clearance(
     source_volume_id: int,
     source_material: str,
 ) -> dict[str, Any]:
-    import pyvista as pv
     from parastell.pystell import read_vmec
 
     _, surface = _source_volume_surface(
@@ -104,21 +103,8 @@ def _outer_boundary_clearance(
             for theta in poloidal
         ]
     )
-    cloud = pv.PolyData(points)
-    selected = np.asarray(
-        cloud.select_enclosed_points(
-            surface, tolerance=1.0e-9, check_surface=True
-        )["SelectedPoints"],
-        dtype=np.uint8,
-    )
-    distance = np.abs(
-        np.asarray(
-            cloud.compute_implicit_distance(surface, inplace=False)[
-                "implicit_distance"
-            ],
-            dtype=float,
-        )
-    )
+    selected, implicit_distance = surface.classify(points)
+    distance = np.abs(implicit_distance)
     return {
         "sample_count": int(len(points)),
         "all_samples_enclosed": bool(np.all(selected == 1)),
