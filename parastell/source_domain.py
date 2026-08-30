@@ -167,6 +167,135 @@ def select_source_volume(
     return volume
 
 
+def periodic_cut_face_triangles(
+    source_volume: Any,
+    angles_degrees: Any,
+    *,
+    tolerance_cm: float,
+) -> tuple[np.ndarray, ...]:
+    """Extract the actual source-volume triangles on each sector cut face."""
+    angles = np.asarray(angles_degrees, dtype=float).reshape(-1)
+    tolerance = float(tolerance_cm)
+    if (
+        angles.shape != (2,)
+        or not np.all(np.isfinite(angles))
+        or not angles[0] < angles[1]
+        or not np.isfinite(tolerance)
+        or tolerance <= 0.0
+    ):
+        raise ValueError("periodic cut-face controls are invalid")
+    triangles = np.concatenate(
+        [
+            _triangles(surface.triangle_coords)
+            for surface in source_volume.surfaces
+        ]
+    )
+    patches = []
+    for angle in angles:
+        radians = np.deg2rad(angle)
+        distances = np.abs(
+            -triangles[:, :, 0] * np.sin(radians)
+            + triangles[:, :, 1] * np.cos(radians)
+        )
+        patch = triangles[np.all(distances <= tolerance, axis=1)]
+        if not len(patch):
+            raise ValueError(
+                f"source volume has no cut-face triangles at {angle} degrees"
+            )
+        normals = np.cross(
+            patch[:, 1] - patch[:, 0], patch[:, 2] - patch[:, 0]
+        )
+        patch = patch[np.linalg.norm(normals, axis=1) > 0.0]
+        if not len(patch):
+            raise ValueError(
+                f"source-volume cut face at {angle} degrees is degenerate"
+            )
+        patches.append(patch)
+    return tuple(patches)
+
+
+def periodic_cut_face_vertex_mask(
+    points_cm: Any,
+    cut_face_triangles: tuple[np.ndarray, ...],
+    *,
+    tolerance_cm: float,
+) -> np.ndarray:
+    """Identify points within tolerance of the actual cut-face triangle patches."""
+    points = np.asarray(points_cm, dtype=float).reshape((-1, 3))
+    tolerance = float(tolerance_cm)
+    if (
+        len(cut_face_triangles) != 2
+        or not np.isfinite(tolerance)
+        or tolerance <= 0.0
+    ):
+        raise ValueError("periodic cut-face controls are invalid")
+    matched = np.zeros(len(points), dtype=bool)
+    for patch_values in cut_face_triangles:
+        patch = np.asarray(patch_values, dtype=float).reshape((-1, 3, 3))
+        if not len(patch) or not np.all(np.isfinite(patch)):
+            raise ValueError("periodic cut-face triangles are invalid")
+        for triangle in patch:
+            a, b, c = triangle
+            ab = b - a
+            ac = c - a
+            normal = np.cross(ab, ac)
+            normal_norm = float(np.linalg.norm(normal))
+            if normal_norm <= 0.0:
+                continue
+            normal_unit = normal / normal_norm
+            signed_distance = (points - a) @ normal_unit
+            near_plane = np.abs(signed_distance) <= tolerance
+            if not np.any(near_plane):
+                continue
+            projected = points - signed_distance[:, None] * normal_unit
+            ap = projected - a
+            d00 = float(ab @ ab)
+            d01 = float(ab @ ac)
+            d11 = float(ac @ ac)
+            denominator = d00 * d11 - d01 * d01
+            if denominator <= 0.0:
+                continue
+            d20 = ap @ ab
+            d21 = ap @ ac
+            beta = (d11 * d20 - d01 * d21) / denominator
+            gamma = (d00 * d21 - d01 * d20) / denominator
+            alpha = 1.0 - beta - gamma
+            altitude_alpha = normal_norm / float(np.linalg.norm(c - b))
+            altitude_beta = normal_norm / float(np.linalg.norm(c - a))
+            altitude_gamma = normal_norm / float(np.linalg.norm(b - a))
+            inside = (
+                (alpha >= -tolerance / altitude_alpha)
+                & (beta >= -tolerance / altitude_beta)
+                & (gamma >= -tolerance / altitude_gamma)
+            )
+            matched |= near_plane & inside
+    return matched
+
+
+def _remove_periodic_cut_face_vertex_exemptions(
+    raw_invalid: np.ndarray,
+    vertex_point_count: int,
+    points_cm: np.ndarray,
+    cut_face_triangles: tuple[np.ndarray, ...],
+    *,
+    tolerance_cm: float,
+) -> tuple[np.ndarray, int]:
+    """Remove only invalid vertices proven to lie on actual cut faces."""
+    raw_invalid = np.asarray(raw_invalid, dtype=int).reshape(-1)
+    raw_vertex = raw_invalid[raw_invalid < int(vertex_point_count)]
+    exempted_vertices = raw_vertex[
+        periodic_cut_face_vertex_mask(
+            np.asarray(points_cm, dtype=float)[raw_vertex],
+            cut_face_triangles,
+            tolerance_cm=tolerance_cm,
+        )
+    ]
+    retained = raw_invalid[
+        ~np.isin(raw_invalid, exempted_vertices, assume_unique=True)
+    ]
+    return retained, int(len(exempted_vertices))
+
+
 class _ClosedSurface:
     """Small backend-neutral closed-surface point classifier."""
 
@@ -305,6 +434,8 @@ def audit_source_domain(
     source_material: str = "Vacuum",
     source_strength_relative_tolerance: float = 1.0e-12,
     require_reference_identity: bool = True,
+    periodic_cut_plane_angles_degrees: Any | None = None,
+    periodic_cut_plane_tolerance_cm: float = 1.0e-6,
     point_chunk_size: int = 10000,
     boundary_tolerance_cm: float = 1.0e-6,
 ) -> dict[str, Any]:
@@ -338,9 +469,24 @@ def audit_source_domain(
     source_volume, surface = _source_volume_surface(
         dagmc, int(source_volume_id), source_material
     )
+    cut_face_patches = None
+    if periodic_cut_plane_angles_degrees is not None:
+        if float(periodic_cut_plane_tolerance_cm) > float(
+            boundary_tolerance_cm
+        ):
+            raise ValueError(
+                "periodic cut-plane tolerance exceeds the boundary tolerance"
+            )
+        cut_face_patches = periodic_cut_face_triangles(
+            source_volume,
+            periodic_cut_plane_angles_degrees,
+            tolerance_cm=periodic_cut_plane_tolerance_cm,
+        )
     invalid_point_count = 0
     invalid_vertex_count = 0
     invalid_quadrature_count = 0
+    raw_invalid_point_count = 0
+    exempted_periodic_cut_plane_vertex_count = 0
     first_invalid_points = []
     for start in range(0, len(tetrahedra), int(point_chunk_size)):
         stop = min(start + int(point_chunk_size), len(tetrahedra))
@@ -352,12 +498,25 @@ def audit_source_domain(
         ).reshape((-1, 3))
         points = np.concatenate((vertices, quadrature))
         selected, implicit_distance = surface.classify(points)
-        invalid = np.flatnonzero(
+        raw_invalid = np.flatnonzero(
             (selected == 0)
             & (np.abs(implicit_distance) > boundary_tolerance_cm)
         )
-        invalid_point_count += int(len(invalid))
+        raw_invalid_point_count += int(len(raw_invalid))
         vertex_point_count = 4 * (stop - start)
+        invalid = raw_invalid
+        if cut_face_patches is not None and len(raw_invalid):
+            invalid, exempted_count = (
+                _remove_periodic_cut_face_vertex_exemptions(
+                    raw_invalid,
+                    vertex_point_count,
+                    points,
+                    cut_face_patches,
+                    tolerance_cm=periodic_cut_plane_tolerance_cm,
+                )
+            )
+            exempted_periodic_cut_plane_vertex_count += exempted_count
+        invalid_point_count += int(len(invalid))
         invalid_vertex_count += int((invalid < vertex_point_count).sum())
         invalid_quadrature_count += int((invalid >= vertex_point_count).sum())
         for flat_index in invalid:
@@ -420,6 +579,23 @@ def audit_source_domain(
         "invalid_vertex_sample_count": invalid_vertex_count,
         "invalid_quadrature_point_count": invalid_quadrature_count,
         "invalid_sample_point_count": invalid_point_count,
+        "raw_invalid_sample_point_count": raw_invalid_point_count,
+        "periodic_cut_plane_angles_degrees": (
+            None
+            if periodic_cut_plane_angles_degrees is None
+            else [float(value) for value in periodic_cut_plane_angles_degrees]
+        ),
+        "periodic_cut_plane_tolerance_cm": float(
+            periodic_cut_plane_tolerance_cm
+        ),
+        "periodic_cut_face_triangle_counts": (
+            None
+            if cut_face_patches is None
+            else [int(len(patch)) for patch in cut_face_patches]
+        ),
+        "exempted_periodic_cut_plane_vertex_count": (
+            exempted_periodic_cut_plane_vertex_count
+        ),
         "first_invalid_sample_points": first_invalid_points,
         **arrays,
         "source_domain_gate_pass": gate,

@@ -21,6 +21,9 @@ from scripts.select_source_mesh_outer_cfs_cap import (
     _validated_caps,
 )
 
+SOURCE_BOUNDARY_TOLERANCE_CM = 1.0e-6
+SECTOR_ANGLE_TOLERANCE_DEGREES = 1.0e-12
+
 
 def _verified_receipt(
     path: Path, expected_sha256: str, *, label: str
@@ -68,15 +71,55 @@ def _verified_control(path: Path, expected_sha256: str) -> dict[str, Any]:
         raise ValueError("source material must be non-empty")
     clearance = float(control.get("minimum_clearance_cm", 0.0))
     source_loss = float(control.get("maximum_omitted_source_fraction", -1.0))
+    cut_angles = control.get("periodic_cut_plane_angles_degrees")
+    cut_tolerance = control.get("periodic_cut_plane_tolerance_cm")
     if not math.isfinite(clearance) or clearance <= 0.0:
         raise ValueError("minimum clearance must be finite and positive")
     if not math.isfinite(source_loss) or not 0.0 <= source_loss < 1.0:
         raise ValueError("maximum omitted source fraction is invalid")
+    if (
+        not isinstance(cut_angles, list)
+        or len(cut_angles) != 2
+        or any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in cut_angles
+        )
+    ):
+        raise ValueError("periodic cut-plane angles are invalid")
+    if not float(cut_angles[0]) < float(cut_angles[1]):
+        raise ValueError(
+            "periodic cut-plane angles must be unique and ordered"
+        )
+    if (
+        isinstance(cut_tolerance, bool)
+        or not isinstance(cut_tolerance, (int, float))
+        or not math.isfinite(float(cut_tolerance))
+        or float(cut_tolerance) <= 0.0
+        or float(cut_tolerance) > SOURCE_BOUNDARY_TOLERANCE_CM
+    ):
+        raise ValueError("periodic cut-plane tolerance is invalid")
     for key in ("dagmc_sha256", "candidate_manifest_sha256"):
         value = str(control.get(key, ""))
         if len(value) != 64:
             raise ValueError(f"audit-control {key} is invalid")
     return control
+
+
+def _validate_cut_plane_binding(
+    control: dict[str, Any], manifest: dict[str, Any]
+) -> None:
+    expected_cut_angles = [0.0, float(manifest["extent_degrees"])]
+    if not np.allclose(
+        np.asarray(control["periodic_cut_plane_angles_degrees"], dtype=float),
+        np.asarray(expected_cut_angles, dtype=float),
+        rtol=0.0,
+        atol=SECTOR_ANGLE_TOLERANCE_DEGREES,
+    ):
+        raise ValueError(
+            "periodic cut-plane angles do not match the modeled sector extent"
+        )
 
 
 def _candidate_passes(
@@ -128,6 +171,7 @@ def main() -> None:
     manifest = _verified_manifest(
         manifest_path, control["candidate_manifest_sha256"]
     )
+    _validate_cut_plane_binding(control, manifest)
     if args.output_directory.exists():
         raise FileExistsError(
             f"create-only output exists: {args.output_directory}"
@@ -197,6 +241,13 @@ def main() -> None:
             source_volume_id=int(control["source_volume_id"]),
             source_material=str(control["source_material"]),
             require_reference_identity=False,
+            periodic_cut_plane_angles_degrees=control[
+                "periodic_cut_plane_angles_degrees"
+            ],
+            periodic_cut_plane_tolerance_cm=float(
+                control["periodic_cut_plane_tolerance_cm"]
+            ),
+            boundary_tolerance_cm=SOURCE_BOUNDARY_TOLERANCE_CM,
         )
         clearance = _outer_boundary_clearance(
             dagmc,
@@ -360,6 +411,14 @@ def main() -> None:
         "maximum_omitted_source_fraction": float(
             control["maximum_omitted_source_fraction"]
         ),
+        "periodic_cut_plane_angles_degrees": [
+            float(value)
+            for value in control["periodic_cut_plane_angles_degrees"]
+        ],
+        "periodic_cut_plane_tolerance_cm": float(
+            control["periodic_cut_plane_tolerance_cm"]
+        ),
+        "source_boundary_tolerance_cm": SOURCE_BOUNDARY_TOLERANCE_CM,
         "preregistered_caps": caps,
         "candidates": audited_rows,
         "provisional_selected_candidate_index": provisional_selected_index,
