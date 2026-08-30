@@ -1,32 +1,30 @@
-"""Run geometry-debug on an already exported parametric OpenMC 0.16 model."""
+"""Run sealed OpenMC 0.16 geometry debug in a stdlib-only process."""
 
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import json
 from pathlib import Path
 import shutil
 import subprocess
 import time
-from typing import Any
-from xml.etree import ElementTree
+from typing import Any, Mapping
 
-from parastell.openmc_geometry_debug import parse_openmc_geometry_debug_log
-from parastell.parametric_openmc16_model import RECEIPT_SCHEMA
-from parastell.parametric_openmc16_model import _canonical_sha
+from parastell.parametric_openmc16_geometry_debug_contract import (
+    LOG_FILENAME,
+    RUN_RECEIPT_FILENAME,
+    RUN_RECEIPT_SCHEMA,
+    bind_openmc_executable,
+    canonical_sha256,
+    load_runtime_environment,
+    load_sealed_model_receipt,
+    parse_openmc_geometry_debug_log,
+    sha256_file,
+)
 
 
-SCHEMA = "parastell.parametric_openmc16_geometry_debug_run/v1.0.0"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+SCHEMA = RUN_RECEIPT_SCHEMA
 
 
 def _load_bound_receipt(
@@ -36,102 +34,94 @@ def _load_bound_receipt(
     model_xml: Path,
     dagmc_h5m: Path,
 ) -> dict[str, Any]:
-    if sha256_file(path) != expected_sha256:
-        raise ValueError("parametric model receipt hash mismatch")
-    receipt = json.loads(path.read_text(encoding="utf-8"))
-    content_hash = receipt.pop("receipt_content_sha256", None)
-    content_pass = content_hash == _canonical_sha(receipt)
-    receipt["receipt_content_sha256"] = content_hash
-    expected_magnets = {
-        f"magnet-{index:04d}": index + 9 for index in range(18)
-    }
-    if (
-        receipt.get("schema") != RECEIPT_SCHEMA
-        or receipt.get("status") != "MODEL_EXPORTED_TRANSPORT_PENDING"
-        or receipt.get("claim") != "BOUNDED_SMOKE_ONLY"
-        or receipt.get("openmc_version") != "0.16.0"
-        or receipt.get("model_xml", {}).get("sha256") != sha256_file(model_xml)
-        or receipt.get("dagmc_sha256") != sha256_file(dagmc_h5m)
-        or receipt.get("modeled_extent_degrees") != 90.0
-        or receipt.get("n_field_periods") != 4
-        or receipt.get("magnet_cell_ids") != expected_magnets
-        or receipt.get("photon_transport") is not True
-        or receipt.get("physical_h5m_mutation") is not False
-        or receipt.get("all_bound_inputs_immutable") is not True
-        or receipt.get("selected_nuclear_data_immutable") is not True
-        or not content_pass
-    ):
-        raise ValueError("parametric model receipt is not accepted")
+    """Compatibility adapter for the bounded full-response smoke script."""
+    receipt, _, bound_paths = load_sealed_model_receipt(
+        path, expected_sha256, model_xml
+    )
+    sealed_dagmc = bound_paths.get("sealed_input:dagmc_h5m")
+    if sealed_dagmc != dagmc_h5m.resolve(strict=True):
+        raise ValueError("sealed receipt references another DAGMC H5M")
     return receipt
 
 
-def _nuclear_data_hashes(receipt: dict[str, Any]) -> dict[str, str]:
-    rows = receipt.get("nuclear_data_manifest", {}).get("libraries")
-    if not isinstance(rows, list) or not rows:
-        raise ValueError(
-            "model receipt has no selected nuclear-data inventory"
-        )
+def _nuclear_data_hashes(receipt: Mapping[str, Any]) -> dict[str, str]:
+    bindings = receipt.get("validated_input_bindings", {})
     result = {}
-    for row in rows:
-        path = Path(row["path"]).resolve(strict=True)
-        actual = sha256_file(path)
-        if actual != row.get("sha256"):
+    for label, row in bindings.items():
+        if not str(label).startswith("nuclear_data:"):
+            continue
+        path = Path(str(row["path"])).resolve(strict=True)
+        if sha256_file(path) != row.get("sha256"):
             raise ValueError(f"selected nuclear-data hash mismatch: {path}")
-        result[str(path)] = actual
+        result[str(path)] = str(row["sha256"])
+    if not result:
+        raise ValueError("sealed receipt has no nuclear-data bindings")
     return result
 
 
 def _runtime_inputs(
-    model_xml: Path, dagmc_h5m: Path, receipt: dict[str, Any]
+    model_xml: Path, dagmc_h5m: Path, receipt: Mapping[str, Any]
 ) -> dict[str, dict[str, str]]:
-    root = ElementTree.parse(model_xml).getroot()
-    dagmc_nodes = root.findall("./geometry/dagmc_universe")
-    mesh_nodes = root.findall("./settings/mesh[@type='unstructured']/filename")
-    cross_nodes = root.findall("./materials/cross_sections")
-    if len(dagmc_nodes) != 1 or len(mesh_nodes) != 1 or len(cross_nodes) != 1:
-        raise ValueError("model XML external-input inventory is ambiguous")
-
-    def resolve_declared(value: str) -> Path:
-        path = Path(value)
-        if not path.is_absolute():
-            path = model_xml.parent / path
-        return path.resolve(strict=True)
-
-    declared_dagmc = resolve_declared(dagmc_nodes[0].attrib["filename"])
-    source_mesh = resolve_declared(mesh_nodes[0].text or "")
-    cross_sections = resolve_declared(cross_nodes[0].text or "")
-    if declared_dagmc != dagmc_h5m.resolve(strict=True):
-        raise ValueError("model XML does not reference the supplied H5M")
-    result = {
-        "dagmc_h5m": {
-            "path": str(declared_dagmc),
-            "sha256": sha256_file(declared_dagmc),
-        },
-        "source_mesh": {
-            "path": str(source_mesh),
-            "sha256": sha256_file(source_mesh),
-        },
-        "cross_sections_xml": {
-            "path": str(cross_sections),
-            "sha256": sha256_file(cross_sections),
-        },
+    """Return stage-2 external bindings without importing OpenMC or MOAB."""
+    bindings = receipt.get("validated_input_bindings", {})
+    names = {
+        "dagmc_h5m": "dagmc_h5m",
+        "source_mesh": "source_mesh_h5m",
+        "cross_sections_xml": "cross_sections_xml",
     }
-    if (
-        result["dagmc_h5m"]["sha256"] != receipt.get("dagmc_sha256")
-        or result["source_mesh"]["sha256"] != receipt.get("source_mesh_sha256")
-        or result["cross_sections_xml"]["sha256"]
-        != receipt.get("cross_sections_xml_sha256")
-    ):
-        raise ValueError("model XML external-input hash binding failed")
+    result = {}
+    for output_name, binding_name in names.items():
+        row = bindings.get(binding_name)
+        if not isinstance(row, Mapping):
+            raise ValueError(f"sealed {binding_name} binding is missing")
+        path = Path(str(row["path"])).resolve(strict=True)
+        if sha256_file(path) != row.get("sha256"):
+            raise ValueError("sealed runtime input hash mismatch")
+        result[output_name] = {
+            "path": str(path),
+            "sha256": str(row["sha256"]),
+        }
+    if Path(result["dagmc_h5m"]["path"]) != dagmc_h5m.resolve(strict=True):
+        raise ValueError("sealed runtime references another DAGMC H5M")
+    if not model_xml.resolve(strict=True).is_file():
+        raise ValueError("runtime model XML is missing")
     return result
 
 
-def _run(command: list[str], *, cwd: Path, timeout_seconds: int) -> dict:
+def _observed_file(path: Path) -> dict[str, Any]:
+    resolved = path.resolve(strict=False)
+    result: dict[str, Any] = {
+        "path": str(resolved),
+        "exists": path.exists(),
+        "is_file": path.is_file(),
+        "size_bytes": None,
+        "sha256": None,
+    }
+    if path.is_file():
+        result["size_bytes"] = path.stat().st_size
+        result["sha256"] = sha256_file(path)
+    return result
+
+
+def _snapshot(paths: Mapping[str, Path]) -> dict[str, dict[str, Any]]:
+    return {
+        label: _observed_file(path) for label, path in sorted(paths.items())
+    }
+
+
+def _run(
+    command: list[str],
+    *,
+    cwd: Path,
+    timeout_seconds: int,
+    environment: Mapping[str, str],
+) -> dict[str, Any]:
     started = time.monotonic()
     try:
         completed = subprocess.run(
             command,
             cwd=cwd,
+            env=dict(environment),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
@@ -156,85 +146,215 @@ def _run(command: list[str], *, cwd: Path, timeout_seconds: int) -> dict:
         }
 
 
+def _terminal_classification(
+    *,
+    failure_stage: str | None,
+    run: Mapping[str, Any],
+    qualification: Mapping[str, Any] | None,
+    immutable: bool,
+) -> str:
+    if not immutable:
+        return "BLOCKED_INPUT_MUTATION"
+    if failure_stage == "PREFLIGHT":
+        return "BLOCKED_PREFLIGHT"
+    if failure_stage == "EXECUTION":
+        return "BLOCKED_EXECUTION_ERROR"
+    if failure_stage == "LOG_PARSER":
+        return "BLOCKED_LOG_PARSER"
+    if bool(run.get("timed_out")):
+        return "BLOCKED_TIMEOUT"
+    if run.get("exit_code") is not None and int(run["exit_code"]) != 0:
+        return "BLOCKED_NONZERO_EXIT"
+    if (
+        not isinstance(qualification, Mapping)
+        or qualification.get("pass") is not True
+    ):
+        return "BLOCKED_LOG_QUALIFICATION"
+    return "PASS"
+
+
+def execute_geometry_debug(
+    *,
+    model_xml: Path,
+    model_receipt: Path,
+    expected_model_receipt_sha256: str,
+    output_directory: Path,
+    openmc_executable: Path,
+    expected_openmc_executable_sha256: str,
+    runtime_env: Path,
+    expected_runtime_env_sha256: str,
+    threads: int,
+    timeout_seconds: int,
+) -> tuple[Path, bool]:
+    """Execute once and always seal a terminal receipt after output creation."""
+    output = output_directory.resolve(strict=False)
+    output.mkdir(parents=True, exist_ok=False)
+    result_path = output / RUN_RECEIPT_FILENAME
+    tracked = {
+        "model_xml": model_xml,
+        "model_receipt": model_receipt,
+        "openmc_executable": openmc_executable,
+        "runtime_env": runtime_env,
+    }
+    before = _snapshot(tracked)
+    command: list[str] | None = None
+    runtime_binding: dict[str, Any] | None = None
+    executable_binding: dict[str, Any] | None = None
+    environment_names: list[str] = []
+    required_volume_ids: list[int] = []
+    qualification: Mapping[str, Any] | None = None
+    failure: dict[str, str] | None = None
+    failure_stage: str | None = None
+    run: dict[str, Any] = {
+        "exit_code": None,
+        "timed_out": False,
+        "wall_time_seconds": 0.0,
+    }
+    log_binding: dict[str, Any] | None = None
+    run_model: Path | None = None
+    expected_run_model_sha256: str | None = None
+    try:
+        failure_stage = "PREFLIGHT"
+        if isinstance(threads, bool) or threads < 1:
+            raise ValueError("threads must be a positive integer")
+        if isinstance(timeout_seconds, bool) or timeout_seconds < 1:
+            raise ValueError("timeout must be a positive integer")
+        _, required_volume_ids, sealed_paths = load_sealed_model_receipt(
+            model_receipt,
+            expected_model_receipt_sha256,
+            model_xml,
+        )
+        executable, executable_binding = bind_openmc_executable(
+            openmc_executable, expected_openmc_executable_sha256
+        )
+        environment, runtime_binding = load_runtime_environment(
+            runtime_env, expected_runtime_env_sha256
+        )
+        environment_names = sorted(environment)
+        tracked.update(sealed_paths)
+        tracked["openmc_executable"] = executable
+        tracked["runtime_env"] = Path(runtime_binding["path"])
+        run_model = output / "model.xml"
+        with run_model.open("xb") as destination:
+            with Path(model_xml).resolve(strict=True).open("rb") as source:
+                shutil.copyfileobj(source, destination)
+        tracked["run_model_xml"] = run_model
+        expected_run_model_sha256 = sha256_file(
+            Path(model_xml).resolve(strict=True)
+        )
+        before = _snapshot(tracked)
+        command = [str(executable), "-g", "-s", str(threads)]
+        failure_stage = "EXECUTION"
+        run = _run(
+            command,
+            cwd=output,
+            timeout_seconds=timeout_seconds,
+            environment=environment,
+        )
+        log = output / LOG_FILENAME
+        with log.open("x", encoding="utf-8", newline="\n") as stream:
+            stream.write(str(run.get("output", "")))
+        log_binding = {
+            "path": str(log),
+            "sha256": sha256_file(log),
+            "size_bytes": log.stat().st_size,
+        }
+        failure_stage = "LOG_PARSER"
+        qualification = parse_openmc_geometry_debug_log(
+            str(run.get("output", "")),
+            exit_code=int(run["exit_code"]),
+            expected_threads=threads,
+            required_cell_ids=required_volume_ids,
+        )
+        failure_stage = None
+    except Exception as error:  # terminal receipt is the fail-closed boundary
+        failure = {
+            "stage": failure_stage or "INTERNAL",
+            "exception_type": type(error).__name__,
+            "message": str(error),
+        }
+    finally:
+        after = _snapshot(tracked)
+        immutable = before == after
+        if run_model is not None and run_model.is_file():
+            immutable = bool(
+                immutable
+                and sha256_file(run_model) == expected_run_model_sha256
+            )
+        classification = _terminal_classification(
+            failure_stage=(failure or {}).get("stage"),
+            run=run,
+            qualification=qualification,
+            immutable=immutable,
+        )
+        passed = classification == "PASS"
+        result: dict[str, Any] = {
+            "schema": SCHEMA,
+            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "status": "PASS" if passed else "BLOCKED",
+            "terminal_classification": classification,
+            "terminal": True,
+            "claim": "BOUNDED_NONPRODUCTION",
+            "command": command,
+            "threads": threads,
+            "timeout_seconds": timeout_seconds,
+            "timed_out": bool(run.get("timed_out")),
+            "exit_code": run.get("exit_code"),
+            "wall_time_seconds": float(run.get("wall_time_seconds", 0.0)),
+            "input_model_receipt_expected_sha256": (
+                expected_model_receipt_sha256
+            ),
+            "openmc_executable": executable_binding,
+            "runtime_environment": {
+                "file": runtime_binding,
+                "variable_names": environment_names,
+                "inherit_parent_environment": False,
+                "values_recorded_in_receipt": False,
+            },
+            "required_native_volume_ids": required_volume_ids,
+            "input_hashes_before": before,
+            "input_hashes_after": after,
+            "inputs_immutable": immutable,
+            "openmc_log": log_binding,
+            "log_qualification": qualification,
+            "failure": failure,
+            "production_run_authorized": False,
+        }
+        result["receipt_content_sha256"] = canonical_sha256(result)
+        with result_path.open("x", encoding="utf-8", newline="\n") as stream:
+            json.dump(
+                result, stream, indent=2, sort_keys=True, allow_nan=False
+            )
+            stream.write("\n")
+    return result_path, passed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("model_xml", type=Path)
     parser.add_argument("model_receipt", type=Path)
-    parser.add_argument("dagmc_h5m", type=Path)
     parser.add_argument("output_directory", type=Path)
     parser.add_argument("--expected-model-receipt-sha256", required=True)
+    parser.add_argument("--openmc-executable", type=Path, required=True)
+    parser.add_argument("--expected-openmc-executable-sha256", required=True)
+    parser.add_argument("--runtime-env", type=Path, required=True)
+    parser.add_argument("--expected-runtime-env-sha256", required=True)
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     args = parser.parse_args()
-
-    if args.threads < 1 or args.timeout_seconds < 1:
-        raise ValueError("threads and timeout must be positive")
-    model_xml = args.model_xml.resolve(strict=True)
-    model_receipt = args.model_receipt.resolve(strict=True)
-    dagmc_h5m = args.dagmc_h5m.resolve(strict=True)
-    output = args.output_directory.resolve()
-    output.mkdir(parents=True, exist_ok=False)
-
-    receipt = _load_bound_receipt(
-        model_receipt,
-        args.expected_model_receipt_sha256,
-        model_xml=model_xml,
-        dagmc_h5m=dagmc_h5m,
-    )
-    before = {
-        "model_xml": sha256_file(model_xml),
-        "model_receipt": sha256_file(model_receipt),
-        "runtime_inputs": _runtime_inputs(model_xml, dagmc_h5m, receipt),
-        "nuclear_data": _nuclear_data_hashes(receipt),
-    }
-    run_model = output / "model.xml"
-    shutil.copy2(model_xml, run_model)
-    command = ["openmc", "-g", "-s", str(args.threads)]
-    run = _run(command, cwd=output, timeout_seconds=args.timeout_seconds)
-    log = output / "openmc_geometry_debug.log"
-    log.write_text(run["output"], encoding="utf-8")
-    qualification = parse_openmc_geometry_debug_log(
-        run["output"],
-        exit_code=run["exit_code"],
-        expected_threads=args.threads,
-        required_cell_ids=list(range(1, 27)),
-    )
-    after = {
-        "model_xml": sha256_file(model_xml),
-        "model_receipt": sha256_file(model_receipt),
-        "runtime_inputs": _runtime_inputs(model_xml, dagmc_h5m, receipt),
-        "nuclear_data": _nuclear_data_hashes(receipt),
-    }
-    immutable = (
-        before == after and sha256_file(run_model) == before["model_xml"]
-    )
-    passed = bool(
-        not run["timed_out"] and qualification["pass"] is True and immutable
-    )
-    result = {
-        "schema": SCHEMA,
-        "created_utc": datetime.now(timezone.utc).isoformat(),
-        "status": "PASS" if passed else "BLOCKED_GEOMETRY_DEBUG",
-        "claim": "BOUNDED_NONPRODUCTION",
-        "command": command,
-        "threads": args.threads,
-        "timeout_seconds": args.timeout_seconds,
-        "timed_out": run["timed_out"],
-        "exit_code": run["exit_code"],
-        "wall_time_seconds": run["wall_time_seconds"],
-        "input_model_receipt_sha256": before["model_receipt"],
-        "model_xml_sha256": before["model_xml"],
-        "runtime_inputs": before["runtime_inputs"],
-        "selected_nuclear_data": before["nuclear_data"],
-        "inputs_immutable": immutable,
-        "openmc_log_sha256": sha256_file(log),
-        "log_qualification": qualification,
-        "production_run_authorized": False,
-    }
-    result_path = output / "PARAMETRIC_OPENMC16_GEOMETRY_DEBUG.json"
-    result_path.write_text(
-        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
-        encoding="utf-8",
+    result_path, passed = execute_geometry_debug(
+        model_xml=args.model_xml,
+        model_receipt=args.model_receipt,
+        expected_model_receipt_sha256=args.expected_model_receipt_sha256,
+        output_directory=args.output_directory,
+        openmc_executable=args.openmc_executable,
+        expected_openmc_executable_sha256=(
+            args.expected_openmc_executable_sha256
+        ),
+        runtime_env=args.runtime_env,
+        expected_runtime_env_sha256=args.expected_runtime_env_sha256,
+        threads=args.threads,
+        timeout_seconds=args.timeout_seconds,
     )
     print(result_path)
     if not passed:
