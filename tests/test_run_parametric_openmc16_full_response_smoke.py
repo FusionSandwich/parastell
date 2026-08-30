@@ -199,7 +199,8 @@ def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
     )
 
     def fake_run(path, *, threads, timeout_seconds):
-        (path / "statepoint.2.h5").write_bytes(b"statepoint")
+        for batch in model.settings.statepoint["batches"]:
+            (path / f"statepoint.{batch}.h5").write_bytes(b"statepoint")
         if make_bank:
             (path / "surface_source.h5").write_bytes(b"bank")
         return {"exit_code": 0, "timed_out": False, "output": "ok"}
@@ -239,6 +240,12 @@ def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
     )
     assert result["statistics_qualified"] is False
     assert result["production_run_authorized"] is False
+    assert result["statepoint_policy"] == {
+        "interval_batches": 1,
+        "expected_batches": [1, 2],
+        "observed_batches": [1, 2],
+        "complete": True,
+    }
     sealed = dict(result)
     content_hash = sealed.pop("receipt_content_sha256")
     assert content_hash == runner._canonical_sha(sealed)

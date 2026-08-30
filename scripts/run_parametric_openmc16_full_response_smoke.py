@@ -9,7 +9,10 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
-from parastell.parametric_openmc16_model import _canonical_sha
+from parastell.parametric_openmc16_model import (
+    _canonical_sha,
+    _statepoint_batches,
+)
 from parastell.selected_case_instrumentation import instrument_selected_case
 from parastell.surface_source_instrumentation import (
     build_surface_instrumentation_spec,
@@ -160,6 +163,7 @@ def main() -> None:
     parser.add_argument("--expected-response-plan-sha256", required=True)
     parser.add_argument("--particles", type=int, default=500)
     parser.add_argument("--batches", type=int, default=2)
+    parser.add_argument("--statepoint-interval-batches", type=int, default=1)
     parser.add_argument("--seed", type=int, default=8_290_831)
     parser.add_argument("--max-particles", type=int, default=100_000)
     parser.add_argument("--threads", type=int, default=1)
@@ -214,6 +218,13 @@ def main() -> None:
     model.settings.particles = args.particles
     model.settings.batches = args.batches
     model.settings.seed = args.seed
+    expected_statepoint_batches = _statepoint_batches(
+        {
+            "batches": args.batches,
+            "statepoint_interval_batches": args.statepoint_interval_batches,
+        }
+    )
+    model.settings.statepoint = {"batches": expected_statepoint_batches}
     model.settings.output = {"tallies": False}
     model.tallies = openmc.Tallies()
     surface_spec = build_surface_instrumentation_spec(
@@ -254,13 +265,22 @@ def main() -> None:
         and run_runtime_inputs_before == before["runtime_inputs"]
         and run_runtime_inputs_after == run_runtime_inputs_before
     )
-    statepoints = sorted(output.glob("statepoint.*.h5"))
+    statepoint_rows = []
+    for path in output.glob("statepoint.*.h5"):
+        try:
+            batch = int(path.name.split(".")[1])
+        except (IndexError, ValueError):
+            batch = -1
+        statepoint_rows.append((batch, path))
+    statepoint_rows.sort(key=lambda row: (row[0], row[1].name))
+    observed_statepoint_batches = [row[0] for row in statepoint_rows]
+    statepoints = [row[1] for row in statepoint_rows]
     banks = sorted(output.glob("surface_source*.h5"))
     passed = bool(
         not run["timed_out"]
         and run["exit_code"] == 0
         and immutable
-        and statepoints
+        and observed_statepoint_batches == expected_statepoint_batches
         and banks
     )
     result = {
@@ -272,6 +292,13 @@ def main() -> None:
         "histories": args.particles * args.batches,
         "particles_per_batch": args.particles,
         "batches": args.batches,
+        "statepoint_policy": {
+            "interval_batches": args.statepoint_interval_batches,
+            "expected_batches": expected_statepoint_batches,
+            "observed_batches": observed_statepoint_batches,
+            "complete": observed_statepoint_batches
+            == expected_statepoint_batches,
+        },
         "seed": args.seed,
         "threads": args.threads,
         "timeout_seconds": args.timeout_seconds,

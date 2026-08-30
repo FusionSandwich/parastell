@@ -45,6 +45,33 @@ def _canonical_sha(value: Any) -> str:
     ).hexdigest()
 
 
+def _statepoint_batches(run: Mapping[str, Any]) -> list[int]:
+    """Return the explicit, periodic statepoint schedule for one run.
+
+    OpenMC always receives an explicit final checkpoint.  A declared interval
+    additionally preserves intermediate tally moments for long poster/research
+    runs without changing source histories or tally definitions.
+    """
+    batches = int(run["batches"])
+    interval = run.get("statepoint_interval_batches")
+    if interval is None:
+        return [batches]
+    if (
+        isinstance(interval, bool)
+        or not isinstance(interval, int)
+        or interval <= 0
+        or interval > batches
+    ):
+        raise ValueError(
+            "statepoint_interval_batches must be a positive integer no "
+            "larger than run.batches"
+        )
+    checkpoints = list(range(interval, batches + 1, interval))
+    if not checkpoints or checkpoints[-1] != batches:
+        checkpoints.append(batches)
+    return checkpoints
+
+
 def _bound_path(row: Mapping[str, Any], label: str) -> Path:
     if set(row) != {"path", "sha256"}:
         raise ValueError(f"{label} path/hash binding is incomplete")
@@ -211,13 +238,22 @@ def _validate_evidence(control: Mapping[str, Any]) -> dict[str, Path]:
     if control.get("modeled_extent_degrees") != 90.0:
         raise ValueError("direct WISTELL-D model must span exactly 90 degrees")
     run = control.get("run", {})
-    if set(run) != {"particles", "batches", "seed"} or any(
+    if set(run) not in (
+        {"particles", "batches", "seed"},
+        {
+            "particles",
+            "batches",
+            "seed",
+            "statepoint_interval_batches",
+        },
+    ) or any(
         isinstance(run.get(key), bool)
         or not isinstance(run.get(key), int)
         or run.get(key) <= 0
-        for key in run
+        for key in ("particles", "batches", "seed")
     ):
         raise ValueError("bounded run controls are invalid")
+    _statepoint_batches(run)
     radius = float(control.get("external_vacuum_radius_cm", np.nan))
     if not np.isfinite(radius) or radius <= 0.0:
         raise ValueError("external vacuum radius is invalid")
@@ -380,6 +416,8 @@ def build_model(
     settings.particles = int(control["run"]["particles"])
     settings.batches = int(control["run"]["batches"])
     settings.seed = int(control["run"]["seed"])
+    statepoint_batches = _statepoint_batches(control["run"])
+    settings.statepoint = {"batches": statepoint_batches}
     settings.source = source
     settings.photon_transport = True
     model = openmc.Model(
@@ -446,6 +484,18 @@ def build_model(
         "photon_transport": True,
         "prompt_photons": "transported when produced by nuclear data",
         "delayed_photons": "separate activation-derived source",
+        "statepoint_policy": {
+            "explicit": True,
+            "batches": statepoint_batches,
+            "interval_batches": control["run"].get(
+                "statepoint_interval_batches"
+            ),
+            "final_batch_included": statepoint_batches[-1]
+            == int(control["run"]["batches"]),
+            "purpose": (
+                "intermediate poster/research recovery plus final results"
+            ),
+        },
         "model_xml": {
             "path": str(model_path),
             "sha256": sha256_file(model_path),

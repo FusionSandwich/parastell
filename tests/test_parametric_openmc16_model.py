@@ -201,6 +201,24 @@ def test_rejects_noninteger_history_controls(tmp_path):
         )
 
 
+def test_statepoint_schedule_is_periodic_and_always_includes_final_batch():
+    assert builder._statepoint_batches({"batches": 10}) == [10]
+    assert builder._statepoint_batches(
+        {"batches": 10, "statepoint_interval_batches": 3}
+    ) == [3, 6, 9, 10]
+    assert builder._statepoint_batches(
+        {"batches": 10, "statepoint_interval_batches": 5}
+    ) == [5, 10]
+
+
+@pytest.mark.parametrize("interval", [0, -1, 11, 1.5, True])
+def test_statepoint_schedule_rejects_invalid_interval(interval):
+    with pytest.raises(ValueError, match="statepoint_interval_batches"):
+        builder._statepoint_batches(
+            {"batches": 10, "statepoint_interval_batches": interval}
+        )
+
+
 def test_rejects_semantic_magnet_permutation(tmp_path):
     control_path, control = _packet(tmp_path)
     writeback = control["inputs"]["h5m_writeback"]
@@ -377,6 +395,8 @@ def test_build_model_preserves_mesh_source_and_photon_contract(
     assert captured["strengths"] == [2.0]
     assert captured["volume_normalized"] is False
     assert model.settings.photon_transport is True
+    assert model.settings.statepoint == {"batches": [2]}
+    assert receipt["statepoint_policy"]["final_batch_included"] is True
     assert receipt["magnet_cell_ids"]["magnet-0017"] == 26
     assert (
         receipt["source"]["physical_rate_n_per_s_for_modeled_90_degrees"]
