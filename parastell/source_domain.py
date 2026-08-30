@@ -220,7 +220,9 @@ class _ClosedSurface:
         edges.Update()
         self.n_open_edges = int(edges.GetOutput().GetNumberOfCells())
 
-    def classify(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def classify(
+        self, points: np.ndarray, *, compute_all_distances: bool = False
+    ) -> tuple[np.ndarray, np.ndarray]:
         values = np.asarray(points, dtype=float).reshape((-1, 3))
         if self.backend == "pyvista":
             import pyvista as pv
@@ -260,12 +262,17 @@ class _ClosedSurface:
             dtype=np.uint8,
         )
         distance = np.zeros(len(values), dtype=float)
-        outside = np.flatnonzero(selected == 0)
-        if len(outside):
+        distance_indices = (
+            np.arange(len(values), dtype=int)
+            if compute_all_distances
+            else np.flatnonzero(selected == 0)
+        )
+        if len(distance_indices):
             implicit = vtk.vtkImplicitPolyDataDistance()
             implicit.SetInput(self.surface)
-            distance[outside] = [
-                implicit.EvaluateFunction(values[index]) for index in outside
+            distance[distance_indices] = [
+                implicit.EvaluateFunction(values[index])
+                for index in distance_indices
             ]
         return selected, distance
 

@@ -103,7 +103,9 @@ def _outer_boundary_clearance(
             for theta in poloidal
         ]
     )
-    selected, implicit_distance = surface.classify(points)
+    selected, implicit_distance = surface.classify(
+        points, compute_all_distances=True
+    )
     distance = np.abs(implicit_distance)
     return {
         "sample_count": int(len(points)),

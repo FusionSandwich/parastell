@@ -22,6 +22,15 @@ def test_closed_surface_vtk_fallback_classifies_inside_and_outside_points():
         np.asarray([[0.1, 0.1, 0.1], [2.0, 2.0, 2.0]])
     )
     assert selected.tolist() == [1, 0]
+    assert distance[0] == 0.0
+    assert distance[1] != 0.0
+
+    selected, distance = surface.classify(
+        np.asarray([[0.1, 0.1, 0.1], [2.0, 2.0, 2.0]]),
+        compute_all_distances=True,
+    )
+    assert selected.tolist() == [1, 0]
+    assert distance[0] != 0.0
     assert distance[1] != 0.0
 
 
