@@ -36,3 +36,9 @@ def test_selector_returns_first_passing_descending_candidate():
         == 1
     )
     assert _selection_index([{"candidate_pass": False}]) is None
+
+
+def test_candidate_builder_import_is_geometry_runtime_neutral():
+    from scripts import build_source_mesh_cfs_candidates as builder
+
+    assert builder.SCHEMA == "parastell.source_mesh_cfs_candidates/v1.0.0"
