@@ -500,11 +500,27 @@ def _validate_runtime_and_safety(config: Mapping[str, Any]) -> None:
             "radial_points",
             "poloidal_points",
             "toroidal_points",
+            "outer_cfs_cap",
         }
     _require_exact_keys(source, allowed_source, "source_mesh")
     if source.get("enabled"):
         for key in ("radial_points", "poloidal_points", "toroidal_points"):
             _positive_integer(source.get(key), f"source_mesh.{key}", minimum=2)
+        outer_cfs_cap = _positive_float(
+            source.get("outer_cfs_cap", 1.0),
+            "source_mesh.outer_cfs_cap",
+        )
+        if outer_cfs_cap > 1.0:
+            raise ParametricGeometryError(
+                "source_mesh.outer_cfs_cap must be at most 1.0"
+            )
+        radial_points = int(source["radial_points"])
+        legacy_penultimate_cfs = (radial_points - 2) / (radial_points - 1)
+        if outer_cfs_cap <= legacy_penultimate_cfs:
+            raise ParametricGeometryError(
+                "source_mesh.outer_cfs_cap must exceed the legacy penultimate "
+                f"CFS plane ({legacy_penultimate_cfs}) to preserve radial order"
+            )
     construction = config.get("construction", {})
     if not isinstance(construction, Mapping):
         raise ParametricGeometryError("construction must be an object")
@@ -576,6 +592,19 @@ def load_plan(
         plan_sha256=canonical_json_sha256(normalized),
         config_sha256=sha256_file(config_path),
     )
+
+
+def _source_mesh_cfs_values(source: Mapping[str, Any]) -> np.ndarray:
+    """Return legacy radial planes with only the outer boundary capped.
+
+    Keeping every interior plane fixed preserves the established tetrahedron
+    topology, ordering, and interior source discretization. The default cap
+    of one is exactly the historical grid.
+    """
+
+    values = np.linspace(0.0, 1.0, int(source["radial_points"]))
+    values[-1] = float(source.get("outer_cfs_cap", 1.0))
+    return values
 
 
 def validate_vmec_metadata(
@@ -1106,9 +1135,22 @@ def build_source_cad(
                 }
             )
         source = config.get("source_mesh", {})
+        source_mesh_contract = {
+            "enabled": source.get("enabled") is True,
+            "outer_cfs_cap": (
+                float(source.get("outer_cfs_cap", 1.0))
+                if source.get("enabled") is True
+                else None
+            ),
+            "outer_boundary_conformity_status": (
+                "NOT_PROVEN"
+                if source.get("enabled") is True
+                else "NOT_APPLICABLE"
+            ),
+        }
         if source.get("enabled") is True:
             stellarator.construct_source_mesh(
-                np.linspace(0.0, 1.0, int(source["radial_points"])),
+                _source_mesh_cfs_values(source),
                 np.linspace(0.0, 360.0, int(source["poloidal_points"])),
                 np.linspace(
                     0.0,
@@ -1161,6 +1203,7 @@ def build_source_cad(
             "radial_build_construction_stages": construction_stages,
             "component_evidence": component_evidence,
             "magnet_inventory": magnet_inventory,
+            "source_mesh_contract": source_mesh_contract,
             "artifacts": _artifact_rows(output_root),
             "required_successor_gates": [
                 "COMPLETE_SOURCE_CAD_PAIR_AUDIT",

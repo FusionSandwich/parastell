@@ -160,6 +160,61 @@ def test_wall_s_matches_parastell_domain(tmp_path, wall_s, valid):
             load_plan(config_path, inputs)
 
 
+@pytest.mark.parametrize("outer_cfs_cap", [-0.1, 0.0, 0.9, 1.000001])
+def test_source_mesh_outer_cfs_cap_must_be_valid_and_preserve_radial_order(
+    tmp_path, outer_cfs_cap
+):
+    config, config_path, inputs = _fixture(tmp_path)
+    config["source_mesh"] = {
+        "enabled": True,
+        "radial_points": 11,
+        "poloidal_points": 81,
+        "toroidal_points": 61,
+        "outer_cfs_cap": outer_cfs_cap,
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(
+        ParametricGeometryError, match="source_mesh.outer_cfs_cap"
+    ):
+        load_plan(config_path, inputs)
+
+
+def test_source_mesh_outer_cfs_cap_changes_only_terminal_plane():
+    source = {
+        "radial_points": 11,
+        "outer_cfs_cap": 0.975,
+    }
+    legacy = np.linspace(0.0, 1.0, source["radial_points"])
+    capped = parametric_geometry._source_mesh_cfs_values(source)
+
+    np.testing.assert_array_equal(capped[:-1], legacy[:-1])
+    assert capped[-1] == pytest.approx(0.975)
+    assert len(capped) == len(legacy)
+    assert np.all(np.diff(capped) > 0.0)
+
+
+def test_source_mesh_outer_cfs_cap_default_is_exact_legacy_grid(
+    tmp_path,
+):
+    config, config_path, inputs = _fixture(tmp_path)
+    config["source_mesh"] = {
+        "enabled": True,
+        "radial_points": 11,
+        "poloidal_points": 81,
+        "toroidal_points": 61,
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    plan = load_plan(config_path, inputs)
+    assert "outer_cfs_cap" not in plan.config["source_mesh"]
+    np.testing.assert_array_equal(
+        parametric_geometry._source_mesh_cfs_values(
+            plan.config["source_mesh"]
+        ),
+        np.linspace(0.0, 1.0, 11),
+    )
+
+
 def test_direct_custom_sector_is_nonperiodic(tmp_path):
     config, config_path, inputs = _fixture(tmp_path)
     config["sector"].update({"mode": "direct", "extent_degrees": 37.5})
@@ -397,7 +452,15 @@ def test_docker_plan_is_networkless_bounded_and_shell_free(
 def test_source_cad_builder_propagates_materials_and_stays_pending(
     tmp_path, monkeypatch
 ):
-    _, config_path, inputs = _fixture(tmp_path)
+    config, config_path, inputs = _fixture(tmp_path)
+    config["source_mesh"] = {
+        "enabled": True,
+        "radial_points": 11,
+        "poloidal_points": 81,
+        "toroidal_points": 61,
+        "outer_cfs_cap": 0.975,
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
     resolved = resolve_geometry(load_plan(config_path, inputs))
     calls = {}
 
@@ -431,6 +494,14 @@ def test_source_cad_builder_propagates_materials_and_stays_pending(
         def export_invessel_build_step(self, export_dir):
             for name in self.invessel_build.Components:
                 Path(export_dir, f"{name}.step").write_bytes(b"source-cad")
+
+        def construct_source_mesh(self, cfs, poloidal, toroidal):
+            calls["source_cfs"] = np.asarray(cfs)
+            calls["source_poloidal"] = np.asarray(poloidal)
+            calls["source_toroidal"] = np.asarray(toroidal)
+
+        def export_source_mesh(self, filename, export_dir):
+            Path(export_dir, f"{filename}.h5m").write_bytes(b"source-mesh")
 
     fake_module = types.ModuleType("parastell.parastell")
     fake_module.Stellarator = FakeStellarator
@@ -470,8 +541,21 @@ def test_source_cad_builder_propagates_materials_and_stays_pending(
     assert calls["vmec_path"] == str(resolved.plan.input_files["vmec"])
     assert calls["invessel_kwargs"]["chamber_mat_tag"] == "vacuum"
     assert calls["invessel_kwargs"]["split_chamber"] is False
+    np.testing.assert_array_equal(
+        calls["source_cfs"][:-1], np.linspace(0.0, 1.0, 11)[:-1]
+    )
+    assert calls["source_cfs"][-1] == pytest.approx(0.975)
+    assert calls["source_poloidal"][0] == 0.0
+    assert calls["source_poloidal"][-1] == 360.0
+    assert calls["source_toroidal"][0] == 0.0
+    assert calls["source_toroidal"][-1] == 90.0
     assert manifest["status"] == "SOURCE_CAD_BUILT_GEOMETRY_GATES_PENDING"
     assert manifest["transport_eligible"] is False
+    assert manifest["source_mesh_contract"] == {
+        "enabled": True,
+        "outer_cfs_cap": 0.975,
+        "outer_boundary_conformity_status": "NOT_PROVEN",
+    }
     assert manifest["container_attestation"]["environment"] == {
         "test": "qualified"
     }

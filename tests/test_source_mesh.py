@@ -62,6 +62,26 @@ def test_mesh_basics(source_mesh):
     remove_files()
 
 
+def test_mesh_accepts_capped_outer_cfs_without_rescaling_inner_planes():
+    vmec_file = Path("files_for_tests") / "wout_vmec.nc"
+    vmec_obj = read_vmec.VMECData(vmec_file)
+    legacy = np.linspace(0.0, 1.0, num=6)
+    capped = legacy.copy()
+    capped[-1] = 0.95
+
+    source_mesh_obj = sm.SourceMesh(
+        vmec_obj,
+        capped,
+        np.linspace(0.0, 360.0, num=41),
+        np.linspace(0.0, 15.0, num=9),
+    )
+
+    np.testing.assert_array_equal(
+        source_mesh_obj.cfs_values[:-1], legacy[1:-1]
+    )
+    assert source_mesh_obj.cfs_values[-1] == pytest.approx(0.95)
+
+
 def test_vertices(source_mesh):
     """Tests whether SourceMesh vertices are generated as expected, by testing
     if:

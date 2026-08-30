@@ -92,8 +92,8 @@ class SourceMesh(ToroidalMesh):
             a (x,y,z) coordinate for any closed flux surface value, cfs,
             poloidal angle, poloidal_ang, and toroidal angle, toroidal_ang.
         cfs_values (iterable of float): grid points along the closed flux
-            surface axis of flux-coordinate space. Must begin at 0.0 and end at
-            1.0.
+            surface axis of flux-coordinate space. Must begin at 0.0 and end in
+            the interval (0.0, 1.0].
         poloidal_angles (iterable of float): grid points along the poloidal
             angle axis of flux-coordinate space. Must span 360 degrees.
         toroidal_angles (iterable of float): grid points along the toroidal
@@ -160,10 +160,10 @@ class SourceMesh(ToroidalMesh):
 
     @cfs_values.setter
     def cfs_values(self, iterable):
-        if iterable[0] != 0.0 or iterable[-1] != 1.0:
+        if iterable[0] != 0.0 or iterable[-1] <= 0.0 or iterable[-1] > 1.0:
             e = ValueError(
-                "Closed flux surface grid points must begin at 0.0 and end at "
-                "1.0"
+                "Closed flux surface grid points must begin at 0.0 and end in "
+                "the interval (0.0, 1.0]"
             )
             self._logger.error(e.args[0])
             raise e

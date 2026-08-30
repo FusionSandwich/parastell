@@ -455,7 +455,7 @@ class Stellarator(object):
         Arguments:
             cfs_values (iterable of float): grid points along the closed flux
                 surface axis of flux-coordinate space. Must begin at 0.0 and
-                end at 1.0.
+                end in the interval (0.0, 1.0].
             poloidal_angles (iterable of float): grid points along the poloidal
                 angle axis of flux-coordinate space. Must span 360 degrees.
             toroidal_angles (iterable of float): grid points along the toroidal
