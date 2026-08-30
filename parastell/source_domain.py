@@ -304,6 +304,7 @@ def audit_source_domain(
     source_component: str = "chamber",
     source_material: str = "Vacuum",
     source_strength_relative_tolerance: float = 1.0e-12,
+    require_reference_identity: bool = True,
     point_chunk_size: int = 10000,
     boundary_tolerance_cm: float = 1.0e-6,
 ) -> dict[str, Any]:
@@ -379,12 +380,18 @@ def audit_source_domain(
                 }
             )
 
+    reference_gate = bool(
+        not require_reference_identity
+        or (
+            semantic_identity_pass
+            and relative_source_difference
+            <= float(source_strength_relative_tolerance)
+        )
+    )
     gate = (
         arrays["tetrahedron_data_gate_pass"]
         and invalid_point_count == 0
-        and semantic_identity_pass
-        and relative_source_difference
-        <= float(source_strength_relative_tolerance)
+        and reference_gate
     )
     return {
         "schema": "parastell.source_domain_audit/v1.0.0",
@@ -398,6 +405,8 @@ def audit_source_domain(
         "source_mesh_identity": source_identity,
         "reference_source_mesh_identity": reference_identity,
         "source_mesh_semantic_identity_pass": semantic_identity_pass,
+        "reference_identity_required": bool(require_reference_identity),
+        "reference_identity_gate_pass": reference_gate,
         "source_strength_relative_difference": relative_source_difference,
         "source_strength_relative_tolerance": float(
             source_strength_relative_tolerance

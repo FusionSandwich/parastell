@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 from parastell.parametric_openmc16_model import _canonical_sha
 from parastell.reference_geometry import sha256_file
@@ -19,15 +22,24 @@ from scripts.select_source_mesh_outer_cfs_cap import (
 )
 
 
-def _verified_manifest(path: Path, expected_sha256: str) -> dict[str, Any]:
+def _verified_receipt(
+    path: Path, expected_sha256: str, *, label: str
+) -> dict[str, Any]:
     if sha256_file(path) != expected_sha256:
-        raise ValueError("candidate-manifest file hash mismatch")
-    manifest = json.loads(path.read_text(encoding="utf-8"))
-    content_digest = manifest.get("receipt_content_sha256")
-    content = dict(manifest)
+        raise ValueError(f"{label} file hash mismatch")
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    content_digest = receipt.get("receipt_content_sha256")
+    content = dict(receipt)
     content.pop("receipt_content_sha256", None)
     if content_digest != _canonical_sha(content):
-        raise ValueError("candidate-manifest content hash mismatch")
+        raise ValueError(f"{label} content hash mismatch")
+    return receipt
+
+
+def _verified_manifest(path: Path, expected_sha256: str) -> dict[str, Any]:
+    manifest = _verified_receipt(
+        path, expected_sha256, label="candidate-manifest"
+    )
     if (
         manifest.get("schema") != "parastell.source_mesh_cfs_candidates/v1.0.0"
         or manifest.get("status") != "CANDIDATES_BUILT_CONTAINMENT_PENDING"
@@ -38,31 +50,88 @@ def _verified_manifest(path: Path, expected_sha256: str) -> dict[str, Any]:
     return manifest
 
 
+def _verified_control(path: Path, expected_sha256: str) -> dict[str, Any]:
+    control = _verified_receipt(path, expected_sha256, label="audit-control")
+    if control.get("schema") != (
+        "parastell.source_mesh_outer_cfs_audit_control/v1.0.0"
+    ):
+        raise ValueError("unsupported source-mesh audit-control schema")
+    source_volume_id = control.get("source_volume_id")
+    if (
+        isinstance(source_volume_id, bool)
+        or not isinstance(source_volume_id, int)
+        or source_volume_id <= 0
+    ):
+        raise ValueError("source volume ID must be positive")
+    source_material = control.get("source_material")
+    if not isinstance(source_material, str) or not source_material.strip():
+        raise ValueError("source material must be non-empty")
+    clearance = float(control.get("minimum_clearance_cm", 0.0))
+    source_loss = float(control.get("maximum_omitted_source_fraction", -1.0))
+    if not math.isfinite(clearance) or clearance <= 0.0:
+        raise ValueError("minimum clearance must be finite and positive")
+    if not math.isfinite(source_loss) or not 0.0 <= source_loss < 1.0:
+        raise ValueError("maximum omitted source fraction is invalid")
+    for key in ("dagmc_sha256", "candidate_manifest_sha256"):
+        value = str(control.get(key, ""))
+        if len(value) != 64:
+            raise ValueError(f"audit-control {key} is invalid")
+    return control
+
+
+def _candidate_passes(
+    *,
+    domain_pass: bool,
+    all_samples_enclosed: bool,
+    minimum_clearance_cm: float,
+    required_clearance_cm: float,
+    reference_rate: float,
+    candidate_rate: float,
+    omitted_fraction: float,
+    maximum_omitted_fraction: float,
+    manifest_identity_matches: bool,
+    input_immutability_pass: bool,
+) -> bool:
+    return bool(
+        domain_pass
+        and all_samples_enclosed
+        and math.isfinite(minimum_clearance_cm)
+        and minimum_clearance_cm >= required_clearance_cm
+        and math.isfinite(reference_rate)
+        and reference_rate > 0.0
+        and math.isfinite(candidate_rate)
+        and candidate_rate > 0.0
+        and math.isfinite(omitted_fraction)
+        and 0.0 <= omitted_fraction <= maximum_omitted_fraction
+        and manifest_identity_matches
+        and input_immutability_pass
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("dagmc_h5m", type=Path)
     parser.add_argument("candidate_manifest", type=Path)
+    parser.add_argument("audit_control", type=Path)
     parser.add_argument("output_directory", type=Path)
-    parser.add_argument("--expected-dagmc-sha256", required=True)
-    parser.add_argument("--expected-candidate-manifest-sha256", required=True)
-    parser.add_argument("--source-volume-id", type=int, default=1)
-    parser.add_argument("--source-material", default="Vacuum")
-    parser.add_argument("--minimum-clearance-cm", type=float, default=1.0e-4)
+    parser.add_argument("--expected-audit-control-sha256", required=True)
     args = parser.parse_args()
 
     dagmc = args.dagmc_h5m.resolve(strict=True)
     manifest_path = args.candidate_manifest.resolve(strict=True)
-    if sha256_file(dagmc) != args.expected_dagmc_sha256:
+    control_path = args.audit_control.resolve(strict=True)
+    control = _verified_control(
+        control_path, args.expected_audit_control_sha256
+    )
+    if sha256_file(dagmc) != control["dagmc_sha256"]:
         raise ValueError("DAGMC H5M hash mismatch")
     manifest = _verified_manifest(
-        manifest_path, args.expected_candidate_manifest_sha256
+        manifest_path, control["candidate_manifest_sha256"]
     )
     if args.output_directory.exists():
         raise FileExistsError(
             f"create-only output exists: {args.output_directory}"
         )
-    if args.minimum_clearance_cm <= 0.0:
-        raise ValueError("minimum clearance must be positive")
 
     caps = _validated_caps(
         manifest["caps_descending"], manifest["radial_points"]
@@ -74,17 +143,39 @@ def main() -> None:
     reference = Path(manifest["reference_source_mesh"]["path"]).resolve(
         strict=True
     )
-    if sha256_file(vmec) != manifest["vmec"]["sha256"]:
-        raise ValueError("VMEC hash mismatch")
-    if sha256_file(reference) != manifest["reference_source_mesh"]["sha256"]:
-        raise ValueError("reference source-mesh hash mismatch")
+    immutable_expected = {
+        "dagmc": control["dagmc_sha256"],
+        "candidate_manifest": control["candidate_manifest_sha256"],
+        "audit_control": args.expected_audit_control_sha256,
+        "vmec": manifest["vmec"]["sha256"],
+        "reference_source_mesh": manifest["reference_source_mesh"]["sha256"],
+    }
+    immutable_paths = {
+        "dagmc": dagmc,
+        "candidate_manifest": manifest_path,
+        "audit_control": control_path,
+        "vmec": vmec,
+        "reference_source_mesh": reference,
+    }
+    for label, path in immutable_paths.items():
+        if sha256_file(path) != immutable_expected[label]:
+            raise ValueError(f"{label} pre-audit hash mismatch")
+
     reference_identity = source_mesh_fingerprint(reference)
+    if (
+        reference_identity["canonical_fingerprint"]
+        != manifest["reference_source_mesh"]["canonical_fingerprint"]
+    ):
+        raise ValueError("reference source-mesh fingerprint mismatch")
     reference_rate = float(reference_identity["total_source_strength_n_per_s"])
+    if not math.isfinite(reference_rate) or reference_rate <= 0.0:
+        raise ValueError("reference source rate must be finite and positive")
 
     output = args.output_directory.resolve()
     output.mkdir(parents=True, exist_ok=False)
     audited_rows = []
-    selected_index = None
+    provisional_selected_index = None
+    candidate_mutation_detected = False
     for rank, (cap, row) in enumerate(zip(caps, rows, strict=True)):
         if (
             int(row["rank_descending"]) != rank
@@ -92,14 +183,20 @@ def main() -> None:
         ):
             raise ValueError("candidate rank or cap differs from manifest")
         candidate = Path(row["source_mesh"]["path"]).resolve(strict=True)
-        if sha256_file(candidate) != row["source_mesh"]["sha256"]:
+        expected_candidate_sha = row["source_mesh"]["sha256"]
+        candidate_label = f"candidate_{rank:02d}_source_mesh"
+        immutable_paths[candidate_label] = candidate
+        immutable_expected[candidate_label] = expected_candidate_sha
+        pre_candidate_sha = sha256_file(candidate)
+        if pre_candidate_sha != expected_candidate_sha:
             raise ValueError(f"candidate {rank} source-mesh hash mismatch")
         domain = audit_source_domain(
             dagmc,
             candidate,
-            candidate,
-            source_volume_id=args.source_volume_id,
-            source_material=args.source_material,
+            reference,
+            source_volume_id=int(control["source_volume_id"]),
+            source_material=str(control["source_material"]),
+            require_reference_identity=False,
         )
         clearance = _outer_boundary_clearance(
             dagmc,
@@ -108,18 +205,47 @@ def main() -> None:
             poloidal_points=manifest["poloidal_points"],
             toroidal_points=manifest["toroidal_points"],
             extent_degrees=manifest["extent_degrees"],
-            source_volume_id=args.source_volume_id,
-            source_material=args.source_material,
+            source_volume_id=int(control["source_volume_id"]),
+            source_material=str(control["source_material"]),
         )
+        candidate_identity = domain["source_mesh_identity"]
         candidate_rate = float(
-            domain["source_mesh_identity"]["total_source_strength_n_per_s"]
+            candidate_identity["total_source_strength_n_per_s"]
         )
         omitted_fraction = (reference_rate - candidate_rate) / reference_rate
-        candidate_pass = bool(
-            domain["source_domain_gate_pass"]
-            and clearance["all_samples_enclosed"]
-            and clearance["minimum_clearance_cm"] >= args.minimum_clearance_cm
-            and 0.0 <= omitted_fraction < 1.0
+        manifest_identity_matches = bool(
+            candidate_identity["canonical_fingerprint"]
+            == row["source_mesh"]["canonical_fingerprint"]
+            and np.isclose(
+                candidate_rate,
+                float(row["physical_source_rate_n_per_s"]),
+                rtol=1.0e-13,
+                atol=0.0,
+            )
+            and np.isclose(
+                omitted_fraction,
+                float(row["omitted_edge_source_fraction"]),
+                rtol=1.0e-12,
+                atol=1.0e-15,
+            )
+        )
+        post_candidate_sha = sha256_file(candidate)
+        candidate_immutability_pass = bool(
+            pre_candidate_sha == post_candidate_sha == expected_candidate_sha
+        )
+        candidate_pass = _candidate_passes(
+            domain_pass=domain["source_domain_gate_pass"],
+            all_samples_enclosed=clearance["all_samples_enclosed"],
+            minimum_clearance_cm=clearance["minimum_clearance_cm"],
+            required_clearance_cm=float(control["minimum_clearance_cm"]),
+            reference_rate=reference_rate,
+            candidate_rate=candidate_rate,
+            omitted_fraction=omitted_fraction,
+            maximum_omitted_fraction=float(
+                control["maximum_omitted_source_fraction"]
+            ),
+            manifest_identity_matches=manifest_identity_matches,
+            input_immutability_pass=candidate_immutability_pass,
         )
         domain_path = output / f"candidate-{rank:02d}-SOURCE_DOMAIN_AUDIT.json"
         domain_path.write_text(
@@ -133,7 +259,10 @@ def main() -> None:
                 "outer_cfs_cap": cap,
                 "candidate_source_mesh": {
                     "path": str(candidate),
-                    "sha256": sha256_file(candidate),
+                    "sha256_before": pre_candidate_sha,
+                    "sha256_after": post_candidate_sha,
+                    "expected_sha256": expected_candidate_sha,
+                    "input_immutability_pass": candidate_immutability_pass,
                 },
                 "source_domain_audit": {
                     "path": str(domain_path),
@@ -142,62 +271,107 @@ def main() -> None:
                         "invalid_sample_point_count"
                     ],
                     "pass": domain["source_domain_gate_pass"],
+                    "reference_identity_required": False,
                 },
                 "outer_boundary_clearance": clearance,
                 "physical_source_rate_n_per_s": candidate_rate,
                 "omitted_edge_source_fraction": omitted_fraction,
+                "maximum_omitted_source_fraction": control[
+                    "maximum_omitted_source_fraction"
+                ],
+                "manifest_identity_matches": manifest_identity_matches,
                 "candidate_pass": candidate_pass,
             }
         )
+        if not candidate_immutability_pass:
+            candidate_mutation_detected = True
+            break
         if candidate_pass:
-            selected_index = rank
+            provisional_selected_index = rank
             break
 
+    post_audit_hashes = {
+        label: sha256_file(path) for label, path in immutable_paths.items()
+    }
+    for row in audited_rows:
+        label = f"candidate_{row['rank_descending']:02d}_source_mesh"
+        final_sha = post_audit_hashes[label]
+        candidate_receipt = row["candidate_source_mesh"]
+        candidate_receipt["sha256_after"] = final_sha
+        candidate_receipt["input_immutability_pass"] = bool(
+            final_sha == candidate_receipt["expected_sha256"]
+        )
+        if not candidate_receipt["input_immutability_pass"]:
+            row["candidate_pass"] = False
+    input_immutability_pass = bool(
+        not candidate_mutation_detected
+        and post_audit_hashes == immutable_expected
+    )
+    selected_index = (
+        provisional_selected_index if input_immutability_pass else None
+    )
+    if not input_immutability_pass:
+        for row in audited_rows:
+            row["candidate_pass"] = False
+    status = (
+        "SOURCE_MESH_OUTER_CFS_CAP_SELECTED"
+        if selected_index is not None
+        else (
+            "BLOCKED_INPUT_MUTATION"
+            if not input_immutability_pass
+            else "BLOCKED_NO_SOURCE_MESH_CFS_CAP_PASSED"
+        )
+    )
     result = {
         "schema": SCHEMA,
         "created_utc": datetime.now(timezone.utc).isoformat(),
-        "status": (
-            "SOURCE_MESH_OUTER_CFS_CAP_SELECTED"
-            if selected_index is not None
-            else "BLOCKED_NO_SOURCE_MESH_CFS_CAP_PASSED"
-        ),
+        "status": status,
         "selection_rule": (
             "first passing cap in the preregistered strictly descending list"
         ),
+        "audit_control": {
+            "path": str(control_path),
+            "sha256": post_audit_hashes["audit_control"],
+            "receipt_content_sha256": control["receipt_content_sha256"],
+        },
         "candidate_manifest": {
             "path": str(manifest_path),
-            "sha256": sha256_file(manifest_path),
+            "sha256": post_audit_hashes["candidate_manifest"],
             "receipt_content_sha256": manifest["receipt_content_sha256"],
         },
         "geometry_mutated": False,
         "inner_source_cfs_planes_mutated": False,
-        "dagmc_h5m": {"path": str(dagmc), "sha256": sha256_file(dagmc)},
-        "vmec": {"path": str(vmec), "sha256": sha256_file(vmec)},
+        "dagmc_h5m": {
+            "path": str(dagmc),
+            "sha256": post_audit_hashes["dagmc"],
+        },
+        "vmec": {"path": str(vmec), "sha256": post_audit_hashes["vmec"]},
         "reference_source_mesh": {
             "path": str(reference),
-            "sha256": sha256_file(reference),
+            "sha256": post_audit_hashes["reference_source_mesh"],
             "canonical_fingerprint": reference_identity[
                 "canonical_fingerprint"
             ],
             "physical_source_rate_n_per_s": reference_rate,
         },
-        "minimum_clearance_cm": args.minimum_clearance_cm,
+        "source_volume_id": int(control["source_volume_id"]),
+        "source_material": str(control["source_material"]),
+        "minimum_clearance_cm": float(control["minimum_clearance_cm"]),
+        "maximum_omitted_source_fraction": float(
+            control["maximum_omitted_source_fraction"]
+        ),
         "preregistered_caps": caps,
         "candidates": audited_rows,
+        "provisional_selected_candidate_index": provisional_selected_index,
         "selected_candidate_index": selected_index,
         "selected_candidate": (
             audited_rows[selected_index]
             if selected_index is not None
             else None
         ),
-        "input_immutability_pass": bool(
-            sha256_file(dagmc) == args.expected_dagmc_sha256
-            and sha256_file(manifest_path)
-            == args.expected_candidate_manifest_sha256
-            and sha256_file(vmec) == manifest["vmec"]["sha256"]
-            and sha256_file(reference)
-            == manifest["reference_source_mesh"]["sha256"]
-        ),
+        "expected_input_hashes": immutable_expected,
+        "post_audit_input_hashes": post_audit_hashes,
+        "input_immutability_pass": input_immutability_pass,
         "production_run_authorized": False,
     }
     result["receipt_content_sha256"] = _canonical_sha(result)
