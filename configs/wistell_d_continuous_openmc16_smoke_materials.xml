@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- BOUNDED GEOMETRY/NAVIGATION SMOKE ONLY; not a research material set. -->
+<materials>
+  <material id="1" name="first_wall">
+    <density units="g/cm3" value="7.8" />
+    <nuclide name="Fe56" ao="1.0" />
+  </material>
+  <material id="2" name="breeder">
+    <density units="g/cm3" value="1.0" />
+    <nuclide name="Li6" ao="1.0" />
+  </material>
+  <material id="3" name="back_wall">
+    <density units="g/cm3" value="7.8" />
+    <nuclide name="Fe56" ao="1.0" />
+  </material>
+  <material id="4" name="high_temperature_shield">
+    <density units="g/cm3" value="7.8" />
+    <nuclide name="Fe56" ao="1.0" />
+  </material>
+  <material id="5" name="vacuum_vessel">
+    <density units="g/cm3" value="7.8" />
+    <nuclide name="Fe56" ao="1.0" />
+  </material>
+  <material id="6" name="low_temperature_shield">
+    <density units="g/cm3" value="7.8" />
+    <nuclide name="Fe56" ao="1.0" />
+  </material>
+  <material id="7" name="homogenized_magnet">
+    <density units="g/cm3" value="8.96" />
+    <nuclide name="Cu63" ao="1.0" />
+  </material>
+</materials>

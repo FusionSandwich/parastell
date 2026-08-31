@@ -13,6 +13,7 @@ from parastell.parametric_openmc16_model import (
     _canonical_sha,
     _statepoint_batches,
 )
+from parastell.openmc16 import add_reactor_component_tallies
 from parastell.selected_case_instrumentation import instrument_selected_case
 from parastell.surface_source_instrumentation import (
     build_surface_instrumentation_spec,
@@ -78,10 +79,47 @@ def _selected_surface_inputs(
     dagmc_h5m: Path,
     magnet_ids: list[str],
     expected_sha256: str,
-) -> tuple[dict[int, int], dict[str, int]]:
+) -> tuple[dict[int, int], dict[str, int], str]:
     if sha256_file(path) != expected_sha256:
         raise ValueError("surface-manifest file hash mismatch")
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        payload.get("schema")
+        == "parastell.continuous_magnet_surface_manifest/v1.0.0"
+    ):
+        capture = payload.get("capture_bank", {})
+        if (
+            payload.get("status") != "PASS"
+            or payload.get("dagmc_sha256") != sha256_file(dagmc_h5m)
+            or payload.get("geometry", {}).get("volume_count") != 9
+            or payload.get("geometry", {}).get("continuous_magnet_volume_id")
+            != 9
+            or capture.get("closed") is not True
+            or capture.get("records_all_entering_and_leaving_crossings")
+            is not True
+            or payload.get("physical_h5m_mutation") is not False
+            or magnet_ids != ["continuous-magnet-layer"]
+        ):
+            raise ValueError("continuous surface manifest is not accepted")
+        declared = sorted(
+            int(value) for value in capture.get("surface_ids", ())
+        )
+        signs = {
+            int(row["dagmc_surface_id"]): int(
+                row["magnet_outward_normal_multiplier"]
+            )
+            for row in payload.get("surfaces", ())
+            if row.get("complete_boundary_capture") is True
+        }
+        if sorted(signs) != declared or any(
+            value not in {-1, 1} for value in signs.values()
+        ):
+            raise ValueError("continuous capture surface signs are invalid")
+        return (
+            signs,
+            {"continuous-magnet-layer": 9},
+            "continuous_magnet_complete_boundary",
+        )
     if (
         payload.get("schema")
         != "parastell.parametric_magnet_surface_manifest/v1.0.0"
@@ -120,7 +158,7 @@ def _selected_surface_inputs(
                 "selected surface rows disagree with declared IDs"
             )
         cell_ids[magnet_id] = int(row["dagmc_volume_id"])
-    return signs, cell_ids
+    return signs, cell_ids, "homogenized_magnet_outer_boundary"
 
 
 def _run_openmc(
@@ -197,7 +235,7 @@ def main() -> None:
     response_plan = _load_response_plan(
         response_plan_path, args.expected_response_plan_sha256
     )
-    signs, magnet_cell_ids = _selected_surface_inputs(
+    signs, magnet_cell_ids, coupling_interface = _selected_surface_inputs(
         surface_manifest,
         dagmc_h5m,
         list(response_plan["magnet_ids"]),
@@ -234,7 +272,7 @@ def main() -> None:
         max_particles_per_process=args.max_particles,
         max_source_files=1,
         mpi_ranks=1,
-        coupling_interface="homogenized_magnet_outer_boundary",
+        coupling_interface=coupling_interface,
     )
     wiring = instrument_selected_case(
         model,
@@ -242,6 +280,15 @@ def main() -> None:
         surface_spec=surface_spec,
         magnet_cell_ids=magnet_cell_ids,
         tally_profile="activation_ready",
+    )
+    component_cell_ids = receipt.get("component_cell_ids")
+    if not isinstance(component_cell_ids, dict):
+        raise ValueError("model receipt lacks physical component cell IDs")
+    reactor_wiring = add_reactor_component_tallies(
+        model,
+        component_cell_ids=component_cell_ids,
+        neutron_edges_eV=response_plan["energy_axes_eV"]["neutron"],
+        photon_edges_eV=response_plan["energy_axes_eV"]["photon"],
     )
     run_model = output / "model.xml"
     model.export_to_model_xml(run_model)
@@ -313,6 +360,7 @@ def main() -> None:
         "selected_magnet_cell_ids": magnet_cell_ids,
         "surface_instrumentation": surface_spec,
         "full_response_wiring": wiring,
+        "reactor_component_wiring": reactor_wiring,
         "output_model_xml_sha256": sha256_file(run_model),
         "openmc_log_sha256": sha256_file(log),
         "statepoints": [

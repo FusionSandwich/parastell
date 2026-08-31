@@ -9,13 +9,25 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "parastell.openmc_checkpoint_restart_plan/v1.0.0"
-OPENMC_SCHEMA_PREFIX = "parastell.parametric_openmc16_model/"
+OPENMC_SCHEMAS = {
+    "parastell.parametric_openmc16_model/v1.0.0",
+    "parastell.parametric_openmc16_sealed_model/v1.0.0",
+}
 OPENMC_VERSION = "0.16.0"
-SUPPORTED_SIGNALS = {"SIGTERM", "SIGINT", "SIGQUIT", "SIGUSR1", "SIGUSR2", "SIGHUP"}
+SUPPORTED_SIGNALS = {
+    "SIGTERM",
+    "SIGINT",
+    "SIGQUIT",
+    "SIGUSR1",
+    "SIGUSR2",
+    "SIGHUP",
+}
 
 
 def _canonical_sha256(payload: Any) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -28,7 +40,7 @@ def _text(value: Any, label: str) -> str:
 
 def _positive_int(value: Any, label: str, minimum: int = 1) -> int:
     number = int(value)
-    if isinstance(value, bool) or number < minimum:
+    if isinstance(value, bool) or number != value or number < minimum:
         raise ValueError(f"{label} must be integer >= {minimum}")
     return number
 
@@ -72,9 +84,12 @@ def _validate_signal(value: Any) -> str:
 
 
 def _validate_openmc_receipt(receipt: Mapping[str, Any]) -> None:
-    if not str(receipt.get("schema", "")).startswith(OPENMC_SCHEMA_PREFIX):
+    if receipt.get("schema") not in OPENMC_SCHEMAS:
         raise ValueError("unsupported OpenMC model receipt schema")
-    if receipt.get("openmc_version") != OPENMC_VERSION:
+    version = receipt.get(
+        "openmc_version", receipt.get("openmc_runtime", {}).get("version")
+    )
+    if version != OPENMC_VERSION:
         raise ValueError("OpenMC model receipt must be fixed-source 0.16.0")
     if receipt.get("production_run_authorized") is not False:
         raise ValueError("production execution is not authorized")
@@ -82,7 +97,9 @@ def _validate_openmc_receipt(receipt: Mapping[str, Any]) -> None:
     if str(model_xml.get("path", "")).strip() == "":
         raise ValueError("model_xml path must be present")
     model_sha = _text(model_xml.get("sha256"), "model_xml.sha256")
-    if len(model_sha) != 64 or any(ch not in "0123456789abcdef" for ch in model_sha):
+    if len(model_sha) != 64 or any(
+        ch not in "0123456789abcdef" for ch in model_sha
+    ):
         raise ValueError("model_xml hash is invalid")
     if receipt.get("claim") != "BOUNDED_SMOKE_ONLY":
         raise ValueError("OpenMC model claim must be bounded-smoke only")
@@ -106,6 +123,8 @@ def build_openmc_checkpoint_restart_plan(
     stop_grace_seconds: int = 60,
     requeue_delay_seconds: int = 300,
     walltime_slack_seconds: int = 300,
+    requested_cores: int = 1,
+    memory_max_bytes: int = 64 * 1024**3,
 ) -> dict[str, Any]:
     """Build and hash a deterministic checkpoint/restart campaign plan."""
     campaign_id = _text(campaign_id, "campaign_id")
@@ -118,15 +137,23 @@ def build_openmc_checkpoint_restart_plan(
 
     receipt = _mapping(openmc_model_receipt, "openmc_model_receipt")
     _validate_openmc_receipt(receipt)
-    particles_per_batch = _positive_int(particles_per_batch, "particles_per_batch")
+    particles_per_batch = _positive_int(
+        particles_per_batch, "particles_per_batch"
+    )
     total_batches = _positive_int(total_batches, "total_batches")
     segment_batches = _positive_int(segment_batches, "segment_batches")
     base_seed = _positive_int(base_seed, "base_seed")
-    stop_grace_seconds = _positive_int(stop_grace_seconds, "stop_grace_seconds")
-    requeue_delay_seconds = _positive_int(requeue_delay_seconds, "requeue_delay_seconds")
+    stop_grace_seconds = _positive_int(
+        stop_grace_seconds, "stop_grace_seconds"
+    )
+    requeue_delay_seconds = _positive_int(
+        requeue_delay_seconds, "requeue_delay_seconds"
+    )
     walltime_slack_seconds = _positive_int(
         walltime_slack_seconds, "walltime_slack_seconds", minimum=0
     )
+    requested_cores = _positive_int(requested_cores, "requested_cores")
+    memory_max_bytes = _positive_int(memory_max_bytes, "memory_max_bytes")
     if requeue_delay_seconds <= stop_grace_seconds:
         raise ValueError("requeue delay must exceed stop-grace delay")
 
@@ -136,7 +163,9 @@ def build_openmc_checkpoint_restart_plan(
 
     segment_sizes = _segment_lengths(total_batches, segment_batches)
     if statepoint_interval_batches is None:
-        segment_schedules = [_statepoint_schedule(size, None) for size in segment_sizes]
+        segment_schedules = [
+            _statepoint_schedule(size, None) for size in segment_sizes
+        ]
     else:
         segment_schedules = [
             _statepoint_schedule(size, statepoint_interval_batches)
@@ -176,8 +205,13 @@ def build_openmc_checkpoint_restart_plan(
         },
         "openmc_model_binding": {
             "schema": str(receipt["schema"]),
-            "openmc_version": receipt["openmc_version"],
-            "receipt_content_sha256": str(receipt.get("receipt_content_sha256", "")),
+            "openmc_version": receipt.get(
+                "openmc_version",
+                receipt.get("openmc_runtime", {}).get("version"),
+            ),
+            "receipt_content_sha256": str(
+                receipt.get("receipt_content_sha256", "")
+            ),
             "model_xml_sha256": str(receipt["model_xml"]["sha256"]),
         },
         "run_intent": {
@@ -198,8 +232,8 @@ def build_openmc_checkpoint_restart_plan(
         "segments": segments,
         "production_run_authorized": False,
         "resource_controls": {
-            "requested_cores": 1,
-            "memory_max_bytes": 64 * 1024**3,
+            "requested_cores": requested_cores,
+            "memory_max_bytes": memory_max_bytes,
             "memory_swap_max_bytes": 0,
         },
     }
@@ -223,14 +257,24 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     strategy = _mapping(plan.get("statepoint_restart_strategy"), "strategy")
     if strategy.get("native_statepoint_continuation_claimed") is not False:
         raise ValueError("native statepoint continuation must not be claimed")
-    if strategy.get("cumulative_statepoints_are_checkpoint_evidence") is not True:
+    if (
+        strategy.get("cumulative_statepoints_are_checkpoint_evidence")
+        is not True
+    ):
         raise ValueError("cumulative statepoints must be evidence only")
-    if strategy.get("segment_restart_mode") != "segmented_independent_seed_runs":
+    if (
+        strategy.get("segment_restart_mode")
+        != "segmented_independent_seed_runs"
+    ):
         raise ValueError("segment restart mode is invalid")
 
     run_intent = _mapping(plan.get("run_intent"), "run_intent")
-    total_batches = _positive_int(run_intent.get("total_batches"), "total_batches")
-    segment_batches = _positive_int(run_intent.get("segment_batches"), "segment_batches")
+    total_batches = _positive_int(
+        run_intent.get("total_batches"), "total_batches"
+    )
+    segment_batches = _positive_int(
+        run_intent.get("segment_batches"), "segment_batches"
+    )
     particles_per_batch = _positive_int(
         run_intent.get("particles_per_batch"), "particles_per_batch"
     )
@@ -241,8 +285,10 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     if interval is not None:
         interval = _positive_int(interval, "statepoint_interval_batches")
 
-    binding = _mapping(plan.get("openmc_model_binding"), "openmc_model_binding")
-    if not str(binding.get("schema", "")).startswith(OPENMC_SCHEMA_PREFIX):
+    binding = _mapping(
+        plan.get("openmc_model_binding"), "openmc_model_binding"
+    )
+    if binding.get("schema") not in OPENMC_SCHEMAS:
         raise ValueError("openmc binding schema is invalid")
     if str(binding.get("openmc_version", "")) != OPENMC_VERSION:
         raise ValueError("openmc version is invalid")
@@ -272,9 +318,14 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     ):
         if not isinstance(segment, Mapping):
             raise ValueError("segment definition must be a mapping")
-        if _positive_int(segment.get("segment_index"), "segment_index") != index:
+        if (
+            _positive_int(segment.get("segment_index"), "segment_index")
+            != index
+        ):
             raise ValueError("segment indices must be 1,2,...")
-        requested = _positive_int(segment.get("requested_batches"), "requested_batches")
+        requested = _positive_int(
+            segment.get("requested_batches"), "requested_batches"
+        )
         if requested != expected_size:
             raise ValueError("segment requested_batches is inconsistent")
         seed = _positive_int(segment.get("seed"), "seed")
@@ -284,25 +335,35 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
             raise ValueError("segment seeds must be strictly sequential")
         schedule = segment.get("statepoint_batches")
         if not isinstance(schedule, list) or not schedule:
-            raise ValueError("segment statepoint schedule must be a non-empty list")
+            raise ValueError(
+                "segment statepoint schedule must be a non-empty list"
+            )
         observed_schedule = [int(value) for value in schedule]
         if sorted(observed_schedule) != observed_schedule or any(
             value <= 0 for value in observed_schedule
         ):
             raise ValueError("segment statepoint schedule is invalid")
         if observed_schedule[-1] != requested:
-            raise ValueError("segment statepoint schedule must include final batch")
+            raise ValueError(
+                "segment statepoint schedule must include final batch"
+            )
         expected_schedule = _statepoint_schedule(requested, interval)
         if observed_schedule != expected_schedule:
-            raise ValueError("segment statepoint schedule is not deterministic")
+            raise ValueError(
+                "segment statepoint schedule is not deterministic"
+            )
         source_histories = _positive_int(
             segment.get("source_histories"), "segment source_histories"
         )
         if source_histories != requested * particles_per_batch:
             raise ValueError("segment source histories is inconsistent")
-        case_root = _text(segment.get("artifact_root"), "segment artifact_root")
+        case_root = _text(
+            segment.get("artifact_root"), "segment artifact_root"
+        )
         if not case_root.startswith(str(plan.get("artifact_root", ""))):
-            raise ValueError("segment artifact_root must be under plan artifact_root")
+            raise ValueError(
+                "segment artifact_root must be under plan artifact_root"
+            )
         if not case_root:
             raise ValueError("segment artifact_root is missing")
         if case_root in observed_case_roots:
@@ -313,7 +374,9 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     if total_sources != total_batches * particles_per_batch:
         raise ValueError("segment source histories do not match total intent")
 
-    signal_plan = _mapping(plan.get("signal_requeue_contract"), "signal_requeue_contract")
+    signal_plan = _mapping(
+        plan.get("signal_requeue_contract"), "signal_requeue_contract"
+    )
     _validate_signal(signal_plan.get("stop_signal"))
     _validate_signal(signal_plan.get("requeue_signal"))
     stop_grace = _positive_int(
@@ -324,12 +387,20 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     )
     if requeue_delay <= stop_grace:
         raise ValueError("requeue delay must exceed stop grace")
-    _positive_int(signal_plan.get("walltime_slack_seconds"), "walltime_slack_seconds")
+    _positive_int(
+        signal_plan.get("walltime_slack_seconds"), "walltime_slack_seconds"
+    )
     if signal_plan.get("requeue_required") is not True:
         raise ValueError("requeue requirement must be true")
 
     if plan.get("production_run_authorized") is not False:
         raise ValueError("production execution is not authorized")
+
+    resources = _mapping(plan.get("resource_controls"), "resource_controls")
+    _positive_int(resources.get("requested_cores"), "requested_cores")
+    _positive_int(resources.get("memory_max_bytes"), "memory_max_bytes")
+    if resources.get("memory_swap_max_bytes") != 0:
+        raise ValueError("checkpoint plan must disable swap")
 
     if _text(plan.get("artifact_root"), "artifact_root") == "":
         raise ValueError("artifact_root is required")
@@ -352,7 +423,9 @@ def write_openmc_checkpoint_restart_plan(
     if artifact_root.exists():
         raise FileExistsError(artifact_root)
     artifact_root.mkdir(parents=True)
-    for segment in plan.get("segments", ()):  # strict contract: validated above
+    for segment in plan.get(
+        "segments", ()
+    ):  # strict contract: validated above
         segment_root = Path(str(segment["artifact_root"]))
         if segment_root.exists():
             raise FileExistsError(segment_root)

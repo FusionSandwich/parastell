@@ -25,7 +25,9 @@ STAGE_NAMES = (
 
 
 def _canonical_sha256(payload: Any) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -62,7 +64,9 @@ def _nonnegative_int(value: Any, label: str) -> int:
     return number
 
 
-def _merge_case(base: Mapping[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
+def _merge_case(
+    base: Mapping[str, Any], overlay: Mapping[str, Any]
+) -> dict[str, Any]:
     result = dict(base)
     for key, value in overlay.items():
         if isinstance(result.get(key), Mapping) and isinstance(value, Mapping):
@@ -98,7 +102,9 @@ def _field_deltas(
     held: list[str] = []
     sentinel = object()
     for field in sorted(all_fields):
-        if baseline_flat.get(field, sentinel) == candidate_flat.get(field, sentinel):
+        if baseline_flat.get(field, sentinel) == candidate_flat.get(
+            field, sentinel
+        ):
             held.append(field)
         else:
             changed.append(field)
@@ -144,7 +150,9 @@ def build_poster_campaign_manifest(
         raise ValueError("poster campaign producer must be ParaStell")
     device = _coerce_text(device, "device")
     if "private" in device.lower():
-        raise ValueError("device identifier is not allowed in an example contract")
+        raise ValueError(
+            "device identifier is not allowed in an example contract"
+        )
 
     baseline_payload = _coerce_mapping(baseline_case, "baseline_case")
     stage_rows = {
@@ -218,7 +226,12 @@ def build_poster_campaign_manifest(
 
     if not manifest["stages"]:
         manifest["stages"] = [
-            {"stage": stage, "case_count": 0, "case_ids": [], "source_case_id": baseline_case_id}
+            {
+                "stage": stage,
+                "case_count": 0,
+                "case_ids": [],
+                "source_case_id": baseline_case_id,
+            }
             for stage in STAGE_NAMES[1:]
         ]
 
@@ -239,7 +252,9 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
     if manifest.get("non_cartesian") is not True:
         raise ValueError("poster campaign must be non-Cartesian")
     if manifest.get("case_strategy") != "staged_without_cartesian_product":
-        raise ValueError("poster campaign strategy is not staged non-Cartesian")
+        raise ValueError(
+            "poster campaign strategy is not staged non-Cartesian"
+        )
 
     stages = manifest.get("stages")
     if not isinstance(stages, list):
@@ -253,7 +268,9 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
             raise ValueError("poster campaign stage entry is invalid")
         if stage.get("stage") not in STAGE_NAMES[1:]:
             raise ValueError("poster campaign contains unknown stage")
-        stage_case_count = _nonnegative_int(stage.get("case_count"), "poster campaign stage case_count")
+        stage_case_count = _nonnegative_int(
+            stage.get("case_count"), "poster campaign stage case_count"
+        )
         if len(stage.get("case_ids", ())) != stage_case_count:
             raise ValueError("poster campaign stage_count is invalid")
 
@@ -261,7 +278,9 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
     if not isinstance(cases, list) or len(cases) < 1:
         raise ValueError("poster campaign must contain at least one case")
 
-    baseline_case_id = _coerce_text(manifest.get("baseline_case_id"), "baseline_case_id")
+    baseline_case_id = _coerce_text(
+        manifest.get("baseline_case_id"), "baseline_case_id"
+    )
     if baseline_case_id != f"{campaign_id}-baseline":
         raise ValueError("poster campaign baseline_case_id is invalid")
 
@@ -274,21 +293,31 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
             raise ValueError("poster campaign case is invalid")
         case_id = str(case.get("case_id", "")).strip()
         if not case_id or case_id in case_ids:
-            raise ValueError("poster campaign case IDs must be unique and nonempty")
+            raise ValueError(
+                "poster campaign case IDs must be unique and nonempty"
+            )
         case_ids.add(case_id)
         stage = str(case.get("stage", "")).strip()
         if stage not in STAGE_NAMES:
             raise ValueError("poster campaign contains unknown stage")
 
-        payload = _coerce_mapping(case.get("payload"), f"case {case_id} payload")
-        case_index = _nonnegative_int(case.get("case_index"), "poster campaign case_index")
+        payload = _coerce_mapping(
+            case.get("payload"), f"case {case_id} payload"
+        )
+        case_index = _nonnegative_int(
+            case.get("case_index"), "poster campaign case_index"
+        )
         if case_index < 0:
             raise ValueError("poster campaign case_index is invalid")
         if case_index in case_indices:
             raise ValueError("poster campaign case indices must be unique")
         case_indices.add(case_index)
-        changed = sorted(str(value) for value in case.get("changed_fields", ()))
-        held = sorted(str(value) for value in case.get("held_fixed_fields", ()))
+        changed = sorted(
+            str(value) for value in case.get("changed_fields", ())
+        )
+        held = sorted(
+            str(value) for value in case.get("held_fixed_fields", ())
+        )
         if baseline_payload is None:
             if stage != "baseline":
                 raise ValueError("poster campaign is missing a baseline case")
@@ -296,10 +325,14 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
             baseline_payload = payload
             baseline_position = index
         else:
-            observed_changed, observed_held = _field_deltas(baseline_payload, payload)
+            observed_changed, observed_held = _field_deltas(
+                baseline_payload, payload
+            )
         if stage == "baseline":
             if case.get("source_case_id") is not None:
-                raise ValueError("baseline case cannot inherit from another case")
+                raise ValueError(
+                    "baseline case cannot inherit from another case"
+                )
             if changed:
                 raise ValueError("baseline case cannot have changed fields")
             if case.get("case_index") != 0:
@@ -307,10 +340,16 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
         else:
             if case.get("source_case_id") != baseline_case_id:
                 raise ValueError("non-baseline cases must point to baseline")
-        if set(changed) != set(observed_changed) or set(held) != set(observed_held):
-            raise ValueError("poster campaign case diff metadata is inconsistent")
+        if set(changed) != set(observed_changed) or set(held) != set(
+            observed_held
+        ):
+            raise ValueError(
+                "poster campaign case diff metadata is inconsistent"
+            )
 
-    if len(cases) != _nonnegative_int(manifest.get("case_count"), "poster campaign case_count"):
+    if len(cases) != _nonnegative_int(
+        manifest.get("case_count"), "poster campaign case_count"
+    ):
         raise ValueError("poster campaign case_count is incorrect")
     if baseline_payload is None:
         raise ValueError("poster campaign missing baseline case")
@@ -319,14 +358,20 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
     if baseline_case_id != cases[0]["case_id"]:
         raise ValueError("baseline case id must align with campaign id")
     if case_indices != set(range(len(cases))):
-        raise ValueError("poster campaign case indices must be contiguous from zero")
+        raise ValueError(
+            "poster campaign case indices must be contiguous from zero"
+        )
 
-    declared = {str(item) for stage in stages for item in stage.get("case_ids", ())}
+    declared = {
+        str(item) for stage in stages for item in stage.get("case_ids", ())
+    }
     if any(case_id not in case_ids for case_id in declared):
         raise ValueError("poster campaign stage references unknown case id")
 
     provided_hash = str(manifest.get("manifest_sha256", ""))
-    unsigned = {k: v for k, v in dict(manifest).items() if k != "manifest_sha256"}
+    unsigned = {
+        k: v for k, v in dict(manifest).items() if k != "manifest_sha256"
+    }
     if provided_hash != _canonical_sha256(unsigned):
         raise ValueError("poster campaign manifest hash is invalid")
 

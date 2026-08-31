@@ -28,6 +28,7 @@ def build_surface_instrumentation_spec(
         raise ValueError("surface_ids must be unique positive integers")
     supported_interfaces = {
         "homogenized_magnet_outer_boundary",
+        "continuous_magnet_complete_boundary",
         "outer_casing_external",
         "winding_pack",
     }

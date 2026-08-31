@@ -1,42 +1,45 @@
 {
   "schema": "parastell.poster_campaign_plan/v1.0.0",
-  "campaign_id": "wistell-d-poster-campaign-example",
+  "campaign_id": "wistell-d-continuous90-poster-campaign-example",
   "producer": "ParaStell",
   "device": "WISTELL-D",
-  "campaign_purpose": "compact geometry-neutral poster scan for public review",
+  "campaign_purpose": "staged non-Cartesian poster scan; material bindings must be qualified before execution",
   "baseline_case": {
     "geometry": {
-      "layout": "wistell-sector",
-      "breeder": {
-        "enabled": true,
-        "scale": 1.0
+      "geometry_mode": "continuous_radial_envelope",
+      "modeled_extent_degrees": 90.0,
+      "field_periods": 4,
+      "radial_build_cm": {
+        "first_wall": 4.0,
+        "breeder": "pointwise_452_value_field",
+        "back_wall": 5.0,
+        "high_temperature_shield": 20.0,
+        "vacuum_vessel": 10.0,
+        "low_temperature_shield": "pointwise_452_value_field",
+        "vacuum_gap": "pointwise_452_value_field",
+        "homogenized_magnet": 30.0
       },
-      "shield": {
-        "enabled": true,
-        "thickness_cm": 2.0
-      },
-      "spatial": {
-        "radius_cm": 400.0,
-        "vertical_extent_cm": 120.0
-      },
+      "material_binding_status": "REQUIRED_BEFORE_TRANSPORT",
       "selected_location": {
-        "region": "inner-equatorial",
-        "label": "baseline"
+        "metric": "damage-energy",
+        "rank": 1,
+        "preserve_actual_global_position": true,
+        "periodic_tiling": false
       }
     }
   },
   "controlled_breeder_cases": [
     {
       "geometry": {
-        "breeder": {
-          "scale": 0.9
+        "radial_build_cm": {
+          "breeder_multiplier": 0.9
         }
       }
     },
     {
       "geometry": {
-        "breeder": {
-          "scale": 1.2
+        "radial_build_cm": {
+          "breeder_multiplier": 1.1
         }
       }
     }
@@ -44,43 +47,35 @@
   "shield_cases": [
     {
       "geometry": {
-        "shield": {
-          "thickness_cm": 1.5
-        }
-      }
-    },
-    {
-      "geometry": {
-        "shield": {
-          "thickness_cm": 3.0
+        "radial_build_cm": {
+          "high_temperature_shield": 30.0
         }
       }
     }
   ],
-  "spatial_thickness_cases": [
-    {
-      "geometry": {
-        "thickness_cm": 0.8
-      }
-    },
-    {
-      "geometry": {
-        "thickness_cm": 1.4
-      }
-    }
-  ],
+  "spatial_thickness_cases": [],
   "selected_location_cases": [
     {
       "geometry": {
         "selected_location": {
-          "label": "upper-outboard"
+          "metric": "damage-energy",
+          "rank": 2
         }
       }
     },
     {
       "geometry": {
         "selected_location": {
-          "label": "lower-inboard"
+          "metric": "heating",
+          "rank": 1
+        }
+      }
+    },
+    {
+      "geometry": {
+        "selected_location": {
+          "metric": "scalar_flux",
+          "rank": 1
         }
       }
     }

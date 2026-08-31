@@ -46,12 +46,33 @@ MATERIAL_NAMES = {
     "low_temperature_shield",
     "magnets",
 }
+CONTINUOUS_MATERIAL_NAMES = (MATERIAL_NAMES - {"magnets"}) | {
+    "homogenized_magnet"
+}
 FORBIDDEN_RUNTIME_IMPORTS = (
     "pymoab",
     "pydagmc",
     "cadquery",
     "gmsh",
 )
+
+
+def _statepoint_batches(run: Mapping[str, Any]) -> list[int]:
+    batches = int(run["batches"])
+    interval = run.get("statepoint_interval_batches")
+    if interval is None:
+        return [batches]
+    if (
+        isinstance(interval, bool)
+        or not isinstance(interval, int)
+        or interval <= 0
+        or interval > batches
+    ):
+        raise ValueError("statepoint_interval_batches is invalid")
+    result = list(range(interval, batches + 1, interval))
+    if result[-1] != batches:
+        result.append(batches)
+    return result
 
 
 def _sha256(path: str | Path) -> str:
@@ -111,11 +132,21 @@ def _validate_native_ids(
         first_wrapper = int(geometry["first_available_wrapper_id"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError("native DAGMC ID inventory is malformed") from exc
+    try:
+        physical_volume_count = int(geometry.get("physical_volume_count", 26))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("sealed physical volume count is invalid") from exc
+    geometry_mode = str(geometry.get("geometry_mode", "swept_magnets_legacy"))
+    if geometry_mode not in {
+        "continuous_radial_envelope",
+        "swept_magnets_legacy",
+    } or physical_volume_count not in {9, 26}:
+        raise ValueError("sealed geometry mode or volume count is invalid")
     if (
         native.get("native_id_gate_pass") is not True
         or native.get("raw_h5m_sha256") != dagmc_sha256
         or not surface_ids
-        or volume_ids != list(range(1, 27))
+        or volume_ids != list(range(1, physical_volume_count + 1))
         or len(surface_ids) != len(set(surface_ids))
         or any(value <= 0 for value in surface_ids)
         or maximum != max(surface_ids + volume_ids)
@@ -129,6 +160,8 @@ def _validate_native_ids(
         "volume_ids": volume_ids,
         "surface_count": len(surface_ids),
         "volume_count": len(volume_ids),
+        "physical_volume_count": physical_volume_count,
+        "geometry_mode": geometry_mode,
         "maximum_native_id": maximum,
         "first_available_wrapper_id": first_wrapper,
     }
@@ -332,18 +365,45 @@ def _validate_seal(
         raise ValueError("sealed direct-period geometry identity is invalid")
     ids = _validate_native_ids(geometry, evidence["dagmc_h5m"]["sha256"])
     clearance = _validate_clearance(geometry)
-    expected_magnets = {
-        f"magnet-{index:04d}": index + 9 for index in range(18)
-    }
+    expected_magnets = (
+        {"continuous-magnet-layer": 9}
+        if geometry.get("geometry_mode") == "continuous_radial_envelope"
+        else {f"magnet-{index:04d}": index + 9 for index in range(18)}
+    )
     if seal.get("magnet_cell_ids") != expected_magnets:
         raise ValueError("sealed magnet cell IDs are invalid")
+    expected_components = {
+        "chamber": 1,
+        "first_wall": 2,
+        "breeder": 3,
+        "back_wall": 4,
+        "high_temperature_shield": 5,
+        "vacuum_vessel": 6,
+        "low_temperature_shield": 7,
+        "vacuum_gap": 8,
+    }
+    if geometry.get("geometry_mode") == "continuous_radial_envelope":
+        expected_components["magnets"] = 9
+    declared_components = geometry.get("component_cell_ids")
+    if (
+        declared_components is not None
+        and declared_components != expected_components
+    ) or (
+        geometry.get("geometry_mode") == "continuous_radial_envelope"
+        and declared_components is None
+    ):
+        raise ValueError("sealed component cell IDs are invalid")
     source_values, strengths_path, source = _validate_strengths(
         seal_path,
         seal.get("source", {}),
         evidence["source_mesh_h5m"]["sha256"],
     )
     materials = seal.get("materials")
-    expected_names = sorted(MATERIAL_NAMES)
+    expected_names = sorted(
+        CONTINUOUS_MATERIAL_NAMES
+        if geometry.get("geometry_mode") == "continuous_radial_envelope"
+        else MATERIAL_NAMES
+    )
     if (
         not isinstance(materials, Mapping)
         or materials.get("names") != expected_names
@@ -354,11 +414,10 @@ def _validate_seal(
         evidence["cross_sections_xml"]["sha256"],
     )
     run = seal.get("run")
-    if not isinstance(run, Mapping) or set(run) != {
-        "particles",
-        "batches",
-        "seed",
-    }:
+    if not isinstance(run, Mapping) or set(run) not in (
+        {"particles", "batches", "seed"},
+        {"particles", "batches", "seed", "statepoint_interval_batches"},
+    ):
         raise ValueError("sealed run controls are invalid")
     if any(
         isinstance(run.get(key), bool)
@@ -367,6 +426,7 @@ def _validate_seal(
         for key in run
     ):
         raise ValueError("sealed run controls are invalid")
+    _statepoint_batches(run)
     source_physics = json.loads(
         paths["source_physics_manifest"].read_text(encoding="utf-8")
     )
@@ -404,6 +464,7 @@ def _validate_seal(
         "source_physics": source_physics,
         "run": dict(run),
         "magnet_cell_ids": expected_magnets,
+        "component_cell_ids": expected_components,
         "control_path": str(control_path),
     }
     return seal, paths, source_values, all_bindings, summary
@@ -483,6 +544,8 @@ def export_sealed_openmc16_model(
     settings.particles = summary["run"]["particles"]
     settings.batches = summary["run"]["batches"]
     settings.seed = summary["run"]["seed"]
+    statepoint_batches = _statepoint_batches(summary["run"])
+    settings.statepoint = {"batches": statepoint_batches}
     settings.source = source
     settings.photon_transport = True
     model = openmc.Model(
@@ -528,7 +591,17 @@ def export_sealed_openmc16_model(
             "nuclear_data_manifest": summary["nuclear_data_manifest"],
         },
         "run": summary["run"],
+        "statepoint_policy": {
+            "explicit": True,
+            "batches": statepoint_batches,
+            "interval_batches": summary["run"].get(
+                "statepoint_interval_batches"
+            ),
+            "final_batch_included": statepoint_batches[-1]
+            == summary["run"]["batches"],
+        },
         "magnet_cell_ids": summary["magnet_cell_ids"],
+        "component_cell_ids": summary["component_cell_ids"],
         "validated_input_bindings": {
             key: bindings[key] for key in sorted(bindings)
         },

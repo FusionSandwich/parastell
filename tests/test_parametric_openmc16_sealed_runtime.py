@@ -19,6 +19,24 @@ def _sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def test_continuous_native_id_contract_accepts_only_nine_volumes():
+    geometry = {
+        "geometry_mode": "continuous_radial_envelope",
+        "physical_volume_count": 9,
+        "first_available_wrapper_id": 28,
+        "native_id_inventory": {
+            "native_id_gate_pass": True,
+            "raw_h5m_sha256": "a" * 64,
+            "surface_ids": list(range(10, 28)),
+            "volume_ids": list(range(1, 10)),
+            "maximum_native_id": 27,
+        },
+    }
+    result = runtime._validate_native_ids(geometry, "a" * 64)
+    assert result["volume_ids"] == list(range(1, 10))
+    assert result["geometry_mode"] == "continuous_radial_envelope"
+
+
 def _canonical(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()

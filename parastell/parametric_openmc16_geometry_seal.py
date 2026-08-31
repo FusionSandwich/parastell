@@ -19,8 +19,10 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from .parametric_openmc16_model import MATERIAL_NAMES
 from .parametric_openmc16_model import _canonical_sha
+from .parametric_openmc16_model import _expected_material_names
+from .parametric_openmc16_model import MATERIAL_NAMES
+from .parametric_openmc16_model import _geometry_contract
 from .parametric_openmc16_model import _load_control
 from .parametric_openmc16_model import _maximum_vertex_radius
 from .parametric_openmc16_model import _nuclear_data_manifest
@@ -34,7 +36,7 @@ STRENGTHS_FILENAME = "source_strengths.npy"
 SEAL_FILENAME = "GEOMETRY_TRANSPORT_SEAL.json"
 
 
-def _material_names_from_xml(path: Path) -> list[str]:
+def _material_names_from_xml(path: Path, expected: set[str]) -> list[str]:
     root = ET.parse(path).getroot()
     names = [
         str(row.get("name", "")).strip() for row in root.findall("./material")
@@ -45,7 +47,6 @@ def _material_names_from_xml(path: Path) -> list[str]:
     # DAGMC's reserved ``mat:Vacuum`` volume is void and must not be exported
     # as a physical OpenMC material.  The committed bounded-smoke materials
     # therefore contain only the seven non-void material tags.
-    expected = MATERIAL_NAMES
     if set(names) != expected:
         raise ValueError(
             "materials XML names do not match DAGMC material tags"
@@ -116,6 +117,7 @@ def create_geometry_transport_seal(
 
     control_path = control_path.resolve(strict=True)
     control = _load_control(control_path, expected_control_sha256)
+    geometry_contract = _geometry_contract(control)
     control_binding = {
         "path": str(control_path),
         "sha256": expected_control_sha256,
@@ -140,7 +142,9 @@ def create_geometry_transport_seal(
         + [int(value) for value in native_ids["volume_ids"]]
     ):
         raise ValueError("maximum native DAGMC ID is inconsistent")
-    expected_magnet_volume_ids = set(range(9, 27))
+    expected_magnet_volume_ids = set(
+        geometry_contract["magnet_cell_ids"].values()
+    )
     if not expected_magnet_volume_ids.issubset(
         {int(value) for value in native_ids["volume_ids"]}
     ):
@@ -178,7 +182,9 @@ def create_geometry_transport_seal(
             "source-strength total disagrees with tetrahedron audit"
         )
 
-    materials = _material_names_from_xml(paths["materials_xml"])
+    materials = _material_names_from_xml(
+        paths["materials_xml"], _expected_material_names(control)
+    )
     nuclear_data = _nuclear_data_manifest(
         paths["materials_xml"], paths["cross_sections_xml"]
     )
@@ -204,6 +210,11 @@ def create_geometry_transport_seal(
         "runtime": runtime,
         "geometry": {
             "dagmc_sha256": dagmc_hash,
+            "geometry_mode": geometry_contract["geometry_mode"],
+            "physical_volume_count": geometry_contract[
+                "physical_volume_count"
+            ],
+            "component_cell_ids": geometry_contract["component_cell_ids"],
             "modeled_extent_degrees": float(control["modeled_extent_degrees"]),
             "n_field_periods": int(control["n_field_periods"]),
             "native_id_inventory": native_ids,
@@ -230,9 +241,7 @@ def create_geometry_transport_seal(
             "nuclear_data_manifest": nuclear_data,
         },
         "run": dict(control["run"]),
-        "magnet_cell_ids": {
-            f"magnet-{index:04d}": index + 9 for index in range(18)
-        },
+        "magnet_cell_ids": geometry_contract["magnet_cell_ids"],
         "inputs_immutable": True,
         "physical_h5m_mutation": False,
         "source_mesh_mutation": False,

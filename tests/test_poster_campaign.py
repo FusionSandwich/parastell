@@ -45,7 +45,9 @@ def test_staged_poster_manifest_tracks_changed_fields_and_staging():
             {"geometry": {"thickness_cm": 1.5}},
             {"geometry": {"thickness_cm": 2.0, "layout": "alternative"}},
         ],
-        selected_location_cases=[{"geometry": {"selected": {"label": "upper"}}}],
+        selected_location_cases=[
+            {"geometry": {"selected": {"label": "upper"}}}
+        ],
     )
 
     assert manifest["schema"] == SCHEMA
@@ -55,7 +57,9 @@ def test_staged_poster_manifest_tracks_changed_fields_and_staging():
     assert manifest["baseline_case_id"] == "wistell-d-poster-demo-baseline"
     assert manifest["cases"][0]["stage"] == "baseline"
     assert manifest["cases"][0]["case_index"] == 0
-    assert manifest["cases"][1]["source_case_id"] == manifest["baseline_case_id"]
+    assert (
+        manifest["cases"][1]["source_case_id"] == manifest["baseline_case_id"]
+    )
     assert manifest["stages"][0]["stage"] == "controlled_breeder"
     assert manifest["stages"][0]["case_count"] == 2
     assert manifest["manifest_sha256"]

@@ -486,6 +486,97 @@ def add_envelope_tallies(
     )
 
 
+def add_reactor_component_tallies(
+    model,
+    *,
+    component_cell_ids: Mapping[str, int],
+    neutron_edges_eV: Sequence[float],
+    photon_edges_eV: Sequence[float],
+) -> dict[str, Any]:
+    """Attach the minimum global reactor and breeder-accounting tallies.
+
+    These tallies are cell-resolved over the physical DAGMC volumes.  The
+    continuous magnet layer is one physical cell; engineering coil identities
+    are intentionally not fabricated as global transport cells.
+    """
+    require_capabilities()
+    openmc = _openmc()
+    required = {
+        "first_wall",
+        "breeder",
+        "back_wall",
+        "high_temperature_shield",
+        "vacuum_vessel",
+        "low_temperature_shield",
+        "magnets",
+    }
+    if not required.issubset(component_cell_ids):
+        missing = sorted(required - set(component_cell_ids))
+        raise ValueError(f"reactor component cell IDs omit {missing}")
+    physical = {
+        name: int(component_cell_ids[name]) for name in sorted(required)
+    }
+    if len(set(physical.values())) != len(physical) or any(
+        value <= 0 for value in physical.values()
+    ):
+        raise ValueError(
+            "reactor component cell IDs must be unique and positive"
+        )
+    cells = [physical[name] for name in sorted(physical)]
+    tallies = model.tallies if model.tallies is not None else openmc.Tallies()
+    names: dict[str, Any] = {"component_cell_ids": physical}
+
+    for particle, edges in (
+        ("neutron", neutron_edges_eV),
+        ("photon", photon_edges_eV),
+    ):
+        flux = openmc.Tally(name=f"pstl_reactor_{particle}_component_flux")
+        flux.filters = [
+            openmc.CellFilter(cells),
+            openmc.ParticleFilter([particle]),
+            openmc.EnergyFilter(edges),
+        ]
+        flux.scores = ["flux"]
+        tallies.append(flux)
+        heating = openmc.Tally(
+            name=f"pstl_reactor_{particle}_component_heating"
+        )
+        heating.filters = list(flux.filters)
+        heating.scores = ["heating"]
+        tallies.append(heating)
+        names[f"{particle}_component_flux"] = flux.name
+        names[f"{particle}_component_heating"] = heating.name
+
+    reactions = openmc.Tally(name="pstl_reactor_neutron_component_reactions")
+    reactions.filters = [
+        openmc.CellFilter(cells),
+        openmc.ParticleFilter(["neutron"]),
+        openmc.EnergyFilter(neutron_edges_eV),
+        openmc.ReactionFilter([16, 17, 102]),
+    ]
+    reactions.scores = ["events"]
+    tallies.append(reactions)
+    names["component_reactions"] = reactions.name
+
+    breeder = physical["breeder"]
+    tbr = openmc.Tally(name="pstl_breeder_tritium_production")
+    tbr.filters = [
+        openmc.CellFilter([breeder]),
+        openmc.ParticleFilter(["neutron"]),
+        openmc.EnergyFilter(neutron_edges_eV),
+    ]
+    tbr.scores = ["H3-production"]
+    tallies.append(tbr)
+    names["breeder_tritium_production"] = tbr.name
+    names["tbr_semantics"] = (
+        "H3 production per source history in modeled 90-degree period; "
+        "apply physical source normalization exactly once"
+    )
+    names["statistics_qualified"] = False
+    model.tallies = tallies
+    return names
+
+
 def rotated_mesh_filter(
     mesh, rotation: Sequence[Sequence[float]], translation
 ):

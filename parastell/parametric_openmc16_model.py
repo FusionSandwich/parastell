@@ -13,6 +13,7 @@ import numpy as np
 
 from .reference_geometry import ReferenceGeometry, sha256_file
 from .source_domain import _source_arrays, audit_source_tetrahedra_arrays
+from .continuous_radial_contract import COMPONENT_ORDER
 
 
 CONTROL_SCHEMA = "parastell.parametric_openmc16_build_control/v1.0.0"
@@ -26,6 +27,9 @@ MATERIAL_NAMES = {
     "low_temperature_shield",
     "magnets",
 }
+CONTINUOUS_MATERIAL_NAMES = (MATERIAL_NAMES - {"magnets"}) | {
+    "homogenized_magnet"
+}
 SEMANTIC_ROLES = (
     "chamber",
     "first_wall",
@@ -37,6 +41,48 @@ SEMANTIC_ROLES = (
     "vacuum_gap",
     *(f"magnet-{index:04d}" for index in range(18)),
 )
+CONTINUOUS_GEOMETRY_MODE = "continuous_radial_envelope"
+LEGACY_GEOMETRY_MODE = "swept_magnets_legacy"
+
+
+def _geometry_mode(control: Mapping[str, Any]) -> str:
+    mode = str(control.get("geometry_mode", LEGACY_GEOMETRY_MODE))
+    if mode not in {CONTINUOUS_GEOMETRY_MODE, LEGACY_GEOMETRY_MODE}:
+        raise ValueError(f"unsupported geometry_mode {mode!r}")
+    return mode
+
+
+def _geometry_contract(control: Mapping[str, Any]) -> dict[str, Any]:
+    """Return physical cell identities without inventing engineering solids."""
+    if _geometry_mode(control) == CONTINUOUS_GEOMETRY_MODE:
+        return {
+            "geometry_mode": CONTINUOUS_GEOMETRY_MODE,
+            "semantic_roles": tuple(COMPONENT_ORDER),
+            "component_cell_ids": {
+                role: index + 1 for index, role in enumerate(COMPONENT_ORDER)
+            },
+            "magnet_cell_ids": {"continuous-magnet-layer": 9},
+            "physical_volume_count": 9,
+        }
+    return {
+        "geometry_mode": LEGACY_GEOMETRY_MODE,
+        "semantic_roles": SEMANTIC_ROLES,
+        "component_cell_ids": {
+            role: index + 1 for index, role in enumerate(SEMANTIC_ROLES[:8])
+        },
+        "magnet_cell_ids": {
+            f"magnet-{index:04d}": index + 9 for index in range(18)
+        },
+        "physical_volume_count": 26,
+    }
+
+
+def _expected_material_names(control: Mapping[str, Any]) -> set[str]:
+    return (
+        CONTINUOUS_MATERIAL_NAMES
+        if _geometry_mode(control) == CONTINUOUS_GEOMETRY_MODE
+        else MATERIAL_NAMES
+    )
 
 
 def _canonical_sha(value: Any) -> str:
@@ -91,6 +137,120 @@ def _load_control(path: Path, expected_sha256: str) -> dict[str, Any]:
     return control
 
 
+def _validate_geometry_evidence(
+    control: Mapping[str, Any],
+    *,
+    dagmc_hash: str,
+    export_receipt: Mapping[str, Any],
+    premesh: Mapping[str, Any],
+    writeback: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract = _geometry_contract(control)
+    if contract["geometry_mode"] == CONTINUOUS_GEOMETRY_MODE:
+        geometry = export_receipt.get("geometry", {})
+        topology = premesh.get("topology", {})
+        if (
+            export_receipt.get("schema")
+            != "parastell.continuous_radial_direct90_dagmc/v1.0.0"
+            or export_receipt.get("status")
+            != "EXPORTED_NATIVE_DAGMC_AND_OPENMC_GATES_PENDING"
+            or export_receipt.get("h5m", {}).get("sha256") != dagmc_hash
+            or geometry.get("extent_degrees") != 90.0
+            or geometry.get("direct_parastell_full_period") is not True
+            or geometry.get("explicit_swept_coils") is not False
+            or geometry.get("physical_h5m_mutation") is not False
+            or geometry.get("volume_count") != 9
+            or geometry.get("continuous_magnet_volume_global_id") != 9
+            or tuple(geometry.get("component_order", ()))
+            != tuple(COMPONENT_ORDER)
+        ):
+            raise ValueError(
+                "DAGMC export receipt is not the continuous direct 90-degree model"
+            )
+        if (
+            premesh.get("schema")
+            != "parastell.continuous_radial_premesh_topology/v1.0.0"
+            or premesh.get("status") != "PREMESH_9_VOLUME_TOPOLOGY_PASS"
+            or premesh.get("magnet_representation")
+            != "continuous_30_cm_radial_envelope"
+            or tuple(premesh.get("component_order", ()))
+            != tuple(COMPONENT_ORDER)
+            or topology.get("status")
+            != "PREMESH_OCC_INCIDENCE_AND_MANIFOLD_PASS"
+            or topology.get("volume_count") != 9
+            or topology.get("surface_count") != 27
+        ):
+            raise ValueError("continuous premesh topology proof is invalid")
+        if (
+            writeback.get("schema")
+            != "parastell.continuous_radial_direct90_h5m_writeback/v1.0.0"
+            or writeback.get("pass") is not True
+            or writeback.get("h5m_sha256") != dagmc_hash
+            or writeback.get("volume_count") != 9
+            or writeback.get("continuous_magnet_volume_global_id") != 9
+            or tuple(writeback.get("semantic_roles_by_global_volume_id", ()))
+            != tuple(COMPONENT_ORDER)
+        ):
+            raise ValueError(
+                "continuous H5M semantic writeback is not accepted"
+            )
+        return contract
+
+    if (
+        export_receipt.get("schema")
+        != "parastell.parametric_direct90_dagmc_export/v1.0.0"
+        or export_receipt.get("status")
+        != "DAGMC_EXPORTED_NATIVE_GATES_PENDING"
+        or export_receipt.get("h5m", {}).get("sha256") != dagmc_hash
+        or export_receipt.get("geometry", {}).get("extent_degrees") != 90.0
+        or export_receipt.get("geometry", {}).get(
+            "combined_from_45_degree_models"
+        )
+        is not False
+        or export_receipt.get("geometry", {}).get("radial_volume_count") != 8
+        or export_receipt.get("geometry", {}).get("magnet_volume_count") != 18
+        or export_receipt.get("geometry", {}).get("physical_volume_count")
+        != 26
+        or export_receipt.get("geometry", {}).get("ports") is not False
+        or export_receipt.get("geometry", {}).get("casing_winding_split")
+        is not False
+        or export_receipt.get("premesh_topology", {}).get("status")
+        != "PREMESH_26_VOLUME_TOPOLOGY_PASS"
+    ):
+        raise ValueError(
+            "DAGMC export receipt is not the direct 90-degree model"
+        )
+    if (
+        premesh.get("schema") != "parastell.parametric_direct90_premesh/v1.0.0"
+        or premesh.get("status") != "PREMESH_TOPOLOGY_PASS_MESH_PENDING"
+        or tuple(premesh.get("semantic_roles", ())) != SEMANTIC_ROLES
+        or premesh.get("topology", {}).get("status")
+        != "PREMESH_26_VOLUME_TOPOLOGY_PASS"
+    ):
+        raise ValueError("premesh periodic topology proof is invalid")
+    identities = writeback.get("magnet_identity_by_global_volume_id")
+    if (
+        writeback.get("schema")
+        != "parastell.parametric_direct90_h5m_writeback/v1.0.0"
+        or writeback.get("pass") is not True
+        or writeback.get("h5m_sha256") != dagmc_hash
+        or tuple(writeback.get("semantic_roles_by_global_volume_id", ()))
+        != SEMANTIC_ROLES
+        or not isinstance(identities, list)
+        or len(identities) != 18
+    ):
+        raise ValueError("H5M semantic writeback is not accepted")
+    for index, row in enumerate(identities):
+        if (
+            row.get("magnet_id") != f"magnet-{index:04d}"
+            or row.get("volume_global_id") != index + 9
+            or row.get("unique_match") is not True
+            or row.get("pass") is not True
+        ):
+            raise ValueError("H5M magnet identity mapping is invalid")
+    return contract
+
+
 def _validate_evidence(control: Mapping[str, Any]) -> dict[str, Path]:
     required = {
         "dagmc_h5m",
@@ -117,40 +277,14 @@ def _validate_evidence(control: Mapping[str, Any]) -> dict[str, Path]:
         paths["dagmc_export_receipt"].read_text(encoding="utf-8")
     )
     premesh = json.loads(paths["premesh_topology"].read_text(encoding="utf-8"))
-    if (
-        export_receipt.get("schema")
-        != "parastell.parametric_direct90_dagmc_export/v1.0.0"
-        or export_receipt.get("status")
-        != "DAGMC_EXPORTED_NATIVE_GATES_PENDING"
-        or export_receipt.get("h5m", {}).get("sha256") != dagmc_hash
-        or export_receipt.get("geometry", {}).get("extent_degrees") != 90.0
-        or export_receipt.get("geometry", {}).get(
-            "combined_from_45_degree_models"
-        )
-        is not False
-        or export_receipt.get("geometry", {}).get("radial_volume_count") != 8
-        or export_receipt.get("geometry", {}).get("magnet_volume_count") != 18
-        or export_receipt.get("geometry", {}).get("physical_volume_count")
-        != 26
-        or export_receipt.get("geometry", {}).get("ports") is not False
-        or export_receipt.get("geometry", {}).get("casing_winding_split")
-        is not False
-        or export_receipt.get("premesh_topology", {}).get("sha256")
-        != control["inputs"]["premesh_topology"]["sha256"]
-        or export_receipt.get("premesh_topology", {}).get("status")
-        != "PREMESH_26_VOLUME_TOPOLOGY_PASS"
-    ):
-        raise ValueError(
-            "DAGMC export receipt is not the direct 90-degree model"
-        )
-    if (
-        premesh.get("schema") != "parastell.parametric_direct90_premesh/v1.0.0"
-        or premesh.get("status") != "PREMESH_TOPOLOGY_PASS_MESH_PENDING"
-        or tuple(premesh.get("semantic_roles", ())) != SEMANTIC_ROLES
-        or premesh.get("topology", {}).get("status")
-        != "PREMESH_26_VOLUME_TOPOLOGY_PASS"
-    ):
-        raise ValueError("premesh periodic topology proof is invalid")
+    writeback = json.loads(paths["h5m_writeback"].read_text(encoding="utf-8"))
+    _validate_geometry_evidence(
+        control,
+        dagmc_hash=dagmc_hash,
+        export_receipt=export_receipt,
+        premesh=premesh,
+        writeback=writeback,
+    )
 
     gate = json.loads(
         paths["geometry_gate_receipt"].read_text(encoding="utf-8")
@@ -194,28 +328,6 @@ def _validate_evidence(control: Mapping[str, Any]) -> dict[str, Path]:
         or domain.get("input_immutability_pass") is not True
     ):
         raise ValueError("source-domain receipt is not accepted")
-
-    writeback = json.loads(paths["h5m_writeback"].read_text(encoding="utf-8"))
-    identities = writeback.get("magnet_identity_by_global_volume_id")
-    if (
-        writeback.get("schema")
-        != "parastell.parametric_direct90_h5m_writeback/v1.0.0"
-        or writeback.get("pass") is not True
-        or writeback.get("h5m_sha256") != dagmc_hash
-        or tuple(writeback.get("semantic_roles_by_global_volume_id", ()))
-        != SEMANTIC_ROLES
-        or not isinstance(identities, list)
-        or len(identities) != 18
-    ):
-        raise ValueError("H5M semantic writeback is not accepted")
-    for index, row in enumerate(identities):
-        if (
-            row.get("magnet_id") != f"magnet-{index:04d}"
-            or row.get("volume_global_id") != index + 9
-            or row.get("unique_match") is not True
-            or row.get("pass") is not True
-        ):
-            raise ValueError("H5M magnet identity mapping is invalid")
 
     source = json.loads(
         paths["source_physics_manifest"].read_text(encoding="utf-8")
@@ -274,13 +386,14 @@ def _maximum_vertex_radius(path: Path) -> float:
     return float(np.linalg.norm(coordinates, axis=1).max())
 
 
-def _material_names(materials) -> set[str]:
+def _material_names(materials, expected: set[str] | None = None) -> set[str]:
     names = [str(material.name).strip() for material in materials]
     folded = [name.casefold() for name in names]
     if any(not name for name in names) or len(folded) != len(set(folded)):
         raise ValueError("OpenMC material names must be nonempty and unique")
     observed = {name for name in names if name != "Vacuum"}
-    if observed != MATERIAL_NAMES:
+    expected_names = MATERIAL_NAMES if expected is None else set(expected)
+    if observed != expected_names:
         raise ValueError("OpenMC material names do not match DAGMC tags")
     return set(names)
 
@@ -365,6 +478,7 @@ def build_model(
         raise FileExistsError(f"create-only output exists: {output}")
     control = _load_control(control_path, expected_control_sha256)
     paths = _validate_evidence(control)
+    geometry_contract = _geometry_contract(control)
     immutable_hashes_before = {
         name: sha256_file(path) for name, path in sorted(paths.items())
     }
@@ -385,7 +499,9 @@ def build_model(
         n_field_periods=4, external_vacuum_radius_cm=radius
     )
     materials = openmc.Materials.from_xml(path=paths["materials_xml"])
-    material_names = _material_names(materials)
+    material_names = _material_names(
+        materials, _expected_material_names(control)
+    )
     materials.cross_sections = str(paths["cross_sections_xml"])
     nuclear_data = _nuclear_data_manifest(
         paths["materials_xml"], paths["cross_sections_xml"]
@@ -459,6 +575,9 @@ def build_model(
         ],
         "nuclear_data_manifest": nuclear_data,
         "material_names": sorted(material_names),
+        "geometry_mode": geometry_contract["geometry_mode"],
+        "physical_volume_count": geometry_contract["physical_volume_count"],
+        "component_cell_ids": geometry_contract["component_cell_ids"],
         "modeled_extent_degrees": 90.0,
         "n_field_periods": 4,
         "transport_periodic_wrapper": {
@@ -478,9 +597,7 @@ def build_model(
             ),
             "normalization_application": "apply exactly once downstream",
         },
-        "magnet_cell_ids": {
-            f"magnet-{index:04d}": index + 9 for index in range(18)
-        },
+        "magnet_cell_ids": geometry_contract["magnet_cell_ids"],
         "photon_transport": True,
         "prompt_photons": "transported when produced by nuclear data",
         "delayed_photons": "separate activation-derived source",

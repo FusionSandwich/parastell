@@ -163,6 +163,53 @@ def test_accepts_hash_bound_direct90_evidence(tmp_path):
     assert paths["dagmc_h5m"].name == "dagmc.h5m"
 
 
+def test_continuous_geometry_contract_preserves_one_physical_magnet_volume():
+    control = {"geometry_mode": "continuous_radial_envelope"}
+    export = {
+        "schema": "parastell.continuous_radial_direct90_dagmc/v1.0.0",
+        "status": "EXPORTED_NATIVE_DAGMC_AND_OPENMC_GATES_PENDING",
+        "h5m": {"sha256": "a" * 64},
+        "geometry": {
+            "extent_degrees": 90.0,
+            "direct_parastell_full_period": True,
+            "explicit_swept_coils": False,
+            "physical_h5m_mutation": False,
+            "volume_count": 9,
+            "continuous_magnet_volume_global_id": 9,
+            "component_order": list(builder.COMPONENT_ORDER),
+        },
+    }
+    premesh = {
+        "schema": "parastell.continuous_radial_premesh_topology/v1.0.0",
+        "status": "PREMESH_9_VOLUME_TOPOLOGY_PASS",
+        "magnet_representation": "continuous_30_cm_radial_envelope",
+        "component_order": list(builder.COMPONENT_ORDER),
+        "topology": {
+            "status": "PREMESH_OCC_INCIDENCE_AND_MANIFOLD_PASS",
+            "volume_count": 9,
+            "surface_count": 27,
+        },
+    }
+    writeback = {
+        "schema": "parastell.continuous_radial_direct90_h5m_writeback/v1.0.0",
+        "pass": True,
+        "h5m_sha256": "a" * 64,
+        "volume_count": 9,
+        "continuous_magnet_volume_global_id": 9,
+        "semantic_roles_by_global_volume_id": list(builder.COMPONENT_ORDER),
+    }
+    result = builder._validate_geometry_evidence(
+        control,
+        dagmc_hash="a" * 64,
+        export_receipt=export,
+        premesh=premesh,
+        writeback=writeback,
+    )
+    assert result["physical_volume_count"] == 9
+    assert result["magnet_cell_ids"] == {"continuous-magnet-layer": 9}
+    assert result["component_cell_ids"]["magnets"] == 9
+
+
 def test_committed_smoke_inputs_are_explicitly_nonproduction():
     root = Path(__file__).resolve().parents[1]
     source = json.loads(
@@ -179,6 +226,12 @@ def test_committed_smoke_inputs_are_explicitly_nonproduction():
     )
     assert not materials.findall("./material/element")
     assert not materials.findall("./material/sab")
+    continuous = ET.parse(
+        root / "configs/wistell_d_continuous_openmc16_smoke_materials.xml"
+    ).getroot()
+    assert {row.get("name") for row in continuous.findall("./material")} == (
+        builder.CONTINUOUS_MATERIAL_NAMES
+    )
 
 
 def test_rejects_half_period_or_assembled_extent(tmp_path):

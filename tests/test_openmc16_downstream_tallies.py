@@ -135,3 +135,38 @@ def test_unavailable_nuclear_data_response_is_missing_not_zero(monkeypatch):
         "status": "UNAVAILABLE_IN_CONFIGURED_NUCLEAR_DATA",
         "available": False,
     }
+
+
+def test_global_component_tallies_include_tbr_without_fake_coil_cells(
+    monkeypatch,
+):
+    fake = _fake_openmc()
+    monkeypatch.setattr(openmc16, "_openmc", lambda: fake)
+    monkeypatch.setattr(
+        openmc16, "require_capabilities", lambda: {"passes": True}
+    )
+    model = SimpleNamespace(tallies=None)
+    components = {
+        "chamber": 1,
+        "first_wall": 2,
+        "breeder": 3,
+        "back_wall": 4,
+        "high_temperature_shield": 5,
+        "vacuum_vessel": 6,
+        "low_temperature_shield": 7,
+        "vacuum_gap": 8,
+        "magnets": 9,
+    }
+    result = openmc16.add_reactor_component_tallies(
+        model,
+        component_cell_ids=components,
+        neutron_edges_eV=[0.0, 2.0e7],
+        photon_edges_eV=[0.0, 2.0e7],
+    )
+    by_name = {tally.name: tally for tally in model.tallies}
+    assert result["component_cell_ids"]["magnets"] == 9
+    assert "magnet-0000" not in result["component_cell_ids"]
+    assert by_name["pstl_breeder_tritium_production"].scores == [
+        "H3-production"
+    ]
+    assert by_name["pstl_breeder_tritium_production"].filters[0].bins == [3]
