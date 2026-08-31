@@ -59,7 +59,7 @@ def _coerce_case_rows(
 
 def _nonnegative_int(value: Any, label: str) -> int:
     number = int(value)
-    if isinstance(value, bool) or number < 0:
+    if isinstance(value, bool) or number != value or number < 0:
         raise ValueError(f"{label} must be a non-negative integer")
     return number
 
@@ -255,6 +255,14 @@ def validate_poster_campaign_manifest(manifest: Mapping[str, Any]) -> None:
         raise ValueError(
             "poster campaign strategy is not staged non-Cartesian"
         )
+    producer_controls = _coerce_mapping(
+        manifest.get("producer_controls"), "producer_controls"
+    )
+    if (
+        producer_controls.get("run_mode") != "poster"
+        or producer_controls.get("claim") != "geometry_neutral"
+    ):
+        raise ValueError("poster campaign producer controls are invalid")
 
     stages = manifest.get("stages")
     if not isinstance(stages, list):

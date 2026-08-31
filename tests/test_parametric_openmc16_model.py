@@ -210,6 +210,31 @@ def test_continuous_geometry_contract_preserves_one_physical_magnet_volume():
     assert result["component_cell_ids"]["magnets"] == 9
 
 
+def test_selected_source_cap_receipt_is_a_valid_domain_binding():
+    builder._validate_source_domain_evidence(
+        {
+            "schema": "parastell.source_mesh_outer_cfs_selection/v1.0.0",
+            "status": "SOURCE_MESH_OUTER_CFS_CAP_SELECTED",
+            "dagmc_h5m": {"sha256": "a" * 64},
+            "source_volume_id": 1,
+            "source_material": "Vacuum",
+            "geometry_mutated": False,
+            "inner_source_cfs_planes_mutated": False,
+            "input_immutability_pass": True,
+            "selected_candidate": {
+                "candidate_pass": True,
+                "candidate_source_mesh": {
+                    "expected_sha256": "b" * 64,
+                    "input_immutability_pass": True,
+                },
+                "source_domain_audit": {"pass": True},
+            },
+        },
+        dagmc_hash="a" * 64,
+        source_hash="b" * 64,
+    )
+
+
 def test_committed_smoke_inputs_are_explicitly_nonproduction():
     root = Path(__file__).resolve().parents[1]
     source = json.loads(

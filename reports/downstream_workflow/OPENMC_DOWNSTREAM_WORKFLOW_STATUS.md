@@ -6,12 +6,13 @@ Status date: 2026-08-28
 
 This lane qualifies workflow plumbing with bounded or synthetic fixtures. It
 does not claim useful statistics, source convergence, production readiness, or
-a heterogeneous global magnet. The global ParaStell magnets remain
-homogenized material regions. The selected 90-degree candidate now generates
-one swept 30 x 30 cm solid per WISTELL-D coil filament; it does not use a
-continuous winding-surface layer and does not split global coils into casing
-and winding-pack solids. That source-CAD change is wired and tested, but its
-new DAGMC artifact has not yet passed the native and OpenMC geometry gates.
+a heterogeneous global magnet. The global ParaStell magnet remains one
+homogenized material region. The accepted direct 90-degree candidate uses a
+continuous 30 cm radial magnet envelope and does not fabricate 18 swept global
+coil cells or split casing and winding-pack solids. Its exact nine-volume H5M
+passed native watertightness and overlap checks. OpenMC navigation remains
+gated on the contained source selection and bounded two-seed geometry-debug
+run.
 
 ParaStell owns the global geometry, source, OpenMC tallies, material-volume
 fields, and closed-boundary phase-space banks. `DPA_workflow` owns depletion,
@@ -136,8 +137,8 @@ to qualify it.
 
 ## Remaining bounded integration work
 
-1. Complete the accepted source-CAD/DAGMC 90-degree geometry gate. No physical
-   WISTELL-D statepoint may be promoted while that gate is blocked.
+1. Complete the accepted source containment and OpenMC navigation gates. The
+   native direct-90 DAGMC geometry gate already passes.
 2. Run a deliberately small coupled neutron/photon OpenMC smoke calculation on
    that accepted H5M and export all configured volume responses. Statistical
    classification will remain `WORKFLOW_SMOKE_ONLY`.

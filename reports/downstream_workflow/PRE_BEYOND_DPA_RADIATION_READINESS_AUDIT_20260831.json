@@ -1,0 +1,70 @@
+{
+  "schema": "parastell.pre_beyond_dpa_radiation_readiness/v1.0.0",
+  "created_date": "2026-08-31",
+  "repository": "FusionSandwich/parastell",
+  "forbidden_repository_used": false,
+  "accepted_geometry_candidate": {
+    "mode": "continuous_radial_envelope",
+    "modeled_extent_degrees": 90.0,
+    "physical_volume_count": 9,
+    "continuous_magnet_volume_id": 9,
+    "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+    "native_watertightness": "PASS",
+    "native_overlap_precisions_1_2_4": "PASS",
+    "openmc_navigation": "PENDING_ACCEPTED_SOURCE"
+  },
+  "capabilities": {
+    "reactor_component_neutron_photon_flux": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
+    "reactor_component_neutron_photon_heating": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
+    "reactor_component_reactions": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
+    "breeder_tritium_production": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
+    "magnet_spectra_heating_damage_gas": "WIRED",
+    "isotope_mt_and_secondary_production": "WIRED_DATA_COVERAGE_REQUIRED",
+    "complete_correlated_surface_bank": "MANIFEST_PASS_EXACT_SMOKE_PENDING",
+    "periodic_statepoints": "IMPLEMENTED",
+    "segmented_independent_seed_recovery": "IMPLEMENTED_FOCUSED_TESTED",
+    "prompt_delayed_separation": "IMPLEMENTED",
+    "activation_schedule": "IMPLEMENTED",
+    "alara_activation": "SYNTHETICALLY_VALIDATED_FINAL_INPUT_PENDING",
+    "spectra_pka_beyond_dpa_handoff": "IMPLEMENTED_EXECUTION_PENDING",
+    "solver_neutral_local_handoffs": "IMPLEMENTED_NATIVE_FINAL_CASES_PENDING",
+    "non_cartesian_poster_campaign": "IMPLEMENTED",
+    "variance_reduction": "DISABLED_ANALOG_BASELINE_REQUIRED"
+  },
+  "continuous_surface_manifest": {
+    "status": "PASS",
+    "sha256": "99c2feeb681e6c9eeff919a4084a15f9b77bc50357d464ccfbb1469178e198fe",
+    "closed_capture_surface_ids": [22, 25, 26, 27],
+    "incoming_replay_surface_id": 22
+  },
+  "source_domain_attempt": {
+    "status": "BLOCKED_NO_SOURCE_MESH_CFS_CAP_PASSED",
+    "selection_receipt_sha256": "0c6688e29d058e8726d4cb5b5e5d0f570c86c5345c57e31aabdadbddb29ebac7",
+    "preregistered_outer_cfs_caps": [
+      0.9845,
+      0.984,
+      0.9835,
+      0.983,
+      0.9825,
+      0.982,
+      0.9815,
+      0.981,
+      0.9805,
+      0.98
+    ],
+    "invalid_sample_count_range": [396, 748],
+    "inputs_immutable": true,
+    "geometry_mutated": false
+  },
+  "remaining_gates": [
+    "SOURCE_DOMAIN_PASS",
+    "OPENMC16_MODEL_EXPORT_PASS",
+    "TWO_SEED_OPENMC_GEOMETRY_DEBUG_PASS",
+    "BOUNDED_FULL_RESPONSE_SMOKE_PASS",
+    "POSTER_MATERIAL_BINDINGS_FROZEN",
+    "ALLIANCE_BENCHMARK_AND_EIGHT_HOUR_DECK",
+    "EXPLICIT_USER_RUN_AUTHORIZATION"
+  ],
+  "current_decision": "BLOCKED_SOURCE_DOMAIN_AND_OPENMC_NAVIGATION_GATES",
+  "production_run_authorized": false
+}

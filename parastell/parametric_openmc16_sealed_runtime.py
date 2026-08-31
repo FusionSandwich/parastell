@@ -562,6 +562,7 @@ def export_sealed_openmc16_model(
         "schema": RECEIPT_SCHEMA,
         "status": "MODEL_EXPORTED_TRANSPORT_PENDING",
         "claim": "BOUNDED_SMOKE_ONLY",
+        "run_mode": "fixed source",
         "openmc_runtime": {
             "version": openmc.__version__,
             "python_version": platform.python_version(),

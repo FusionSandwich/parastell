@@ -29,8 +29,9 @@ source. The output SHA-256 is
 the create-only result receipt SHA-256 is
 `88ec3f7342183e1334a29a08f56d281bb7db0b6974abbd1e6578c5be6e4d5e38`.
 
-One physical gate remains: the final swept-coil 90-degree DAGMC geometry must
-pass native and OpenMC navigation qualification, then a bounded OpenMC 0.16.0
+One physical gate remains: the accepted continuous-magnet direct 90-degree
+DAGMC geometry has passed native qualification, but must pass source
+containment and OpenMC navigation qualification; then a bounded OpenMC 0.16.0
 run must supply the exact VITAMIN-J-175 scalar spectra and material/volume
 ledger. Until then the ALARA classification is
 `ALARA_WORKFLOW_SMOKE_PASS_PHYSICAL_WISTELL_D_INPUT_PENDING`.

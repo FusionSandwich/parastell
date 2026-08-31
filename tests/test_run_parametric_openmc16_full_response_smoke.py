@@ -67,7 +67,7 @@ def _plan(magnets=("magnet-0000",)):
 
 def test_selects_arbitrary_magnets_and_exact_surface_union(tmp_path):
     dagmc, manifest = _manifest(tmp_path)
-    signs, cells = runner._selected_surface_inputs(
+    signs, cells, coupling_interface = runner._selected_surface_inputs(
         manifest,
         dagmc,
         ["magnet-0000", "magnet-0017"],
@@ -75,6 +75,7 @@ def test_selects_arbitrary_magnets_and_exact_surface_union(tmp_path):
     )
     assert signs == {100: 1, 117: -1}
     assert cells == {"magnet-0000": 9, "magnet-0017": 26}
+    assert coupling_interface == "homogenized_magnet_outer_boundary"
 
 
 @pytest.mark.parametrize(
@@ -168,14 +169,19 @@ def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
             "source": {
                 "physical_rate_n_per_s_for_modeled_90_degrees": 1.0,
                 "normalization_application": "apply exactly once downstream",
-            }
+            },
+            "component_cell_ids": {"breeder": 3, "magnets": 9},
         },
     )
     monkeypatch.setattr(runner, "_load_response_plan", lambda *a, **k: _plan())
     monkeypatch.setattr(
         runner,
         "_selected_surface_inputs",
-        lambda *a, **k: ({100: 1}, {"magnet-0000": 9}),
+        lambda *a, **k: (
+            {100: 1},
+            {"magnet-0000": 9},
+            "homogenized_magnet_outer_boundary",
+        ),
     )
     monkeypatch.setattr(
         runner,
@@ -195,6 +201,11 @@ def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
     monkeypatch.setattr(
         runner,
         "instrument_selected_case",
+        lambda *a, **k: {"status": "WIRED_NOT_EXECUTED"},
+    )
+    monkeypatch.setattr(
+        runner,
+        "add_reactor_component_tallies",
         lambda *a, **k: {"status": "WIRED_NOT_EXECUTED"},
     )
 

@@ -10,8 +10,7 @@ from typing import Any
 
 SCHEMA = "parastell.openmc_checkpoint_restart_plan/v1.0.0"
 OPENMC_SCHEMAS = {
-    "parastell.parametric_openmc16_model/v1.0.0",
-    "parastell.parametric_openmc16_sealed_model/v1.0.0",
+    "parastell.parametric_openmc16_full_response_smoke/v1.0.0",
 }
 OPENMC_VERSION = "0.16.0"
 SUPPORTED_SIGNALS = {
@@ -91,9 +90,16 @@ def _validate_openmc_receipt(receipt: Mapping[str, Any]) -> None:
     )
     if version != OPENMC_VERSION:
         raise ValueError("OpenMC model receipt must be fixed-source 0.16.0")
+    if receipt.get("run_mode") != "fixed source":
+        raise ValueError("OpenMC model receipt must declare fixed source mode")
     if receipt.get("production_run_authorized") is not False:
         raise ValueError("production execution is not authorized")
-    model_xml = _mapping(receipt.get("model_xml"), "openmc_model.model_xml")
+    if receipt.get("status") != "PASS":
+        raise ValueError("instrumented OpenMC smoke receipt must pass")
+    model_xml = _mapping(
+        receipt.get("instrumented_model_xml"),
+        "openmc_model.instrumented_model_xml",
+    )
     if str(model_xml.get("path", "")).strip() == "":
         raise ValueError("model_xml path must be present")
     model_sha = _text(model_xml.get("sha256"), "model_xml.sha256")
@@ -101,10 +107,30 @@ def _validate_openmc_receipt(receipt: Mapping[str, Any]) -> None:
         ch not in "0123456789abcdef" for ch in model_sha
     ):
         raise ValueError("model_xml hash is invalid")
-    if receipt.get("claim") != "BOUNDED_SMOKE_ONLY":
-        raise ValueError("OpenMC model claim must be bounded-smoke only")
+    if receipt.get("claim") != "BOUNDED_INFRASTRUCTURE_SMOKE_ONLY":
+        raise ValueError(
+            "OpenMC model claim must be bounded infrastructure smoke"
+        )
     if receipt.get("all_bound_inputs_immutable") is not True:
         raise ValueError("OpenMC model inputs must be immutable")
+    if (
+        model_xml.get("tallies_instrumented") is not True
+        or model_xml.get("surface_bank_instrumented") is not True
+    ):
+        raise ValueError("OpenMC model is not fully response-instrumented")
+    for key in ("response_plan_sha256", "surface_manifest_sha256"):
+        digest = _text(model_xml.get(key), key)
+        if len(digest) != 64 or any(
+            ch not in "0123456789abcdef" for ch in digest
+        ):
+            raise ValueError(f"{key} is invalid")
+    receipt_hash = _text(
+        receipt.get("receipt_content_sha256"), "receipt_content_sha256"
+    )
+    if len(receipt_hash) != 64 or any(
+        ch not in "0123456789abcdef" for ch in receipt_hash
+    ):
+        raise ValueError("OpenMC model receipt hash is invalid")
 
 
 def build_openmc_checkpoint_restart_plan(
@@ -123,8 +149,11 @@ def build_openmc_checkpoint_restart_plan(
     stop_grace_seconds: int = 60,
     requeue_delay_seconds: int = 300,
     walltime_slack_seconds: int = 300,
+    walltime_limit_seconds: int = 8 * 60 * 60,
+    planned_transport_seconds: int = 7 * 60 * 60 + 40 * 60,
     requested_cores: int = 1,
     memory_max_bytes: int = 64 * 1024**3,
+    surface_manifest_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Build and hash a deterministic checkpoint/restart campaign plan."""
     campaign_id = _text(campaign_id, "campaign_id")
@@ -152,6 +181,17 @@ def build_openmc_checkpoint_restart_plan(
     walltime_slack_seconds = _positive_int(
         walltime_slack_seconds, "walltime_slack_seconds", minimum=0
     )
+    walltime_limit_seconds = _positive_int(
+        walltime_limit_seconds, "walltime_limit_seconds"
+    )
+    planned_transport_seconds = _positive_int(
+        planned_transport_seconds, "planned_transport_seconds"
+    )
+    if (
+        planned_transport_seconds + walltime_slack_seconds
+        > walltime_limit_seconds
+    ):
+        raise ValueError("planned transport plus slack exceeds walltime limit")
     requested_cores = _positive_int(requested_cores, "requested_cores")
     memory_max_bytes = _positive_int(memory_max_bytes, "memory_max_bytes")
     if requeue_delay_seconds <= stop_grace_seconds:
@@ -160,6 +200,23 @@ def build_openmc_checkpoint_restart_plan(
     root = Path(artifact_root)
     stop = _validate_signal(stop_signal)
     requeue = _validate_signal(requeue_signal)
+    bound_surface_manifest_sha256 = str(
+        receipt["instrumented_model_xml"]["surface_manifest_sha256"]
+    )
+    if surface_manifest_sha256 is None:
+        surface_manifest_sha256 = bound_surface_manifest_sha256
+    else:
+        surface_manifest_sha256 = _text(
+            surface_manifest_sha256, "surface_manifest_sha256"
+        )
+        if len(surface_manifest_sha256) != 64 or any(
+            ch not in "0123456789abcdef" for ch in surface_manifest_sha256
+        ):
+            raise ValueError("surface manifest hash is invalid")
+        if surface_manifest_sha256 != bound_surface_manifest_sha256:
+            raise ValueError(
+                "surface manifest differs from instrumented model"
+            )
 
     segment_sizes = _segment_lengths(total_batches, segment_batches)
     if statepoint_interval_batches is None:
@@ -194,7 +251,7 @@ def build_openmc_checkpoint_restart_plan(
         "schema": SCHEMA,
         "campaign_id": campaign_id,
         "producer": "ParaStell",
-        "claim": "BOUNDED_SMOKE_ONLY",
+        "claim": "USER_AUTHORIZATION_REQUIRED_POSTER_CAMPAIGN",
         "run_mode": "fixed source",
         "artifact_root": str(root),
         "statepoint_restart_strategy": {
@@ -202,6 +259,16 @@ def build_openmc_checkpoint_restart_plan(
             "cumulative_statepoints_are_checkpoint_evidence": True,
             "segment_restart_mode": "segmented_independent_seed_runs",
             "statepoints_are_recoverable_plots_and_summaries_only": True,
+        },
+        "surface_bank_strategy": {
+            "requested": surface_manifest_sha256 is not None,
+            "surface_manifest_sha256": surface_manifest_sha256,
+            "per_segment_create_only": True,
+            "overwrite_allowed": False,
+            "canonical_weight_normalization": (
+                "raw_openmc_weight_divided_by_exact_segment_histories"
+            ),
+            "combination_mode": "validated_segment_bundle_without_reconditioning",
         },
         "openmc_model_binding": {
             "schema": str(receipt["schema"]),
@@ -212,7 +279,15 @@ def build_openmc_checkpoint_restart_plan(
             "receipt_content_sha256": str(
                 receipt.get("receipt_content_sha256", "")
             ),
-            "model_xml_sha256": str(receipt["model_xml"]["sha256"]),
+            "model_xml_sha256": str(
+                receipt["instrumented_model_xml"]["sha256"]
+            ),
+            "response_plan_sha256": str(
+                receipt["instrumented_model_xml"]["response_plan_sha256"]
+            ),
+            "surface_manifest_sha256": str(
+                receipt["instrumented_model_xml"]["surface_manifest_sha256"]
+            ),
         },
         "run_intent": {
             "total_batches": total_batches,
@@ -227,6 +302,8 @@ def build_openmc_checkpoint_restart_plan(
             "stop_grace_seconds": stop_grace_seconds,
             "requeue_delay_seconds": requeue_delay_seconds,
             "walltime_slack_seconds": walltime_slack_seconds,
+            "walltime_limit_seconds": walltime_limit_seconds,
+            "planned_transport_seconds": planned_transport_seconds,
             "requeue_required": True,
         },
         "segments": segments,
@@ -235,6 +312,10 @@ def build_openmc_checkpoint_restart_plan(
             "requested_cores": requested_cores,
             "memory_max_bytes": memory_max_bytes,
             "memory_swap_max_bytes": 0,
+            "live_prelaunch_revalidation_required": True,
+            "hard_memory_cgroup_required": True,
+            "maximum_physical_core_fraction": 0.25,
+            "maximum_memtotal_fraction": 0.25,
         },
     }
     payload["plan_sha256"] = _canonical_sha256(
@@ -249,7 +330,7 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
         raise ValueError("unsupported checkpoint plan schema")
     if plan.get("producer") != "ParaStell":
         raise ValueError("checkpoint plan producer identity is invalid")
-    if plan.get("claim") != "BOUNDED_SMOKE_ONLY":
+    if plan.get("claim") != "USER_AUTHORIZATION_REQUIRED_POSTER_CAMPAIGN":
         raise ValueError("checkpoint plan claim is invalid")
     if plan.get("run_mode") != "fixed source":
         raise ValueError("checkpoint plan must use fixed source mode")
@@ -267,6 +348,30 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
         != "segmented_independent_seed_runs"
     ):
         raise ValueError("segment restart mode is invalid")
+
+    bank = _mapping(plan.get("surface_bank_strategy"), "surface_bank_strategy")
+    if (
+        bank.get("per_segment_create_only") is not True
+        or bank.get("overwrite_allowed") is not False
+        or bank.get("canonical_weight_normalization")
+        != "raw_openmc_weight_divided_by_exact_segment_histories"
+        or bank.get("combination_mode")
+        != "validated_segment_bundle_without_reconditioning"
+    ):
+        raise ValueError("surface bank strategy is invalid")
+    if bank.get("requested") is True:
+        surface_hash = _text(
+            bank.get("surface_manifest_sha256"), "surface manifest hash"
+        )
+        if len(surface_hash) != 64 or any(
+            ch not in "0123456789abcdef" for ch in surface_hash
+        ):
+            raise ValueError("surface manifest hash is invalid")
+    elif (
+        bank.get("requested") is not False
+        or bank.get("surface_manifest_sha256") is not None
+    ):
+        raise ValueError("unrequested surface bank must not bind a manifest")
 
     run_intent = _mapping(plan.get("run_intent"), "run_intent")
     total_batches = _positive_int(
@@ -302,6 +407,16 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
         ch not in "0123456789abcdef" for ch in model_xml_sha
     ):
         raise ValueError("model_xml hash is invalid")
+    for key in ("response_plan_sha256", "surface_manifest_sha256"):
+        digest = _text(binding.get(key), key)
+        if len(digest) != 64 or any(
+            ch not in "0123456789abcdef" for ch in digest
+        ):
+            raise ValueError(f"{key} is invalid")
+    if bank.get("requested") is True and bank.get(
+        "surface_manifest_sha256"
+    ) != binding.get("surface_manifest_sha256"):
+        raise ValueError("surface bank and OpenMC binding disagree")
 
     segments = plan.get("segments")
     if not isinstance(segments, list) or not segments:
@@ -360,10 +475,16 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
         case_root = _text(
             segment.get("artifact_root"), "segment artifact_root"
         )
-        if not case_root.startswith(str(plan.get("artifact_root", ""))):
+        plan_root = Path(
+            _text(plan.get("artifact_root"), "artifact_root")
+        ).resolve()
+        case_path = Path(case_root).resolve()
+        try:
+            case_path.relative_to(plan_root)
+        except ValueError as error:
             raise ValueError(
                 "segment artifact_root must be under plan artifact_root"
-            )
+            ) from error
         if not case_root:
             raise ValueError("segment artifact_root is missing")
         if case_root in observed_case_roots:
@@ -390,6 +511,18 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     _positive_int(
         signal_plan.get("walltime_slack_seconds"), "walltime_slack_seconds"
     )
+    walltime_limit = _positive_int(
+        signal_plan.get("walltime_limit_seconds"), "walltime_limit_seconds"
+    )
+    planned_transport = _positive_int(
+        signal_plan.get("planned_transport_seconds"),
+        "planned_transport_seconds",
+    )
+    if (
+        planned_transport + signal_plan["walltime_slack_seconds"]
+        > walltime_limit
+    ):
+        raise ValueError("planned transport plus slack exceeds walltime limit")
     if signal_plan.get("requeue_required") is not True:
         raise ValueError("requeue requirement must be true")
 
@@ -401,6 +534,13 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     _positive_int(resources.get("memory_max_bytes"), "memory_max_bytes")
     if resources.get("memory_swap_max_bytes") != 0:
         raise ValueError("checkpoint plan must disable swap")
+    if (
+        resources.get("live_prelaunch_revalidation_required") is not True
+        or resources.get("hard_memory_cgroup_required") is not True
+        or resources.get("maximum_physical_core_fraction") != 0.25
+        or resources.get("maximum_memtotal_fraction") != 0.25
+    ):
+        raise ValueError("checkpoint resource policy is invalid")
 
     if _text(plan.get("artifact_root"), "artifact_root") == "":
         raise ValueError("artifact_root is required")

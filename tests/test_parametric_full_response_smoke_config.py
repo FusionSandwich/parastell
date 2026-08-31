@@ -4,16 +4,14 @@ from pathlib import Path
 from parastell.transport_response_plan import build_response_plan
 
 
-def test_direct90_smoke_config_declares_all_homogenized_magnets():
+def test_direct90_smoke_config_declares_the_continuous_magnet_layer():
     path = (
         Path(__file__).parents[1]
         / "configs"
         / "wistell_d_parametric_direct90_full_response_smoke.json"
     )
     value = json.loads(path.read_text(encoding="utf-8"))
-    assert value["magnet_ids"] == [
-        f"magnet-{index:04d}" for index in range(18)
-    ]
+    assert value["magnet_ids"] == ["continuous-magnet-layer"]
     assert value["nuclide_mt_requests"] == {"Cu63": [2, 16, 102, 103, 107]}
     plan = build_response_plan(
         case_id=value["case_id"],

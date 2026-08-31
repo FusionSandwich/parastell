@@ -251,6 +251,49 @@ def _validate_geometry_evidence(
     return contract
 
 
+def _validate_source_domain_evidence(
+    domain: Mapping[str, Any], *, dagmc_hash: str, source_hash: str
+) -> None:
+    if domain.get("schema") == "parastell.source_domain_audit/v1.0.0":
+        if (
+            domain.get("source_domain_gate_pass") is not True
+            or domain.get("raw_h5m_sha256") != dagmc_hash
+            or domain.get("source_mesh_sha256") != source_hash
+            or domain.get("source_volume_id") != 1
+            or domain.get("source_component") != "chamber"
+            or domain.get("source_material") != "Vacuum"
+            or domain.get("input_immutability_pass") is not True
+        ):
+            raise ValueError("source-domain receipt is not accepted")
+        return
+    if (
+        domain.get("schema")
+        == "parastell.source_mesh_outer_cfs_selection/v1.0.0"
+    ):
+        selected = domain.get("selected_candidate")
+        if (
+            domain.get("status") != "SOURCE_MESH_OUTER_CFS_CAP_SELECTED"
+            or domain.get("dagmc_h5m", {}).get("sha256") != dagmc_hash
+            or domain.get("source_volume_id") != 1
+            or domain.get("source_material") != "Vacuum"
+            or domain.get("geometry_mutated") is not False
+            or domain.get("inner_source_cfs_planes_mutated") is not False
+            or domain.get("input_immutability_pass") is not True
+            or not isinstance(selected, Mapping)
+            or selected.get("candidate_pass") is not True
+            or selected.get("candidate_source_mesh", {}).get("expected_sha256")
+            != source_hash
+            or selected.get("candidate_source_mesh", {}).get(
+                "input_immutability_pass"
+            )
+            is not True
+            or selected.get("source_domain_audit", {}).get("pass") is not True
+        ):
+            raise ValueError("selected source-domain receipt is not accepted")
+        return
+    raise ValueError("unsupported source-domain receipt schema")
+
+
 def _validate_evidence(control: Mapping[str, Any]) -> dict[str, Path]:
     required = {
         "dagmc_h5m",
@@ -317,17 +360,9 @@ def _validate_evidence(control: Mapping[str, Any]) -> dict[str, Path]:
     domain = json.loads(
         paths["source_domain_receipt"].read_text(encoding="utf-8")
     )
-    if (
-        domain.get("schema") != "parastell.source_domain_audit/v1.0.0"
-        or domain.get("source_domain_gate_pass") is not True
-        or domain.get("raw_h5m_sha256") != dagmc_hash
-        or domain.get("source_mesh_sha256") != source_hash
-        or domain.get("source_volume_id") != 1
-        or domain.get("source_component") != "chamber"
-        or domain.get("source_material") != "Vacuum"
-        or domain.get("input_immutability_pass") is not True
-    ):
-        raise ValueError("source-domain receipt is not accepted")
+    _validate_source_domain_evidence(
+        domain, dagmc_hash=dagmc_hash, source_hash=source_hash
+    )
 
     source = json.loads(
         paths["source_physics_manifest"].read_text(encoding="utf-8")
@@ -565,6 +600,7 @@ def build_model(
         "schema": RECEIPT_SCHEMA,
         "status": "MODEL_EXPORTED_TRANSPORT_PENDING",
         "claim": "BOUNDED_SMOKE_ONLY",
+        "run_mode": "fixed source",
         "openmc_version": openmc.__version__,
         "control_sha256": expected_control_sha256,
         "dagmc_sha256": dagmc_hash,
