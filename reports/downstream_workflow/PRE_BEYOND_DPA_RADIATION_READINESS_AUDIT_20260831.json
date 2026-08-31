@@ -11,7 +11,7 @@
     "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
     "native_watertightness": "PASS",
     "native_overlap_precisions_1_2_4": "PASS",
-    "openmc_navigation": "PENDING_ACCEPTED_SOURCE"
+    "openmc_navigation": "BLOCKED_SHARED_INTERFACE_GEOMETRY_DEBUG_DIAGNOSIS"
   },
   "capabilities": {
     "reactor_component_neutron_photon_flux": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
@@ -38,33 +38,40 @@
     "incoming_replay_surface_id": 22
   },
   "source_domain_attempt": {
-    "status": "BLOCKED_NO_SOURCE_MESH_CFS_CAP_PASSED",
-    "selection_receipt_sha256": "0c6688e29d058e8726d4cb5b5e5d0f570c86c5345c57e31aabdadbddb29ebac7",
-    "preregistered_outer_cfs_caps": [
-      0.9845,
-      0.984,
-      0.9835,
-      0.983,
-      0.9825,
-      0.982,
-      0.9815,
-      0.981,
-      0.9805,
-      0.98
-    ],
-    "invalid_sample_count_range": [396, 748],
+    "status": "PASS",
+    "selected_outer_cfs_cap": 0.9655,
+    "selected_source_mesh_sha256": "ed4003589d2eaca445cbd0392b8b3d0465986a0adcdb220507607f7ad97861c5",
+    "selection_receipt_sha256": "72309c1ba5ba6dca69b1c21ad9db00a7f1cab86345556c8f4e914fe0aed6d13c",
+    "source_domain_audit_sha256": "eff7b058b7ee1f11ce270abfb466e73acbe0e3a45535404434f001948fb1a27a",
+    "invalid_sample_count": 0,
+    "minimum_clearance_cm": 0.42059351086489494,
+    "omitted_source_fraction": 1.7322591520857659e-06,
+    "physical_source_rate_neutrons_per_second_90_degrees": 1.855454485735326e20,
     "inputs_immutable": true,
     "geometry_mutated": false
   },
+  "openmc16_navigation_attempt": {
+    "seed": 8310101,
+    "model_export": "PASS",
+    "model_xml_sha256": "ddc512f548d41e6c25ed25db45d64e15614ae00dce3a7352f2769fed9e7b3b95",
+    "geometry_debug": "FAIL_CLOSED_SHARED_INTERFACE_OVERLAP_MESSAGE",
+    "geometry_debug_message": "Overlapping cells detected: 1, 2 on universe 33",
+    "cell_roles": ["chamber", "first_wall"],
+    "shared_surface_id": 1,
+    "matched_two_history_regular_track": "PASS_DIAGNOSTIC_ONLY",
+    "matched_track_lost_particles": 0,
+    "matched_track_navigation_errors": 0,
+    "matched_track_statepoint_batches": [1, 2],
+    "minimal_upstream_reproducer": "STAGED_NOT_RUN_RESOURCE_GATE_FULL"
+  },
   "remaining_gates": [
-    "SOURCE_DOMAIN_PASS",
-    "OPENMC16_MODEL_EXPORT_PASS",
+    "OPENMC16_SHARED_INTERFACE_DEBUG_DIAGNOSIS",
     "TWO_SEED_OPENMC_GEOMETRY_DEBUG_PASS",
     "BOUNDED_FULL_RESPONSE_SMOKE_PASS",
     "POSTER_MATERIAL_BINDINGS_FROZEN",
     "ALLIANCE_BENCHMARK_AND_EIGHT_HOUR_DECK",
     "EXPLICIT_USER_RUN_AUTHORIZATION"
   ],
-  "current_decision": "BLOCKED_SOURCE_DOMAIN_AND_OPENMC_NAVIGATION_GATES",
+  "current_decision": "BLOCKED_OPENMC_GEOMETRY_DEBUG_SHARED_INTERFACE_DIAGNOSIS",
   "production_run_authorized": false
 }

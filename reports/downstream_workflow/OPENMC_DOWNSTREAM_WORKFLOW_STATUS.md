@@ -10,9 +10,10 @@ a heterogeneous global magnet. The global ParaStell magnet remains one
 homogenized material region. The accepted direct 90-degree candidate uses a
 continuous 30 cm radial magnet envelope and does not fabricate 18 swept global
 coil cells or split casing and winding-pack solids. Its exact nine-volume H5M
-passed native watertightness and overlap checks. OpenMC navigation remains
-gated on the contained source selection and bounded two-seed geometry-debug
-run.
+passed native watertightness and overlap checks. The contained source selection
+now passes at `outer_cfs_cap=0.9655`. OpenMC navigation remains gated on a
+geometry-debug shared-interface diagnosis before the independent second seed
+and full-response smoke.
 
 ParaStell owns the global geometry, source, OpenMC tallies, material-volume
 fields, and closed-boundary phase-space banks. `DPA_workflow` owns depletion,
@@ -137,8 +138,13 @@ to qualify it.
 
 ## Remaining bounded integration work
 
-1. Complete the accepted source containment and OpenMC navigation gates. The
-   native direct-90 DAGMC geometry gate already passes.
+1. Complete the OpenMC navigation gate. Source containment and native direct-90
+   DAGMC geometry now pass. The first exact geometry-debug seed stopped when
+   OpenMC independently classified both sides of the imprinted chamber/first-
+   wall interface at the crossing point. A matched regular two-history track
+   crossed that interface and wrote both statepoints with no lost-particle or
+   navigation errors. The staged official-regression-H5M reproducer must
+   classify this debugger behavior before the gate can advance.
 2. Run a deliberately small coupled neutron/photon OpenMC smoke calculation on
    that accepted H5M and export all configured volume responses. Statistical
    classification will remain `WORKFLOW_SMOKE_ONLY`.

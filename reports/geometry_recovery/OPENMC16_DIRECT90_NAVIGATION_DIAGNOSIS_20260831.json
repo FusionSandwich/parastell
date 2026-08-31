@@ -1,0 +1,83 @@
+{
+  "schema": "parastell.openmc16_direct90_navigation_diagnosis/v1.0.0",
+  "created_date": "2026-08-31",
+  "repository": "FusionSandwich/parastell",
+  "forbidden_repository_used": false,
+  "geometry": {
+    "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+    "physical_volume_count": 9,
+    "surface_count": 27,
+    "native_watertightness": "PASS",
+    "native_overlap_precisions_1_2_4": "PASS",
+    "native_surface_sense_gate": "PASS",
+    "h5m_mutated": false
+  },
+  "source": {
+    "selection_status": "PASS",
+    "outer_cfs_cap": 0.9655,
+    "source_mesh_sha256": "ed4003589d2eaca445cbd0392b8b3d0465986a0adcdb220507607f7ad97861c5",
+    "selection_receipt_sha256": "72309c1ba5ba6dca69b1c21ad9db00a7f1cab86345556c8f4e914fe0aed6d13c",
+    "source_domain_audit_sha256": "eff7b058b7ee1f11ce270abfb466e73acbe0e3a45535404434f001948fb1a27a",
+    "invalid_sample_count": 0,
+    "minimum_chamber_clearance_cm": 0.42059351086489494,
+    "omitted_source_fraction": 1.7322591520857659e-06,
+    "physical_source_rate_neutrons_per_second_90_degrees": 1.855454485735326e20
+  },
+  "runtime": {
+    "openmc_version": "0.16.0",
+    "openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
+    "openmc_binary_sha256": "6d5922f3600115691996edcf584350bdfd53528e06930c2a8b45416853c044e6",
+    "cross_sections_xml_sha256": "781042200d1beab5a04205831688f114f65c12e702cd0069840b47183c0bf1f0"
+  },
+  "geometry_debug_attempt": {
+    "seed": 8310101,
+    "model_xml_sha256": "ddc512f548d41e6c25ed25db45d64e15614ae00dce3a7352f2769fed9e7b3b95",
+    "result": "FAIL_CLOSED_SHARED_INTERFACE_OVERLAP_MESSAGE",
+    "message": "Overlapping cells detected: 1, 2 on universe 33",
+    "cell_1_role": "chamber",
+    "cell_2_role": "first_wall",
+    "shared_surface_id": 1,
+    "run_receipt_sha256": "3b99ecb1d4af5af246c2d1773b7de77b026482be6ec5fd5f8388c97b18dd18d9",
+    "log_sha256": "b59d01be254364a05c6983e05e84f7c7deebbe38f2eba668424f8773de5f7d32",
+    "statepoint_created": false,
+    "second_seed_run": false
+  },
+  "matched_regular_track_diagnostic": {
+    "result": "PASS_DIAGNOSTIC_ONLY",
+    "particles_per_batch": 1,
+    "batches": 2,
+    "histories": 2,
+    "openmc_exit_code": 0,
+    "lost_particle_messages": 0,
+    "dagmc_navigation_error_messages": 0,
+    "statepoint_batches": [1, 2],
+    "tracks_sha256": "bdb0502a96e84f359ff6f4d2f475aaa6e5fc91695782523879a07f2a9aad2f00",
+    "statepoint_1_sha256": "5d1a9079573e20cc081296d04f676a55caa8631ea1bb8fac60e996c55f07be5c",
+    "statepoint_2_sha256": "97eb207ac592daa6bfe2f77f70429ea78ace8f257489bde9e986806abb0eefb1",
+    "summary_sha256": "3ef6639736fd513fc1ffbbeb366510eef58a094bd30ccfbe20f22afc2880b2e5",
+    "log_sha256": "c56be7e1ed4aed694cb62b258fcf04fc39500b46737b392de1b983af18c698a1",
+    "first_history_source_cell": 1,
+    "first_history_first_crossing_cell": 2,
+    "first_history_first_crossing_position_cm": [
+      916.82516755,
+      342.45603918,
+      77.43396207
+    ],
+    "first_history_distance_to_first_crossing_cm": 99.382071089923,
+    "interpretation": "The regular tracker crosses from chamber cell 1 to first-wall cell 2 on their unique shared surface and continues transport. This supports a shared-boundary geometry-debug ambiguity, but it does not waive the required debug gate."
+  },
+  "openmc_implementation_observation": {
+    "geometry_debug_behavior": "OpenMC checks every cell contains() after each move.",
+    "dagmc_contains_behavior": "OpenMC 0.16.0 DAGCell::contains calls DAGMC point_in_volume independently and does not use its on_surface argument to disambiguate a known shared boundary.",
+    "external_defect_claimed": false,
+    "minimal_upstream_reproducer_status": "STAGED_NOT_RUN_RESOURCE_GATE_FULL"
+  },
+  "current_gate": "BLOCKED_OPENMC_GEOMETRY_DEBUG_SHARED_INTERFACE_DIAGNOSIS",
+  "next_actions": [
+    "Run the staged official OpenMC DAGMC regression-H5M reproducer when one bounded Bateman core is available.",
+    "If the official shared-interface model reproduces the failure, qualify a local diagnostic-only OpenMC patch or an equivalent boundary-aware proof without changing the ParaStell H5M.",
+    "Run seed 8310101 to PASS before running independent seed 8310102.",
+    "Run the bounded full-response surface-bank smoke only after the navigation gate passes."
+  ],
+  "production_run_authorized": false
+}

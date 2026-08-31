@@ -11,8 +11,10 @@ continuous 30 cm homogenized-magnet layer.
 Native geometry qualification is complete for H5M SHA-256
 `d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3`:
 zero unmatched edges, zero unsealed surfaces/volumes, and zero native overlap
-locations at precisions 1, 2, and 4. OpenMC transport remains gated on an
-accepted source mesh contained in the exact chamber.
+locations at precisions 1, 2, and 4. The accepted source is the independently
+audited `outer_cfs_cap=0.9655` mesh with zero invalid containment samples and
+0.4205935109 cm minimum chamber clearance. OpenMC geometry debug now remains
+gated on a shared chamber/first-wall interface diagnostic.
 
 ## Implemented producer capabilities
 
@@ -49,22 +51,22 @@ old 26-volume tally path.
 
 ## Remaining gates before the poster run
 
-1. Resolve the exact source-domain mismatch. The create-only v5 ladder
-   (`outer_cfs_cap=0.9845` through `0.9800`) completed without mutating any
-   input, but every candidate retained 396--748 samples outside the faceted
-   chamber. The terminal selection receipt is
-   `BLOCKED_NO_SOURCE_MESH_CFS_CAP_PASSED` (SHA-256
-   `0c6688e29d058e8726d4cb5b5e5d0f570c86c5345c57e31aabdadbddb29ebac7`).
-   OpenMC therefore remains fail-closed while a revised, evidence-based source
-   containment design is qualified.
-2. Export the OpenMC 0.16 model with the accepted source and qualified material
-   and nuclear-data bindings.
-3. Pass two independent bounded OpenMC geometry-debug seeds with zero lost
+1. Resolve the OpenMC 0.16 shared-interface geometry-debug diagnosis. Source
+   containment now passes with `outer_cfs_cap=0.9655`, source SHA-256
+   `ed4003589d2eaca445cbd0392b8b3d0465986a0adcdb220507607f7ad97861c5`,
+   and selection receipt SHA-256
+   `72309c1ba5ba6dca69b1c21ad9db00a7f1cab86345556c8f4e914fe0aed6d13c`.
+   Exact model export also passes. Geometry debug stopped at the first shared
+   chamber/first-wall crossing, while a matched two-history track transported
+   that crossing and wrote both scheduled statepoints without lost-particle or
+   navigation errors. The staged official OpenMC DAGMC reproducer must decide
+   whether this is an OpenMC boundary-debug defect; the gate is not waived.
+2. Pass two independent bounded OpenMC geometry-debug seeds with zero lost
    particles and zero DAGMC navigation errors.
-4. Pass one bounded full-response smoke that produces every scheduled
+3. Pass one bounded full-response smoke that produces every scheduled
    statepoint and a non-truncated surface bank.
-5. Freeze the actual poster material bindings and the small staged case list.
-6. Benchmark the exact model briefly on the authorized Alliance allocation and
+4. Freeze the actual poster material bindings and the small staged case list.
+5. Benchmark the exact model briefly on the authorized Alliance allocation and
    generate the eight-hour segmented run deck. Obtain explicit user
    authorization before submission.
 
@@ -80,4 +82,4 @@ old 26-volume tally path.
 - Native Geant4, MCNP6.3, OpenSn, and RADIANT execution of the final selected
   heterogeneous magnet remains downstream of the accepted global bank.
 
-Current decision: `BLOCKED_SOURCE_DOMAIN_AND_OPENMC_NAVIGATION_GATES`.
+Current decision: `BLOCKED_OPENMC_GEOMETRY_DEBUG_SHARED_INTERFACE_DIAGNOSIS`.
