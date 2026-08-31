@@ -404,3 +404,24 @@
   systemd unit, nonce, PID/log identities, and ssh-poly lease. It cannot launch
   until a live zero-ledger, physical-core, MemTotal, filesystem, and root
   absence check passes. Meshing remains forbidden.
+
+## 2026-08-31 — OpenMC navigation and full-response closure
+
+- Serial/root-owned: select the accepted geometry/source, qualify the final
+  diagnostic patch, authorize each bounded Bateman launch, interpret all
+  positive/negative controls, and integrate reports and commits.
+- Safe parallel review: one read-only reviewer checked the narrowed OpenMC
+  patch and required preservation of third/nonadjacent-cell overlap checks;
+  another read-only review checked the restart-segment reuse contract. Root
+  verified the final negative control and the already-integrated receipt/hash
+  safeguards. No reviewer edited the worktree or remote evidence roots.
+- Independent remote work: the OpenMC patch build, official positive control,
+  physical-overlap negative control, two WISTELL-D geometry-debug seeds, and
+  stock 10,000-history response smoke used distinct create-only Bateman roots.
+  Every CPU launch used the shared core ledger and a hard memory cgroup with
+  swap disabled. The final smoke used one of 256 physical cores and 8 GiB;
+  aggregate Codex use remained below the 64-core and 25% memory ceilings.
+- Shared-artifact risks: build/setup failures v2–v7 and smoke setup attempts
+  v1–v3 remain nonselectable evidence. The accepted H5M was never mutated.
+  The patched binary is diagnostic-only; the response smoke used the stock
+  OpenMC 0.16.0 binary. No automatic successor or production run was launched.

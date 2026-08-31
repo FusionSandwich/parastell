@@ -1,6 +1,6 @@
 # Authoritative continuous direct-90 pipeline
 
-Status: `NATIVE_GEOMETRY_PASS_SOURCE_AND_OPENMC_GATES_IN_PROGRESS`
+Status: `READY_FOR_SOURCE_MESH_AND_MEDIUM_STATISTICS`
 
 This lane binds the accepted WISTELL-D definition to one direct ParaStell
 0--90 degree field period containing exactly nine nested radial volumes. The
@@ -21,8 +21,10 @@ H5M. The exact immutable H5M has SHA-256
 `d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3`.
 It passed native reload, watertightness with zero unmatched edges and zero
 unsealed surfaces/volumes, and overlap checks at precisions 1, 2, and 4 with
-zero overlap locations. OpenMC navigation remains pending an accepted
-contained source mesh. The existing
+zero overlap locations. The accepted contained source uses outer CFS cap
+0.9655, has zero invalid samples, and preserves a 0.4205935109 cm minimum
+chamber clearance. Independent OpenMC 0.16 geometry-debug seeds pass after a
+qualified diagnostic-only shared-facet correction; the H5M is unchanged. The existing
 26-volume `export_parametric_direct90_dagmc.py` is an alternate swept-coil
 candidate and is not accepted or relabelled by this lane. The existing
 hash-bound, 32-core-lease, 21,600-second terminal wrapper now admits either
@@ -41,4 +43,14 @@ topology, and the H5M hash must remain unchanged.
 The complete continuous-magnet capture boundary is surfaces 22, 25, 26, and
 27; surface 22 is the separately declared incoming gap-to-magnet replay
 interface. Its hash-bound surface manifest passed without changing the H5M.
-No OpenMC transport or automatic production successor has been executed.
+
+A bounded 10,000-history run with the unpatched stock OpenMC 0.16.0 binary
+wrote all four scheduled statepoints, 25 magnet/reactor tally objects, and a
+930-record surface bank containing 897 neutron and 33 photon crossings. The
+bank is below its explicit capacity and contains the native position,
+direction, energy, time, weight, delayed-group, surface-ID, and particle
+fields. No lost particles or DAGMC navigation errors occurred.
+
+The pipeline is ready for bounded source-mesh response convergence and medium
+statistics. The smoke is not statistically qualified, and no production run
+or automatic successor is authorized.

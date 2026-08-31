@@ -1,6 +1,6 @@
 {
   "schema": "parastell.surface_source_phase_space_proof_status/v1.0.0",
-  "status": "MECHANISM_PASS_GEOMETRY_PROOFS_PENDING",
+  "status": "MECHANISM_AND_ACTUAL_CAPTURE_PASS_STRICT_LOCALIZATION_PENDING",
   "openmc_runtime": {
     "version": "0.16.0",
     "docker_image_id": "sha256:ca0c3b1fba39ce27af6ebdb79df14795041922e72521f232cdd770ff1c416191"
@@ -28,8 +28,18 @@
       "normal_source_required": "dagmc_forward_reverse_topology"
     },
     "actual_wistell_d_90_degree_geometry": {
-      "status": "PENDING_ACCEPTED_DAGMC_GEOMETRY",
-      "reason": "The imprinted direct-90 geometry candidate must pass native watertightness, overlap, and OpenMC navigation before any scientific surface bank is accepted."
+      "status": "PASS_CAPTURE_STRICT_FACET_LOCALIZATION_PENDING",
+      "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+      "surface_ids": [22, 25, 26, 27],
+      "histories": 10000,
+      "records": 930,
+      "neutron_records": 897,
+      "photon_records": 33,
+      "bank_sha256": "e368582d392d12a63506988a85eb7d1c3a3896a816b8c7c2c1e2515a094d7db0",
+      "capacity_reached": false,
+      "lost_particles": 0,
+      "navigation_errors": 0,
+      "receipt": "reports/downstream_workflow/OPENMC16_FULL_RESPONSE_SMOKE_QUALIFICATION_20260831.json"
     },
     "private_alternate_input_geometry": {
       "status": "IN_PROGRESS_EXTERNAL_ARTIFACTS_ONLY",
@@ -37,15 +47,15 @@
     }
   },
   "phase_information": [
-    {"field": "position_global_cm", "origin": "OpenMC source_bank.r", "status": "PASS"},
-    {"field": "direction_global", "origin": "OpenMC source_bank.u", "status": "PASS"},
-    {"field": "energy_eV", "origin": "OpenMC source_bank.E", "status": "PASS"},
-    {"field": "time_s", "origin": "OpenMC source_bank.time", "status": "PASS"},
-    {"field": "openmc_weight", "origin": "OpenMC source_bank.wgt", "status": "PASS"},
-    {"field": "weight_per_source_history", "origin": "OpenMC weight divided only by exact histories", "status": "PASS"},
-    {"field": "particle_pdg", "origin": "OpenMC source_bank.particle", "status": "PASS"},
-    {"field": "delayed_group", "origin": "OpenMC source_bank.delayed_group", "status": "PASS"},
-    {"field": "surface_id", "origin": "OpenMC source_bank.surf_id", "status": "PASS"},
+    {"field": "position_global_cm", "origin": "OpenMC source_bank.r", "status": "PASS_ACTUAL_BANK"},
+    {"field": "direction_global", "origin": "OpenMC source_bank.u", "status": "PASS_ACTUAL_BANK"},
+    {"field": "energy_eV", "origin": "OpenMC source_bank.E", "status": "PASS_ACTUAL_BANK"},
+    {"field": "time_s", "origin": "OpenMC source_bank.time", "status": "PASS_ACTUAL_BANK"},
+    {"field": "openmc_weight", "origin": "OpenMC source_bank.wgt", "status": "PASS_ACTUAL_BANK"},
+    {"field": "weight_per_source_history", "origin": "OpenMC weight divided only by exact histories", "status": "PASS_MECHANISM_ACTUAL_BANK_HISTORY_BOUND"},
+    {"field": "particle_pdg", "origin": "OpenMC source_bank.particle", "status": "PASS_ACTUAL_BANK"},
+    {"field": "delayed_group", "origin": "OpenMC source_bank.delayed_group", "status": "PASS_ACTUAL_BANK"},
+    {"field": "surface_id", "origin": "OpenMC source_bank.surf_id", "status": "PASS_ACTUAL_BANK"},
     {"field": "facet_id", "origin": "DAGMC facet catalog", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
     {"field": "barycentric_coordinates", "origin": "strict facet localization", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},
     {"field": "outward_normal_global", "origin": "DAGMC forward/reverse topology", "status": "UNIT_CONTRACT_PASS_ACTUAL_GEOMETRY_PENDING"},

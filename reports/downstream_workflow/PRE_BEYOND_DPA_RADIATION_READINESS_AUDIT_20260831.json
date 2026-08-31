@@ -1,5 +1,5 @@
 {
-  "schema": "parastell.pre_beyond_dpa_radiation_readiness/v1.0.0",
+  "schema": "parastell.pre_beyond_dpa_radiation_readiness/v1.1.0",
   "created_date": "2026-08-31",
   "repository": "FusionSandwich/parastell",
   "forbidden_repository_used": false,
@@ -11,21 +11,21 @@
     "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
     "native_watertightness": "PASS",
     "native_overlap_precisions_1_2_4": "PASS",
-    "openmc_navigation": "BLOCKED_SHARED_INTERFACE_GEOMETRY_DEBUG_DIAGNOSIS"
+    "openmc_navigation": "PASS_TWO_INDEPENDENT_GEOMETRY_DEBUG_SEEDS"
   },
   "capabilities": {
-    "reactor_component_neutron_photon_flux": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
-    "reactor_component_neutron_photon_heating": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
-    "reactor_component_reactions": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
-    "breeder_tritium_production": "WIRED_NOT_EXECUTED_FINAL_SOURCE",
-    "magnet_spectra_heating_damage_gas": "WIRED",
-    "isotope_mt_and_secondary_production": "WIRED_DATA_COVERAGE_REQUIRED",
-    "complete_correlated_surface_bank": "MANIFEST_PASS_EXACT_SMOKE_PENDING",
-    "periodic_statepoints": "IMPLEMENTED",
+    "reactor_component_neutron_photon_flux": "BOUNDED_SMOKE_EXECUTED_NOT_STATISTICALLY_QUALIFIED",
+    "reactor_component_neutron_photon_heating": "BOUNDED_SMOKE_EXECUTED_NOT_STATISTICALLY_QUALIFIED",
+    "reactor_component_reactions": "BOUNDED_SMOKE_EXECUTED_NOT_STATISTICALLY_QUALIFIED",
+    "breeder_tritium_production": "BOUNDED_SMOKE_EXECUTED_NOT_STATISTICALLY_QUALIFIED",
+    "magnet_spectra_heating_damage_gas": "BOUNDED_SMOKE_EXECUTED_NOT_STATISTICALLY_QUALIFIED",
+    "isotope_mt_and_secondary_production": "BOUNDED_SMOKE_EXECUTED_DATA_COVERAGE_STILL_REQUIRED",
+    "complete_correlated_surface_bank": "PASS_BOUNDED_COMPLETE_BANK",
+    "periodic_statepoints": "PASS_BATCHES_1_2_3_4",
     "segmented_independent_seed_recovery": "IMPLEMENTED_FOCUSED_TESTED",
     "prompt_delayed_separation": "IMPLEMENTED",
     "activation_schedule": "IMPLEMENTED",
-    "alara_activation": "SYNTHETICALLY_VALIDATED_FINAL_INPUT_PENDING",
+    "alara_activation": "SYNTHETICALLY_VALIDATED_ACCEPTED_FIELD_EXTRACTION_PENDING",
     "spectra_pka_beyond_dpa_handoff": "IMPLEMENTED_EXECUTION_PENDING",
     "solver_neutral_local_handoffs": "IMPLEMENTED_NATIVE_FINAL_CASES_PENDING",
     "non_cartesian_poster_campaign": "IMPLEMENTED",
@@ -37,7 +37,7 @@
     "closed_capture_surface_ids": [22, 25, 26, 27],
     "incoming_replay_surface_id": 22
   },
-  "source_domain_attempt": {
+  "source_domain": {
     "status": "PASS",
     "selected_outer_cfs_cap": 0.9655,
     "selected_source_mesh_sha256": "ed4003589d2eaca445cbd0392b8b3d0465986a0adcdb220507607f7ad97861c5",
@@ -50,28 +50,40 @@
     "inputs_immutable": true,
     "geometry_mutated": false
   },
-  "openmc16_navigation_attempt": {
-    "seed": 8310101,
-    "model_export": "PASS",
-    "model_xml_sha256": "ddc512f548d41e6c25ed25db45d64e15614ae00dce3a7352f2769fed9e7b3b95",
-    "geometry_debug": "FAIL_CLOSED_SHARED_INTERFACE_OVERLAP_MESSAGE",
-    "geometry_debug_message": "Overlapping cells detected: 1, 2 on universe 33",
-    "cell_roles": ["chamber", "first_wall"],
-    "shared_surface_id": 1,
-    "matched_two_history_regular_track": "PASS_DIAGNOSTIC_ONLY",
-    "matched_track_lost_particles": 0,
-    "matched_track_navigation_errors": 0,
-    "matched_track_statepoint_batches": [1, 2],
-    "minimal_upstream_reproducer": "STAGED_NOT_RUN_RESOURCE_GATE_FULL"
+  "openmc16_geometry_debug": {
+    "status": "PASS",
+    "root_cause": "OPENMC_0_16_DAGMC_GEOMETRY_DEBUG_SHARED_FACET_FALSE_POSITIVE",
+    "diagnostic_patch_report": "reports/geometry_recovery/OPENMC16_DAGMC_SHARED_SURFACE_DEBUG_PATCH_QUALIFICATION_20260831.json",
+    "seed_8310101": "PASS",
+    "seed_8310102": "PASS",
+    "lost_particles": 0,
+    "navigation_errors": 0,
+    "physical_h5m_mutation": false
+  },
+  "bounded_full_response_smoke": {
+    "status": "PASS",
+    "qualification_report": "reports/downstream_workflow/OPENMC16_FULL_RESPONSE_SMOKE_QUALIFICATION_20260831.json",
+    "receipt_sha256": "ce7b039fec54d7b4d3a09f3f9ef76d6770ad266d57bf9f1cc153852d374d16c5",
+    "stock_openmc_binary_sha256": "6d5922f3600115691996edcf584350bdfd53528e06930c2a8b45416853c044e6",
+    "histories": 10000,
+    "tally_objects": 25,
+    "statepoint_batches": [1, 2, 3, 4],
+    "surface_bank_records": 930,
+    "neutron_records": 897,
+    "photon_records": 33,
+    "surface_bank_capacity": 800000,
+    "complete_crossing_bank": true,
+    "statistics_qualified": false
   },
   "remaining_gates": [
-    "OPENMC16_SHARED_INTERFACE_DEBUG_DIAGNOSIS",
-    "TWO_SEED_OPENMC_GEOMETRY_DEBUG_PASS",
-    "BOUNDED_FULL_RESPONSE_SMOKE_PASS",
+    "STRICT_FACET_LOCALIZATION_AND_EXACT_RUN_TALLY_CLOSURE",
+    "BOUNDED_SOURCE_MESH_RESPONSE_CONVERGENCE",
+    "MEDIUM_STATISTICS_RESPONSE_SEGMENTS",
+    "ACCEPTED_STATEPOINT_FIELD_EXTRACTION",
     "POSTER_MATERIAL_BINDINGS_FROZEN",
     "ALLIANCE_BENCHMARK_AND_EIGHT_HOUR_DECK",
     "EXPLICIT_USER_RUN_AUTHORIZATION"
   ],
-  "current_decision": "BLOCKED_OPENMC_GEOMETRY_DEBUG_SHARED_INTERFACE_DIAGNOSIS",
+  "current_decision": "READY_FOR_SOURCE_MESH_AND_MEDIUM_STATISTICS",
   "production_run_authorized": false
 }

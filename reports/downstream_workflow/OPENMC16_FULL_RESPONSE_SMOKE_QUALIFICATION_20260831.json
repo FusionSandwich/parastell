@@ -1,0 +1,71 @@
+{
+  "schema": "parastell.openmc16_full_response_smoke_qualification/v1.0.0",
+  "created_date": "2026-08-31",
+  "status": "PASS_BOUNDED_INFRASTRUCTURE_SMOKE",
+  "remote_root": "/home/apollon/josma/data/codex-parastell/prompt7r-openmc16-full-response-smoke-v4-20260831T223000Z",
+  "runtime": {
+    "openmc_version": "0.16.0",
+    "commit": "617d35a5063c57796b43428bc401e627d2011046",
+    "stock_binary_sha256": "6d5922f3600115691996edcf584350bdfd53528e06930c2a8b45416853c044e6",
+    "patched_binary_used": false,
+    "threads": 1,
+    "memory_limit_bytes": 8589934592,
+    "swap_peak_bytes": 0
+  },
+  "inputs": {
+    "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+    "source_mesh_sha256": "ed4003589d2eaca445cbd0392b8b3d0465986a0adcdb220507607f7ad97861c5",
+    "sealed_model_xml_sha256": "ddc512f548d41e6c25ed25db45d64e15614ae00dce3a7352f2769fed9e7b3b95",
+    "sealed_model_receipt_sha256": "22a7b465f790c075bcaedac1a21591300a079ae5a0a8d6161c29c27e73096f9e",
+    "continuous_surface_manifest_sha256": "99c2feeb681e6c9eeff919a4084a15f9b77bc50357d464ccfbb1469178e198fe",
+    "compiled_response_plan_sha256": "857b130731985c70b4d9c1156dd2d8a96e527520e91fea929455f9e3beb7d767",
+    "inputs_immutable": true
+  },
+  "run": {
+    "seed": 8310202,
+    "histories": 10000,
+    "particles_per_batch": 2500,
+    "batches": 4,
+    "statepoint_batches": [1, 2, 3, 4],
+    "tally_objects": 25,
+    "lost_particles": 0,
+    "dagmc_navigation_errors": 0,
+    "simulation_seconds": 10.609,
+    "elapsed_openmc_seconds": 13.978,
+    "service_seconds": 47.692
+  },
+  "outputs": {
+    "receipt_sha256": "ce7b039fec54d7b4d3a09f3f9ef76d6770ad266d57bf9f1cc153852d374d16c5",
+    "instrumented_model_xml_sha256": "ce7c4336ebbaeed17a7c03f88c0e437490aed7e388ed7f0c9428c8176ff5a5b8",
+    "openmc_log_sha256": "93722a93c111534a71b0103ff1e37d447eb9c780d4379a5a613fce498017878d",
+    "guarded_log_sha256": "695cfe4b0d36624efdae539554338849e8307703ac2fda0d5047559ce1fb2787",
+    "surface_bank_sha256": "e368582d392d12a63506988a85eb7d1c3a3896a816b8c7c2c1e2515a094d7db0",
+    "statepoint_sha256": [
+      "d6f0f24c49bbed48bea8900d7f66a5821641d40dbd6312d7f54c1e4103e17aee",
+      "a64ca17be4eb50bdc477411a13f46ad357cf61853cab717668f0e3d998035a4a",
+      "c2b6db24d24db3289196ee6869f09e909da9628abe73db0cb78b43d06e09df91",
+      "a8fbbf3a9b2868c91b8a3d19860f02378c1bb3d5550f38957d1564a3387c88bb"
+    ]
+  },
+  "surface_bank": {
+    "requested_surface_ids": [22, 25, 26, 27],
+    "records": 930,
+    "neutron_records": 897,
+    "photon_records": 33,
+    "native_fields": ["r", "u", "E", "time", "wgt", "delayed_group", "surf_id", "particle"],
+    "max_particles_per_file": 100000,
+    "max_source_files": 8,
+    "configured_global_capacity": 800000,
+    "capacity_reached": false,
+    "capture_classification": "COMPLETE_CROSSING_BANK_CAPACITY_PROVEN",
+    "serializer_reader_and_bank_tally_mechanism_contract": "PASS",
+    "exact_run_strict_facet_roundtrip_and_tally_closure": "PENDING_POSTPROCESSING"
+  },
+  "response_capabilities": [
+    "TAL-NFLX", "TAL-PFLX", "TAL-CURR", "TAL-HEAT", "TAL-RXN",
+    "PKA-01", "TAL-DMG", "TAL-GAS", "ACT-01"
+  ],
+  "statistics_qualified": false,
+  "production_run_authorized": false,
+  "decision": "READY_FOR_SOURCE_MESH_AND_MEDIUM_STATISTICS"
+}

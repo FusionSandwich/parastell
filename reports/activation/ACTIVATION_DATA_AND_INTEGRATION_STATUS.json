@@ -1,11 +1,11 @@
 {
   "schema": "parastell.activation_integration_status/v1.0.0",
-  "status": "BLOCKED_PENDING_ACCEPTED_SOURCE_AND_VOLUME_FIELD",
+  "status": "READY_FOR_ACCEPTED_STATEPOINT_VOLUME_FIELD_EXTRACTION",
   "geometry_binding": "ACCEPTED_CONTINUOUS_90_DEGREE_RADIAL_MODEL",
   "current_geometry_binding": "CONTINUOUS_30_CM_HOMOGENIZED_MAGNET_ENVELOPE",
   "current_alara_workflow_report": "reports/activation/ALARA_WORKFLOW_QUALIFICATION.json",
   "producer_contract_implemented": true,
-  "bounded_activation_qualification_status": "BLOCKED_PENDING_ACCEPTED_SOURCE_AND_VOLUME_FIELD",
+  "bounded_activation_qualification_status": "PENDING_ACCEPTED_STATEPOINT_VOLUME_FIELD_EXTRACTION",
   "production_activation_status": "BLOCKED_PRODUCTION_NUCLEAR_DATA",
   "execution_owner": "DPA_workflow",
   "producer_owner": "FusionSandwich/parastell",
@@ -15,7 +15,7 @@
     "continuous_magnet_volume_id": 9,
     "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
     "native_geometry_gate": "PASS",
-    "openmc_navigation_gate": "PENDING_CONTAINED_SOURCE"
+    "openmc_navigation_gate": "PASS_TWO_INDEPENDENT_GEOMETRY_DEBUG_SEEDS"
   },
   "depletion_chain": {
     "format": "OpenMC depletion chain XML",
@@ -92,13 +92,30 @@
     "accepted_geometry_containment_run": false,
     "status": "SUPERSEDED_TILED_SOURCE_REFERENCE_DIRECT_90_SOURCE_REQUIRED"
   },
+  "accepted_direct_90_degree_source": {
+    "extent_degrees": 90.0,
+    "outer_cfs_cap": 0.9655,
+    "source_mesh_sha256": "ed4003589d2eaca445cbd0392b8b3d0465986a0adcdb220507607f7ad97861c5",
+    "source_domain_audit_sha256": "eff7b058b7ee1f11ce270abfb466e73acbe0e3a45535404434f001948fb1a27a",
+    "physical_source_rate_neutrons_per_second": 1.855454485735326e20,
+    "invalid_sample_count": 0,
+    "minimum_chamber_clearance_cm": 0.42059351086489494,
+    "status": "PASS"
+  },
+  "bounded_transport_smoke": {
+    "status": "PASS_NOT_STATISTICALLY_QUALIFIED",
+    "receipt_sha256": "ce7b039fec54d7b4d3a09f3f9ef76d6770ad266d57bf9f1cc153852d374d16c5",
+    "histories": 10000,
+    "statepoint_batches": [1, 2, 3, 4],
+    "tally_objects": 25,
+    "surface_bank_records": 930,
+    "neutron_records": 897,
+    "photon_records": 33
+  },
   "remaining_gates": [
-    "contained direct-90 source mesh",
-    "two-seed OpenMC 0.16.0 navigation pass",
-    "actual OpenMC cell and material ID discovery",
-    "source-mesh domain, element-order, and normalization audit receipt",
-    "geometry-bound source mesh",
-    "positive volume scalar-flux field with normalization closure",
+    "extract and validate positive volume scalar-flux fields from accepted statepoints",
+    "bounded source-mesh response convergence",
+    "medium-statistics independent-seed stability",
     "requested nuclide and reaction MicroXS coverage",
     "bounded R2S and IndependentOperator comparison in DPA_workflow"
   ],

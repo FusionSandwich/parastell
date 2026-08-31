@@ -1,0 +1,65 @@
+{
+  "schema": "parastell.openmc16_dagmc_shared_surface_debug_patch_qualification/v1.0.0",
+  "created_date": "2026-08-31",
+  "scope": "DIAGNOSTIC_GEOMETRY_DEBUG_ONLY",
+  "upstream_modified": false,
+  "production_transport_binary_changed": false,
+  "openmc_base_commit": "617d35a5063c57796b43428bc401e627d2011046",
+  "patch_path": "patches/openmc-0.16.0-dagmc-geometry-debug-shared-surface.patch",
+  "patch_sha256": "77c959527e589c7cc214a0db2942cf53e7d2b967f4c6b01613ba65ba951c50f5",
+  "patched_binary": {
+    "path": "/home/apollon/josma/data/codex-parastell/openmc16-dagmc-debug-boundary-patch-v8-20260831T215500Z/output/install/bin/openmc",
+    "sha256": "8a5c03d6cbad34af833ff95055b68100e24f104079598e6036c902a79fa28f64",
+    "openmc_version": "0.16.0",
+    "dagmc_enabled": true,
+    "mpi_enabled": false,
+    "build_log_sha256": "bf9f60c46d7384e25c6c26047f45101ee390794c8bdd6a16a6d1e4ea8adcacdb"
+  },
+  "implementation": {
+    "exemption": "only the DAGMC volume proven by next_vol to be the topological neighbor across the exact crossed surface",
+    "still_checked": [
+      "all third or nonadjacent DAGMC volumes",
+      "all CSG cells and wrappers",
+      "source sites, collisions, and positive flights"
+    ]
+  },
+  "controls": {
+    "official_openmc_shared_face_positive": {
+      "status": "PASS",
+      "h5m_sha256": "b4da1d4254a8476f31584f532e910aa46e5f5919c63343dd651f68be42384974",
+      "model_xml_sha256": "aff51b2e7e66ab0e419212b1e22d4f5325df795a92f8ce4cf8cc4a17e9891744",
+      "unpatched_log_sha256": "ce5f31dde44b1b2f09051d1b99f650bf0aea81d1c241612cad8e4d95546a7dfa",
+      "patched_log_sha256": "681a5349104a6e9f8f99006c5c8ca55c8604c52832b9e0cbb213aace58b5a095",
+      "patched_exit_code": 0
+    },
+    "nonadjacent_physical_overlap_negative": {
+      "status": "PASS_REJECTED_AS_REQUIRED",
+      "h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+      "model_xml_sha256": "fa4f0f9934e9d0ce95b44488f9a033b1611e3fe8992ea24e216c8dddb5697fd4",
+      "patched_log_sha256": "c4b42e8037184f37ec28befcf491a89ddc21bd1eb391612ff0d217b7ee01788c",
+      "patched_exit_code": 255,
+      "detected_message": "Overlapping cells detected: 26, 4 on universe 1"
+    },
+    "wistell_d_seed_8310101": {
+      "status": "PASS",
+      "model_xml_sha256": "ddc512f548d41e6c25ed25db45d64e15614ae00dce3a7352f2769fed9e7b3b95",
+      "log_sha256": "a3940d877707e07887eebca9652cb03773da2b305d7114b6a9573a22a06d804f",
+      "lost_particles": 0,
+      "navigation_errors": 0
+    },
+    "wistell_d_seed_8310102": {
+      "status": "PASS",
+      "model_xml_sha256": "480af7ca630cbadc5f0f6d567365252525ca1ac0a51e7488dcfc2559ff5d9d3c",
+      "log_sha256": "63714c81195e98e3e4b0d32def92a918b646e518c0d604f5e5372e785f01e7bc",
+      "lost_particles": 0,
+      "navigation_errors": 0,
+      "every_cell_minimum_overlap_checks": 10
+    }
+  },
+  "accepted_geometry": {
+    "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+    "mutated": false
+  },
+  "stock_transport_requirement": "All physics transport and statistics use the unpatched stock OpenMC 0.16.0 binary.",
+  "classification": "PASS_DIAGNOSTIC_PATCH_QUALIFIED"
+}

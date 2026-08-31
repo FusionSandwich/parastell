@@ -1,9 +1,14 @@
 # Direct-90 pre-mesh topology gate
 
-Status: `IMPLEMENTED_LOCAL_TESTS_PASS_REMOTE_EXECUTION_PENDING`
+Status: `SUPERSEDED_BY_ACCEPTED_CONTINUOUS_DIRECT90_PIPELINE`
 
-This gate belongs to the direct ParaStell 0–90° WISTELL-D geometry lane. It
+This historical gate belongs to the rejected nine-STEP/no-imprint direct
+ParaStell 0–90° candidate. It
 does not use, modify, or depend on `wistell-d-openmc`.
+
+The accepted successor is the continuous direct-90 H5M SHA-256
+`d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3`,
+which has completed premesh, native DAGMC, source-domain, and OpenMC gates.
 
 The accepted source-CAD manifest remains SHA-256
 `b6e723cdb9ac95d789a838abbf44590d210c4fdbe718c3b459777d38768e0499`.

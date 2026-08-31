@@ -1,5 +1,5 @@
 {
-  "schema": "parastell.openmc16_direct90_navigation_diagnosis/v1.0.0",
+  "schema": "parastell.openmc16_direct90_navigation_diagnosis/v1.1.0",
   "created_date": "2026-08-31",
   "repository": "FusionSandwich/parastell",
   "forbidden_repository_used": false,
@@ -23,61 +23,67 @@
     "omitted_source_fraction": 1.7322591520857659e-06,
     "physical_source_rate_neutrons_per_second_90_degrees": 1.855454485735326e20
   },
-  "runtime": {
+  "stock_runtime": {
     "openmc_version": "0.16.0",
     "openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
     "openmc_binary_sha256": "6d5922f3600115691996edcf584350bdfd53528e06930c2a8b45416853c044e6",
     "cross_sections_xml_sha256": "781042200d1beab5a04205831688f114f65c12e702cd0069840b47183c0bf1f0"
   },
-  "geometry_debug_attempt": {
+  "unpatched_failure": {
     "seed": 8310101,
     "model_xml_sha256": "ddc512f548d41e6c25ed25db45d64e15614ae00dce3a7352f2769fed9e7b3b95",
-    "result": "FAIL_CLOSED_SHARED_INTERFACE_OVERLAP_MESSAGE",
     "message": "Overlapping cells detected: 1, 2 on universe 33",
-    "cell_1_role": "chamber",
-    "cell_2_role": "first_wall",
-    "shared_surface_id": 1,
-    "run_receipt_sha256": "3b99ecb1d4af5af246c2d1773b7de77b026482be6ec5fd5f8388c97b18dd18d9",
-    "log_sha256": "b59d01be254364a05c6983e05e84f7c7deebbe38f2eba668424f8773de5f7d32",
-    "statepoint_created": false,
-    "second_seed_run": false
+    "cell_roles": ["chamber", "first_wall"],
+    "shared_surface_id": 1
   },
-  "matched_regular_track_diagnostic": {
-    "result": "PASS_DIAGNOSTIC_ONLY",
-    "particles_per_batch": 1,
-    "batches": 2,
-    "histories": 2,
-    "openmc_exit_code": 0,
-    "lost_particle_messages": 0,
-    "dagmc_navigation_error_messages": 0,
-    "statepoint_batches": [1, 2],
-    "tracks_sha256": "bdb0502a96e84f359ff6f4d2f475aaa6e5fc91695782523879a07f2a9aad2f00",
-    "statepoint_1_sha256": "5d1a9079573e20cc081296d04f676a55caa8631ea1bb8fac60e996c55f07be5c",
-    "statepoint_2_sha256": "97eb207ac592daa6bfe2f77f70429ea78ace8f257489bde9e986806abb0eefb1",
-    "summary_sha256": "3ef6639736fd513fc1ffbbeb366510eef58a094bd30ccfbe20f22afc2880b2e5",
-    "log_sha256": "c56be7e1ed4aed694cb62b258fcf04fc39500b46737b392de1b983af18c698a1",
-    "first_history_source_cell": 1,
-    "first_history_first_crossing_cell": 2,
-    "first_history_first_crossing_position_cm": [
-      916.82516755,
-      342.45603918,
-      77.43396207
-    ],
-    "first_history_distance_to_first_crossing_cm": 99.382071089923,
-    "interpretation": "The regular tracker crosses from chamber cell 1 to first-wall cell 2 on their unique shared surface and continues transport. This supports a shared-boundary geometry-debug ambiguity, but it does not waive the required debug gate."
+  "root_cause": {
+    "classification": "OPENMC_0_16_DAGMC_GEOMETRY_DEBUG_SHARED_FACET_FALSE_POSITIVE",
+    "official_openmc_regression_reproducer": "PASS_REPRODUCED",
+    "mechanism": "After DAGMC next_vol selects the destination, the particle remains on the shared facet and generic overlap checking asks both adjacent cells to classify the same boundary point without using on_surface.",
+    "physical_geometry_overlap": false
   },
-  "openmc_implementation_observation": {
-    "geometry_debug_behavior": "OpenMC checks every cell contains() after each move.",
-    "dagmc_contains_behavior": "OpenMC 0.16.0 DAGCell::contains calls DAGMC point_in_volume independently and does not use its on_surface argument to disambiguate a known shared boundary.",
-    "external_defect_claimed": false,
-    "minimal_upstream_reproducer_status": "STAGED_NOT_RUN_RESOURCE_GATE_FULL"
+  "diagnostic_patch_qualification": {
+    "status": "PASS_DIAGNOSTIC_PATCH_QUALIFIED",
+    "report": "reports/geometry_recovery/OPENMC16_DAGMC_SHARED_SURFACE_DEBUG_PATCH_QUALIFICATION_20260831.json",
+    "patch_sha256": "77c959527e589c7cc214a0db2942cf53e7d2b967f4c6b01613ba65ba951c50f5",
+    "patched_binary_sha256": "8a5c03d6cbad34af833ff95055b68100e24f104079598e6036c902a79fa28f64",
+    "official_shared_face_control": "PASS",
+    "nonadjacent_overlap_negative_control": "PASS_REJECTED_AS_REQUIRED"
   },
-  "current_gate": "BLOCKED_OPENMC_GEOMETRY_DEBUG_SHARED_INTERFACE_DIAGNOSIS",
+  "two_seed_geometry_debug": {
+    "status": "PASS",
+    "seed_8310101_log_sha256": "a3940d877707e07887eebca9652cb03773da2b305d7114b6a9573a22a06d804f",
+    "seed_8310102_log_sha256": "63714c81195e98e3e4b0d32def92a918b646e518c0d604f5e5372e785f01e7bc",
+    "lost_particles": 0,
+    "dagmc_navigation_errors": 0
+  },
+  "bounded_stock_full_response_smoke": {
+    "status": "PASS",
+    "remote_root": "/home/apollon/josma/data/codex-parastell/prompt7r-openmc16-full-response-smoke-v4-20260831T223000Z",
+    "receipt_sha256": "ce7b039fec54d7b4d3a09f3f9ef76d6770ad266d57bf9f1cc153852d374d16c5",
+    "histories": 10000,
+    "seed": 8310202,
+    "tally_count": 25,
+    "statepoint_batches": [1, 2, 3, 4],
+    "surface_ids": [22, 25, 26, 27],
+    "surface_bank_records": 930,
+    "surface_bank_neutron_records": 897,
+    "surface_bank_photon_records": 33,
+    "max_particles_per_file": 100000,
+    "max_source_files": 8,
+    "surface_bank_classification": "COMPLETE_CROSSING_BANK_CAPACITY_AND_PARTICLE_COVERAGE_PASS",
+    "exact_run_facet_roundtrip_and_tally_closure": "PENDING_POSTPROCESSING",
+    "lost_particles": 0,
+    "dagmc_navigation_errors": 0,
+    "memory_swap_peak_bytes": 0,
+    "statistics_qualified": false
+  },
+  "current_gate": "PASS",
+  "current_decision": "READY_FOR_SOURCE_MESH_AND_MEDIUM_STATISTICS",
   "next_actions": [
-    "Run the staged official OpenMC DAGMC regression-H5M reproducer when one bounded Bateman core is available.",
-    "If the official shared-interface model reproduces the failure, qualify a local diagnostic-only OpenMC patch or an equivalent boundary-aware proof without changing the ParaStell H5M.",
-    "Run seed 8310101 to PASS before running independent seed 8310102.",
-    "Run the bounded full-response surface-bank smoke only after the navigation gate passes."
+    "Run bounded source-mesh response convergence.",
+    "Run medium-statistics response segments with regular statepoints and complete surface banks after explicit launch authorization.",
+    "Extract volume fields and downstream activation/PKA handoff bundles from the accepted statepoints."
   ],
   "production_run_authorized": false
 }
