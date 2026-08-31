@@ -11,7 +11,6 @@ import numpy as np
 from .reference_geometry import _triangles, sha256_file
 from .source_geometry_identity import source_mesh_fingerprint
 
-
 SOURCE_QUADRATURE_BARYCENTRICS = np.asarray(
     [
         [0.25, 0.25, 0.25, 0.25],
@@ -369,6 +368,11 @@ class _ClosedSurface:
                 ],
                 dtype=float,
             )
+            if not compute_all_distances:
+                # Match the VTK fallback contract: the default audit needs a
+                # distance only for rejected points.  Interior values remain
+                # exactly zero so backend choice cannot change receipts.
+                distance[selected != 0] = 0.0
             return selected, distance
 
         import vtk
