@@ -9,6 +9,7 @@ from scripts.export_continuous_parametric_direct90_dagmc import (
     FROZEN_MESHING,
     REFACET_PROTOCOL_SCHEMA,
     _validate_meshing_contract,
+    _validate_thread_contract,
 )
 
 
@@ -132,3 +133,23 @@ def test_reference_artifact_hash_is_rechecked(tmp_path):
     args.reference_h5m_path.write_bytes(b"changed")
     with pytest.raises(ValueError, match="reference H5M hash mismatch"):
         _validate_meshing_contract(args)
+
+
+def test_refacet_thread_environment_matches_candidate(tmp_path, monkeypatch):
+    args = _args(tmp_path)
+    protocol = _bind_protocol(tmp_path, args)
+    expected = {
+        "OMP_NUM_THREADS": "16",
+        "OMP_THREAD_LIMIT": "16",
+        "OPENBLAS_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1",
+        "BLIS_NUM_THREADS": "1",
+    }
+    for name, value in expected.items():
+        monkeypatch.setenv(name, value)
+    _validate_thread_contract(args, protocol)
+    monkeypatch.setenv("OMP_THREAD_LIMIT", "32")
+    with pytest.raises(ValueError, match="does not match refacet protocol"):
+        _validate_thread_contract(args, protocol)

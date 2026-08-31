@@ -11,6 +11,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import time
@@ -181,6 +182,26 @@ def _validate_meshing_contract(args: argparse.Namespace) -> dict | None:
     return protocol
 
 
+def _validate_thread_contract(
+    args: argparse.Namespace, refacet_protocol: dict | None
+) -> None:
+    if refacet_protocol is None:
+        topology_backend._validate_thread_environment()
+        return
+    expected = dict(topology_backend.REQUIRED_THREAD_ENVIRONMENT)
+    expected["OMP_NUM_THREADS"] = str(args.threads)
+    expected["OMP_THREAD_LIMIT"] = str(args.threads)
+    mismatches = {
+        name: os.environ.get(name)
+        for name, value in expected.items()
+        if os.environ.get(name) != value
+    }
+    if mismatches:
+        raise ValueError(
+            f"thread environment does not match refacet protocol: {mismatches}"
+        )
+
+
 def _canonicalize_roles(value: Any) -> Any:
     if isinstance(value, str):
         return LEGACY_TO_CANONICAL.get(value, value)
@@ -250,7 +271,7 @@ def export(args: argparse.Namespace) -> None:
         raise FileExistsError(f"create-only output exists: {output}")
     manifest, _ = _validate_source_packet(args)
     refacet_protocol = _validate_meshing_contract(args)
-    topology_backend._validate_thread_environment()
+    _validate_thread_contract(args, refacet_protocol)
     import cad_to_dagmc
     import cadquery as cq
 
