@@ -5,10 +5,12 @@ import pytest
 
 from parastell.source_conformal_interface import (
     P4_REGION_ORDER,
+    audit_sector_seam_continuity,
     audit_shared_interface_topology,
     audit_source_conformal_containment_arrays,
     build_targeted_p4_plan,
     extract_source_master_interface,
+    qualify_source_conformal_physical_candidate_arrays,
     summarize_p4_results,
     write_compact_json_create_only,
 )
@@ -108,9 +110,7 @@ def test_shared_interface_requires_exact_connectivity_owners_and_opposite_senses
     duplicate_owner = audit_shared_interface_topology(
         master,
         shared_triangles=master["interface_triangles"],
-        surface_owners=[
-            ["chamber", "chamber"] for _ in master["interface_triangles"]
-        ],
+        surface_owners=[["chamber", "chamber"] for _ in master["interface_triangles"]],
     )
     assert duplicate_owner["gates"]["surface_ownership_pass"] is False
     assert duplicate_owner["shared_interface_topology_pass"] is False
@@ -125,6 +125,15 @@ def test_shared_interface_requires_exact_connectivity_owners_and_opposite_senses
         first_wall_sense=1,
     )
     assert same_sense["gates"]["opposite_surface_senses_pass"] is False
+
+    nonintegral = np.asarray(master["interface_triangles"], dtype=float)
+    nonintegral[0, 0] += 0.5
+    with pytest.raises(ValueError, match="must be integral"):
+        audit_shared_interface_topology(
+            master,
+            shared_triangles=nonintegral,
+            surface_owners=[["chamber", "first_wall"] for _ in nonintegral],
+        )
 
 
 def test_containment_is_connectivity_based_and_preserves_source_strength():
@@ -182,7 +191,7 @@ def test_containment_fails_source_strength_invariance_without_rescaling():
     assert report["transport_eligible"] is False
 
 
-def test_physical_eligibility_requires_all_explicit_successor_inputs():
+def test_construction_audit_cannot_be_promoted_by_declared_evidence():
     vertices, tetrahedra, volumes, strengths = _quarter_sector_source()
     master, shared = _master_and_shared()
     report = audit_source_conformal_containment_arrays(
@@ -207,7 +216,9 @@ def test_physical_eligibility_requires_all_explicit_successor_inputs():
             "fixture_only": False,
         },
     )
-    assert report["transport_eligible"] is True
+    assert report["provided_physical_candidate_evidence_ignored"] is True
+    assert report["physical_candidate"] is False
+    assert report["transport_eligible"] is False
 
     incomplete = audit_source_conformal_containment_arrays(
         vertices,
@@ -226,6 +237,110 @@ def test_physical_eligibility_requires_all_explicit_successor_inputs():
     assert incomplete["transport_eligible"] is False
 
 
+def _physical_qualification(**overrides):
+    vertices, tetrahedra, volumes, strengths = _quarter_sector_source()
+    master, _ = _master_and_shared()
+    values = {
+        "vertices_cm": vertices,
+        "tetrahedra": tetrahedra,
+        "tagged_volumes_cm3": volumes,
+        "source_strengths_n_per_s": strengths,
+        "reference_vertices_cm": vertices,
+        "reference_tetrahedra": tetrahedra,
+        "reference_tagged_volumes_cm3": volumes,
+        "reference_source_strengths_n_per_s": strengths,
+        "master_interface": master,
+        "actual_shared_vertex_coordinates_cm": vertices,
+        "actual_shared_triangles": master["interface_triangles"],
+        "surface_owners": [
+            ["chamber", "first_wall"] for _ in master["interface_triangles"]
+        ],
+        "shared_normal_unit_vectors": master["interface_normal_unit_vectors"],
+        "source_vertex_signed_distances_cm": np.zeros(len(vertices)),
+        "source_quadrature_signed_distances_cm": -np.ones((len(tetrahedra), 5)),
+        "observed_source_mesh_sha256": "a" * 64,
+        "immutable_source_mesh_sha256": "a" * 64,
+        "dagmc_h5m_sha256": "b" * 64,
+        "outer_layer_mapping_sha256": "c" * 64,
+        "material_identity_sha256": "d" * 64,
+        "input_class": "FIXTURE",
+        "fixture_only": True,
+        "prohibited_operations": {
+            "source_coordinate_projection": False,
+            "source_mesh_rescaling": False,
+            "source_strength_rescaling": False,
+            "source_clipping": False,
+            "blind_global_refinement": False,
+        },
+    }
+    values.update(overrides)
+    return qualify_source_conformal_physical_candidate_arrays(**values)
+
+
+def test_analytic_post_export_fixture_closes_software_gates_only():
+    report = _physical_qualification()
+
+    assert report["status"] == "DIAGNOSTIC_ONLY"
+    assert report["vertex_classification"] == {
+        "ON_SHARED_INTERFACE": 5,
+        "INSIDE": 0,
+        "OUTSIDE": 0,
+        "AMBIGUOUS": 0,
+    }
+    assert report["quadrature_classification"] == {
+        "INSIDE": 10,
+        "OUTSIDE": 0,
+        "AMBIGUOUS": 0,
+    }
+    assert report["software_qualification_pass"] is True
+    assert report["gates"]["physical_input_class_pass"] is False
+    assert report["transport_eligible"] is False
+
+
+def test_post_export_qualification_fails_closed_on_distance_normal_and_hash():
+    vertices, tetrahedra, _, _ = _quarter_sector_source()
+    master, _ = _master_and_shared()
+    vertex_distances = np.zeros(len(vertices))
+    vertex_distances[0] = 2.0e-9
+    quadrature_distances = -np.ones((len(tetrahedra), 5))
+    quadrature_distances[0, 0] = 0.0
+    reversed_normals = np.asarray(master["interface_normal_unit_vectors"])
+    reversed_normals[0] *= -1.0
+    changed_shared_vertices = vertices.copy()
+    changed_shared_vertices[0, 2] += 1.0e-8
+
+    report = _physical_qualification(
+        source_vertex_signed_distances_cm=vertex_distances,
+        source_quadrature_signed_distances_cm=quadrature_distances,
+        shared_normal_unit_vectors=reversed_normals,
+        actual_shared_vertex_coordinates_cm=changed_shared_vertices,
+        immutable_source_mesh_sha256="e" * 64,
+    )
+
+    assert report["vertex_classification"]["OUTSIDE"] == 1
+    assert report["quadrature_classification"]["AMBIGUOUS"] == 1
+    assert report["gates"]["normal_orientation_pass"] is False
+    assert report["gates"]["shared_vertex_coordinates_exact_pass"] is False
+    assert report["gates"]["immutable_input_hash_pass"] is False
+    assert report["transport_eligible"] is False
+
+
+def test_sector_seam_requires_one_to_one_rotational_coordinate_match():
+    vertices, tetrahedra, _, _ = _quarter_sector_source()
+    master = extract_source_master_interface(vertices, tetrahedra)
+    passing = audit_sector_seam_continuity(vertices, master["interface_triangles"])
+    assert passing["sector_seam_continuity_pass"] is True
+
+    changed = vertices.copy()
+    changed[2, 1] += 1.0e-4
+    failing = audit_sector_seam_continuity(
+        changed,
+        master["interface_triangles"],
+        geometric_tolerance_cm=1.0e-9,
+    )
+    assert failing["sector_seam_continuity_pass"] is False
+
+
 def test_p4_plan_is_precision_four_partitioned_and_resumable():
     plan = build_targeted_p4_plan(
         geometry_sha256="a" * 64,
@@ -233,9 +348,7 @@ def test_p4_plan_is_precision_four_partitioned_and_resumable():
         timeout_seconds_per_region=120,
         region_bounds_cm={"SOURCE_CHAMBER_INTERFACE": [0, 0, 0, 1, 1, 1]},
     )
-    assert [row["region_id"] for row in plan["regions"]] == list(
-        P4_REGION_ORDER
-    )
+    assert [row["region_id"] for row in plan["regions"]] == list(P4_REGION_ORDER)
     assert all(row["precision"] == 4 for row in plan["regions"])
 
     partial = summarize_p4_results(
@@ -299,9 +412,7 @@ def test_p4_plan_is_precision_four_partitioned_and_resumable():
 
 def test_compact_receipts_are_create_only_and_strict_json(tmp_path):
     path = tmp_path / "receipt.json"
-    identity = write_compact_json_create_only(
-        path, {"status": "BLOCKED_INPUT"}
-    )
+    identity = write_compact_json_create_only(path, {"status": "BLOCKED_INPUT"})
     assert len(identity["sha256"]) == 64
     assert json.loads(path.read_text())["status"] == "BLOCKED_INPUT"
     with pytest.raises(FileExistsError):

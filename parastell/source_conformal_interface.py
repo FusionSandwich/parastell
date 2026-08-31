@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -27,12 +28,8 @@ from .source_domain import (
 )
 from .source_geometry_identity import canonical_source_mesh_arrays
 
-SOURCE_CONFORMAL_MANIFEST_SCHEMA = (
-    "parastell.source_conformal_geometry_manifest/v1.0.0"
-)
-SOURCE_CONFORMAL_CONTAINMENT_SCHEMA = (
-    "parastell.source_conformal_containment/v1.0.0"
-)
+SOURCE_CONFORMAL_MANIFEST_SCHEMA = "parastell.source_conformal_geometry_manifest/v1.0.0"
+SOURCE_CONFORMAL_CONTAINMENT_SCHEMA = "parastell.source_conformal_containment/v1.0.0"
 P4_PLAN_SCHEMA = "parastell.dagmc_targeted_p4_plan/v1.0.0"
 P4_RECEIPT_SCHEMA = "parastell.dagmc_p4_receipt/v1.0.0"
 
@@ -73,12 +70,10 @@ def load_indexed_source_mesh(path: str | Path) -> dict[str, Any]:
             dtype=np.int64,
         )
     except KeyError as exc:
-        raise ValueError(
-            "source tetrahedron references an unknown vertex"
-        ) from exc
-    coordinates = np.asarray(
-        mesh.get_coords(vertex_handles), dtype=np.float64
-    ).reshape((-1, 3))
+        raise ValueError("source tetrahedron references an unknown vertex") from exc
+    coordinates = np.asarray(mesh.get_coords(vertex_handles), dtype=np.float64).reshape(
+        (-1, 3)
+    )
     volume_tag = mesh.tag_get_handle("Volume")
     strength_tag = mesh.tag_get_handle("Source Strength")
     volumes = np.asarray(
@@ -114,6 +109,15 @@ def _sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _array_payload_sha256(label: str, value: Any, dtype: str) -> str:
+    array = np.ascontiguousarray(np.asarray(value, dtype=dtype))
+    digest = hashlib.sha256()
+    digest.update(label.encode("ascii") + b"\0")
+    digest.update(np.asarray(array.shape, dtype="<u8").tobytes())
+    digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
 def _valid_sha256(value: Any) -> bool:
     return bool(
         isinstance(value, str)
@@ -134,9 +138,7 @@ def _validated_mesh_arrays(
     if cells.ndim != 2 or cells.shape[1:] != (4,):
         raise ValueError("tetrahedra must have shape (n,4)")
     if not np.issubdtype(cells.dtype, np.integer):
-        if not np.all(np.isfinite(cells)) or not np.all(
-            cells == np.floor(cells)
-        ):
+        if not np.all(np.isfinite(cells)) or not np.all(cells == np.floor(cells)):
             raise ValueError("tetrahedron connectivity must be integral")
     cells = np.asarray(cells, dtype=np.int64)
     if not len(cells) or np.any(cells < 0) or np.any(cells >= len(vertices)):
@@ -160,9 +162,7 @@ def _validated_mesh_arrays(
 
 def _plane_distance(points: np.ndarray, angle_degrees: float) -> np.ndarray:
     angle = math.radians(float(angle_degrees))
-    return np.abs(
-        -points[:, 0] * math.sin(angle) + points[:, 1] * math.cos(angle)
-    )
+    return np.abs(-points[:, 0] * math.sin(angle) + points[:, 1] * math.cos(angle))
 
 
 def _face_payload_hash(vertices: np.ndarray, faces: np.ndarray) -> str:
@@ -201,9 +201,7 @@ def extract_source_master_interface(
     """
 
     vertices, cells = _validated_mesh_arrays(vertices_cm, tetrahedra)
-    angles = np.asarray(
-        periodic_cut_plane_angles_degrees, dtype=float
-    ).reshape(-1)
+    angles = np.asarray(periodic_cut_plane_angles_degrees, dtype=float).reshape(-1)
     tolerance = float(geometric_tolerance_cm)
     if (
         angles.shape != (2,)
@@ -227,9 +225,7 @@ def extract_source_master_interface(
 
     nonmanifold = [key for key, owners in incidence.items() if len(owners) > 2]
     if nonmanifold:
-        raise ValueError(
-            f"source tetrahedra have {len(nonmanifold)} nonmanifold faces"
-        )
+        raise ValueError(f"source tetrahedra have {len(nonmanifold)} nonmanifold faces")
     boundary = np.asarray(
         [owners[0] for owners in incidence.values() if len(owners) == 1],
         dtype=np.int64,
@@ -239,16 +235,12 @@ def extract_source_master_interface(
     seam_masks = []
     for angle in angles:
         distances = _plane_distance(vertices[boundary].reshape((-1, 3)), angle)
-        seam_masks.append(
-            np.all(distances.reshape((-1, 3)) <= tolerance, axis=1)
-        )
+        seam_masks.append(np.all(distances.reshape((-1, 3)) <= tolerance, axis=1))
     seam_mask = np.logical_or.reduce(seam_masks)
     interface = boundary[~seam_mask]
     seams = boundary[seam_mask]
     if not len(interface) or not len(seams):
-        raise ValueError(
-            "source boundary lacks interface or periodic seam facets"
-        )
+        raise ValueError("source boundary lacks interface or periodic seam facets")
 
     xyz = vertices[interface]
     area_vectors = np.cross(xyz[:, 1] - xyz[:, 0], xyz[:, 2] - xyz[:, 0])
@@ -264,9 +256,7 @@ def extract_source_master_interface(
     invalid_edge_multiplicity = sorted(
         edge for edge, count in edge_counts.items() if count not in (1, 2)
     )
-    open_edges = sorted(
-        edge for edge, count in edge_counts.items() if count == 1
-    )
+    open_edges = sorted(edge for edge, count in edge_counts.items() if count == 1)
     orphan_open_edges = []
     seam_edge_counts = [0, 0]
     for edge in open_edges:
@@ -305,9 +295,7 @@ def extract_source_master_interface(
         "schema": "parastell.source_master_interface/v1.0.0",
         "construction": "EXACT_IMMUTABLE_SOURCE_TETRAHEDRON_BOUNDARY",
         "coordinate_units": "cm",
-        "periodic_cut_plane_angles_degrees": [
-            float(value) for value in angles
-        ],
+        "periodic_cut_plane_angles_degrees": [float(value) for value in angles],
         "geometric_tolerance_cm": tolerance,
         "source_vertex_count": int(len(vertices)),
         "source_tetrahedron_count": int(len(cells)),
@@ -317,14 +305,10 @@ def extract_source_master_interface(
         "interface_vertex_ids": [int(value) for value in np.unique(interface)],
         "interface_triangles": interface.tolist(),
         "periodic_seam_triangles": seams.tolist(),
-        "interface_normal_unit_vectors": (
-            area_vectors / twice_area[:, None]
-        ).tolist(),
+        "interface_normal_unit_vectors": (area_vectors / twice_area[:, None]).tolist(),
         "interface_open_edge_count": int(len(open_edges)),
         "periodic_seam_open_edge_counts": seam_edge_counts,
-        "orphan_open_edges": [
-            list(value) for value in orphan_open_edges[:100]
-        ],
+        "orphan_open_edges": [list(value) for value in orphan_open_edges[:100]],
         "invalid_interface_edge_multiplicity": [
             list(value) for value in invalid_edge_multiplicity[:100]
         ],
@@ -346,12 +330,21 @@ def audit_shared_interface_topology(
 ) -> dict[str, Any]:
     """Require one indexed facet set with exactly two opposite-sense owners."""
 
-    expected = np.asarray(master.get("interface_triangles"), dtype=np.int64)
-    actual = np.asarray(shared_triangles, dtype=np.int64)
+    expected = np.asarray(master.get("interface_triangles"))
+    actual = np.asarray(shared_triangles)
     if expected.ndim != 2 or expected.shape[1:] != (3,):
         raise ValueError("master interface triangle inventory is malformed")
     if actual.ndim != 2 or actual.shape[1:] != (3,):
         raise ValueError("shared interface triangles must have shape (n,3)")
+    for label, values in (("master", expected), ("shared", actual)):
+        if not np.issubdtype(values.dtype, np.integer) and (
+            not np.all(np.isfinite(values)) or not np.all(values == np.floor(values))
+        ):
+            raise ValueError(f"{label} interface connectivity must be integral")
+    expected = np.asarray(expected, dtype=np.int64)
+    actual = np.asarray(actual, dtype=np.int64)
+    if np.any(expected < 0) or np.any(actual < 0):
+        raise ValueError("interface connectivity cannot contain negative IDs")
     expected_keys = sorted(tuple(sorted(map(int, row))) for row in expected)
     actual_keys = sorted(tuple(sorted(map(int, row))) for row in actual)
     expected_orientation = {
@@ -369,32 +362,22 @@ def audit_shared_interface_topology(
 
     orientation_pass = len(actual) == len(expected) and all(
         key in expected_orientation
-        and same_cyclic_orientation(
-            expected_orientation[key], tuple(map(int, row))
-        )
+        and same_cyclic_orientation(expected_orientation[key], tuple(map(int, row)))
         for row in actual
         for key in (tuple(sorted(map(int, row))),)
     )
-    ownership_rows = [
-        tuple(str(value) for value in row) for row in surface_owners
-    ]
+    ownership_rows = [tuple(str(value) for value in row) for row in surface_owners]
     expected_owners = {"chamber", "first_wall"}
     owner_pass = bool(
         len(ownership_rows) == len(actual)
-        and all(
-            len(row) == 2 and set(row) == expected_owners
-            for row in ownership_rows
-        )
+        and all(len(row) == 2 and set(row) == expected_owners for row in ownership_rows)
     )
     gates = {
-        "master_interface_declared_pass": master.get(
-            "source_master_interface_pass"
-        )
+        "master_interface_declared_pass": master.get("source_master_interface_pass")
         is True,
         "shared_connectivity_exact_pass": expected_keys == actual_keys,
         "outward_normal_orientation_pass": orientation_pass,
-        "no_duplicate_interface_facets_pass": len(actual_keys)
-        == len(set(actual_keys)),
+        "no_duplicate_interface_facets_pass": len(actual_keys) == len(set(actual_keys)),
         "surface_ownership_pass": owner_pass,
         "opposite_surface_senses_pass": int(chamber_sense) == 1
         and int(first_wall_sense) == -1,
@@ -412,6 +395,138 @@ def audit_shared_interface_topology(
         ),
         "gates": gates,
         "shared_interface_topology_pass": all(gates.values()),
+    }
+
+
+def audit_sector_seam_continuity(
+    vertices_cm: Any,
+    interface_triangles: Any,
+    *,
+    periodic_cut_plane_angles_degrees: Sequence[float] = (0.0, 90.0),
+    geometric_tolerance_cm: float = 1.0e-9,
+) -> dict[str, Any]:
+    """Require the two open sector boundaries to be rotation-periodic.
+
+    This is a coordinate-and-connectivity check, rather than a declaration
+    that both cut planes merely contain some facets.  The open interface edge
+    set on the first plane is rigidly rotated about the global z axis and must
+    match the complete edge set on the second plane one-to-one.
+    """
+
+    vertices = np.asarray(vertices_cm, dtype=np.float64)
+    faces = np.asarray(interface_triangles)
+    angles = np.asarray(periodic_cut_plane_angles_degrees, dtype=float).reshape(-1)
+    tolerance = float(geometric_tolerance_cm)
+    if vertices.ndim != 2 or vertices.shape[1:] != (3,):
+        raise ValueError("vertices must have shape (n,3)")
+    if not len(vertices) or not np.all(np.isfinite(vertices)):
+        raise ValueError("vertices must be nonempty and finite")
+    if faces.ndim != 2 or faces.shape[1:] != (3,):
+        raise ValueError("interface triangles must have shape (n,3)")
+    if not np.issubdtype(faces.dtype, np.integer):
+        if not np.all(np.isfinite(faces)) or not np.all(faces == np.floor(faces)):
+            raise ValueError("interface connectivity must be integral")
+    faces = np.asarray(faces, dtype=np.int64)
+    if not len(faces) or np.any(faces < 0) or np.any(faces >= len(vertices)):
+        raise ValueError("interface connectivity is empty or out of range")
+    if (
+        angles.shape != (2,)
+        or not np.all(np.isfinite(angles))
+        or not angles[0] < angles[1]
+        or not math.isfinite(tolerance)
+        or tolerance <= 0.0
+    ):
+        raise ValueError("sector-seam controls are invalid")
+
+    edge_counts: dict[tuple[int, int], int] = {}
+    for face in faces:
+        for first, second in ((0, 1), (1, 2), (2, 0)):
+            edge = tuple(sorted((int(face[first]), int(face[second]))))
+            edge_counts[edge] = edge_counts.get(edge, 0) + 1
+    invalid_multiplicity = sorted(
+        edge for edge, count in edge_counts.items() if count not in (1, 2)
+    )
+    open_edges = sorted(edge for edge, count in edge_counts.items() if count == 1)
+    plane_edges: list[list[tuple[int, int]]] = [[], []]
+    orphan_edges = []
+    multiply_classified_edges = []
+    for edge in open_edges:
+        points = vertices[list(edge)]
+        matches = [
+            bool(np.all(_plane_distance(points, angle) <= tolerance))
+            for angle in angles
+        ]
+        if sum(matches) == 0:
+            orphan_edges.append(edge)
+        elif sum(matches) > 1:
+            multiply_classified_edges.append(edge)
+        else:
+            plane_edges[matches.index(True)].append(edge)
+
+    def canonical_edge_coordinates(
+        edges: Sequence[tuple[int, int]],
+    ) -> np.ndarray:
+        rows = []
+        for edge in edges:
+            points = np.asarray(vertices[list(edge)], dtype=np.float64)
+            if tuple(points[1]) < tuple(points[0]):
+                points = points[::-1]
+            rows.append(points.reshape(-1))
+        if not rows:
+            return np.empty((0, 6), dtype=np.float64)
+        values = np.asarray(rows)
+        return values[np.lexsort(tuple(values[:, index] for index in range(5, -1, -1)))]
+
+    first = canonical_edge_coordinates(plane_edges[0]).reshape((-1, 2, 3))
+    second = canonical_edge_coordinates(plane_edges[1]).reshape((-1, 2, 3))
+    delta = math.radians(float(angles[1] - angles[0]))
+    rotation = np.asarray(
+        [
+            [math.cos(delta), -math.sin(delta), 0.0],
+            [math.sin(delta), math.cos(delta), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    rotated_rows = []
+    for edge_points in first:
+        points = edge_points @ rotation.T
+        if tuple(points[1]) < tuple(points[0]):
+            points = points[::-1]
+        rotated_rows.append(points.reshape(-1))
+    rotated = np.asarray(rotated_rows, dtype=np.float64).reshape((-1, 6))
+    if len(rotated):
+        rotated = rotated[
+            np.lexsort(tuple(rotated[:, index] for index in range(5, -1, -1)))
+        ]
+    second_rows = second.reshape((-1, 6))
+    coordinate_match = bool(
+        len(rotated) == len(second_rows)
+        and len(rotated) > 0
+        and np.allclose(rotated, second_rows, rtol=0.0, atol=tolerance)
+    )
+    gates = {
+        "valid_open_edge_multiplicity_pass": not invalid_multiplicity,
+        "all_open_edges_owned_by_one_seam_pass": not orphan_edges
+        and not multiply_classified_edges,
+        "seam_edge_count_match_pass": len(plane_edges[0]) == len(plane_edges[1])
+        and len(plane_edges[0]) > 0,
+        "rigid_rotation_coordinate_match_pass": coordinate_match,
+    }
+    return {
+        "schema": "parastell.periodic_sector_seam_audit/v1.0.0",
+        "periodic_cut_plane_angles_degrees": [float(value) for value in angles],
+        "geometric_tolerance_cm": tolerance,
+        "open_edge_count": len(open_edges),
+        "plane_open_edge_counts": [len(value) for value in plane_edges],
+        "orphan_open_edges": [list(value) for value in orphan_edges[:100]],
+        "multiply_classified_open_edges": [
+            list(value) for value in multiply_classified_edges[:100]
+        ],
+        "invalid_open_edge_multiplicity": [
+            list(value) for value in invalid_multiplicity[:100]
+        ],
+        "gates": gates,
+        "sector_seam_continuity_pass": all(gates.values()),
     }
 
 
@@ -444,15 +559,13 @@ def audit_source_conformal_containment_arrays(
     )
     volumes = np.asarray(tagged_volumes_cm3, dtype=float).reshape(-1)
     strengths = np.asarray(source_strengths_n_per_s, dtype=float).reshape(-1)
-    reference_volumes = np.asarray(
-        reference_tagged_volumes_cm3, dtype=float
-    ).reshape(-1)
+    reference_volumes = np.asarray(reference_tagged_volumes_cm3, dtype=float).reshape(
+        -1
+    )
     reference_strengths = np.asarray(
         reference_source_strengths_n_per_s, dtype=float
     ).reshape(-1)
-    arrays = audit_source_tetrahedra_arrays(
-        vertices[cells], volumes, strengths
-    )
+    arrays = audit_source_tetrahedra_arrays(vertices[cells], volumes, strengths)
     identity = canonical_source_mesh_arrays(
         vertices, vertices[cells], strengths, volumes
     )
@@ -462,9 +575,7 @@ def audit_source_conformal_containment_arrays(
         reference_strengths,
         reference_volumes,
     )
-    denominator = max(
-        abs(reference_identity["total_source_strength_n_per_s"]), 1.0
-    )
+    denominator = max(abs(reference_identity["total_source_strength_n_per_s"]), 1.0)
     relative_difference = (
         abs(
             identity["total_source_strength_n_per_s"]
@@ -473,22 +584,16 @@ def audit_source_conformal_containment_arrays(
         / denominator
     )
     semantic_identity_pass = (
-        identity["canonical_fingerprint"]
-        == reference_identity["canonical_fingerprint"]
+        identity["canonical_fingerprint"] == reference_identity["canonical_fingerprint"]
     )
     interface_ids = set(
-        int(value)
-        for value in master_interface.get("interface_vertex_ids", [])
+        int(value) for value in master_interface.get("interface_vertex_ids", [])
     )
     used_ids = set(int(value) for value in np.unique(cells))
     if not interface_ids or not interface_ids <= used_ids:
         raise ValueError("master interface vertex inventory is invalid")
-    shared_pass = (
-        shared_interface.get("shared_interface_topology_pass") is True
-    )
-    on_shared_count = sum(
-        int(value in interface_ids) for value in cells.reshape(-1)
-    )
+    shared_pass = shared_interface.get("shared_interface_topology_pass") is True
+    on_shared_count = sum(int(value in interface_ids) for value in cells.reshape(-1))
     inside_vertex_count = int(cells.size - on_shared_count)
     quadrature_inside = bool(
         np.all(SOURCE_QUADRATURE_BARYCENTRICS > 0.0)
@@ -511,27 +616,15 @@ def audit_source_conformal_containment_arrays(
     constructional_pass = all(gates.values())
     evidence = dict(physical_candidate_evidence or {})
     physical_evidence_gates = {
-        "schema_pass": evidence.get("schema")
-        == "parastell.source_conformal_physical_candidate/v1.0.0",
-        "input_class_pass": evidence.get("input_class") == "PHYSICAL",
-        "master_interface_bound_pass": evidence.get("master_interface_sha256")
-        == master_interface.get("master_interface_sha256"),
-        "dagmc_hash_pass": _valid_sha256(evidence.get("dagmc_h5m_sha256")),
-        "outer_layer_mapping_hash_pass": _valid_sha256(
-            evidence.get("outer_layer_mapping_sha256")
-        ),
-        "material_identity_hash_pass": _valid_sha256(
-            evidence.get("material_identity_sha256")
-        ),
-        "full_geometry_topology_pass": evidence.get(
-            "full_geometry_topology_pass"
-        )
-        is True,
-        "fixture_evidence_rejected_pass": evidence.get("fixture_only")
-        is False,
+        "post_export_signed_distance_audit_required": False,
+        "post_export_normal_audit_required": False,
+        "post_export_sector_seam_audit_required": False,
     }
-    physical_candidate = all(physical_evidence_gates.values())
-    transport_eligible = bool(constructional_pass and physical_candidate)
+    # This function proves properties of the immutable source packet only.  A
+    # caller-provided mapping of hashes and booleans is not physical evidence
+    # and must never promote that construction proof to transport eligibility.
+    physical_candidate = False
+    transport_eligible = False
     return {
         "schema": SOURCE_CONFORMAL_CONTAINMENT_SCHEMA,
         "status": (
@@ -548,9 +641,7 @@ def audit_source_conformal_containment_arrays(
             "OUTSIDE": 0,
             "AMBIGUOUS": 0 if shared_pass else int(on_shared_count),
         },
-        "quadrature_point_count": int(
-            len(cells) * len(SOURCE_QUADRATURE_BARYCENTRICS)
-        ),
+        "quadrature_point_count": int(len(cells) * len(SOURCE_QUADRATURE_BARYCENTRICS)),
         "quadrature_classification": {
             "INSIDE_BY_POSITIVE_BARYCENTRIC_COORDINATES": int(
                 len(cells) * len(SOURCE_QUADRATURE_BARYCENTRICS)
@@ -562,21 +653,359 @@ def audit_source_conformal_containment_arrays(
         "reference_source_mesh_identity": reference_identity,
         "source_semantic_identity_pass": semantic_identity_pass,
         "source_strength_relative_difference": float(relative_difference),
-        "source_strength_relative_tolerance": float(
-            source_strength_relative_tolerance
-        ),
+        "source_strength_relative_tolerance": float(source_strength_relative_tolerance),
         "coordinates_modified": False,
         "source_strengths_modified": False,
         "source_clipping_used": False,
         "source_projection_used": False,
         "source_rescaling_used": False,
+        "provided_physical_candidate_evidence_ignored": bool(evidence),
         "physical_candidate_evidence_gates": physical_evidence_gates,
         "physical_candidate": physical_candidate,
-        "full_geometry_topology_pass": physical_evidence_gates[
-            "full_geometry_topology_pass"
-        ],
+        "full_geometry_topology_pass": False,
         "gates": gates,
         "constructional_containment_pass": constructional_pass,
+        "transport_eligible": transport_eligible,
+        **arrays,
+    }
+
+
+def qualify_source_conformal_physical_candidate_arrays(
+    vertices_cm: Any,
+    tetrahedra: Any,
+    tagged_volumes_cm3: Any,
+    source_strengths_n_per_s: Any,
+    *,
+    reference_vertices_cm: Any,
+    reference_tetrahedra: Any,
+    reference_tagged_volumes_cm3: Any,
+    reference_source_strengths_n_per_s: Any,
+    master_interface: Mapping[str, Any],
+    actual_shared_vertex_coordinates_cm: Any,
+    actual_shared_triangles: Any,
+    surface_owners: Sequence[Sequence[str]],
+    shared_normal_unit_vectors: Any,
+    source_vertex_signed_distances_cm: Any,
+    source_quadrature_signed_distances_cm: Any,
+    observed_source_mesh_sha256: str,
+    immutable_source_mesh_sha256: str,
+    dagmc_h5m_sha256: str,
+    outer_layer_mapping_sha256: str,
+    material_identity_sha256: str,
+    periodic_cut_plane_angles_degrees: Sequence[float] = (0.0, 90.0),
+    geometric_tolerance_cm: float = 1.0e-9,
+    source_strength_relative_tolerance: float = 1.0e-12,
+    chamber_sense: int = 1,
+    first_wall_sense: int = -1,
+    input_class: str = "PHYSICAL",
+    fixture_only: bool = False,
+    prohibited_operations: Mapping[str, bool] | None = None,
+) -> dict[str, Any]:
+    """Qualify a post-export physical source-conformal candidate.
+
+    Signed distance is preregistered as negative inside the intended chamber
+    domain, zero on its boundary, and positive outside.  Interface vertices
+    are accepted as ``ON_SHARED_INTERFACE`` only when they are present in the
+    exact shared connectivity *and* their absolute signed distance is within
+    the declared tolerance.  Distance alone can never create interface
+    membership.
+    """
+
+    vertices, cells = _validated_mesh_arrays(vertices_cm, tetrahedra)
+    reference_vertices, reference_cells = _validated_mesh_arrays(
+        reference_vertices_cm, reference_tetrahedra
+    )
+    tolerance = float(geometric_tolerance_cm)
+    strength_tolerance = float(source_strength_relative_tolerance)
+    if (
+        not math.isfinite(tolerance)
+        or tolerance <= 0.0
+        or not math.isfinite(strength_tolerance)
+        or strength_tolerance < 0.0
+    ):
+        raise ValueError("containment tolerances are invalid")
+
+    volumes = np.asarray(tagged_volumes_cm3, dtype=float).reshape(-1)
+    strengths = np.asarray(source_strengths_n_per_s, dtype=float).reshape(-1)
+    reference_volumes = np.asarray(reference_tagged_volumes_cm3, dtype=float).reshape(
+        -1
+    )
+    reference_strengths = np.asarray(
+        reference_source_strengths_n_per_s, dtype=float
+    ).reshape(-1)
+    arrays = audit_source_tetrahedra_arrays(vertices[cells], volumes, strengths)
+    identity = canonical_source_mesh_arrays(
+        vertices, vertices[cells], strengths, volumes
+    )
+    reference_identity = canonical_source_mesh_arrays(
+        reference_vertices,
+        reference_vertices[reference_cells],
+        reference_strengths,
+        reference_volumes,
+    )
+    semantic_identity_pass = (
+        identity["canonical_fingerprint"] == reference_identity["canonical_fingerprint"]
+    )
+    denominator = max(abs(reference_identity["total_source_strength_n_per_s"]), 1.0)
+    strength_difference = (
+        abs(
+            identity["total_source_strength_n_per_s"]
+            - reference_identity["total_source_strength_n_per_s"]
+        )
+        / denominator
+    )
+
+    shared = audit_shared_interface_topology(
+        master_interface,
+        shared_triangles=actual_shared_triangles,
+        surface_owners=surface_owners,
+        chamber_sense=chamber_sense,
+        first_wall_sense=first_wall_sense,
+    )
+    actual_vertices = np.asarray(actual_shared_vertex_coordinates_cm, dtype=float)
+    if actual_vertices.shape != vertices.shape:
+        raise ValueError(
+            "actual shared vertex coordinates must match source vertex shape"
+        )
+    if not np.all(np.isfinite(actual_vertices)):
+        raise ValueError("actual shared vertex coordinates must be finite")
+    actual_triangles = np.asarray(actual_shared_triangles, dtype=np.int64)
+    if np.any(actual_triangles < 0) or np.any(actual_triangles >= len(vertices)):
+        raise ValueError("actual shared connectivity is out of source range")
+    actual_normals = np.asarray(shared_normal_unit_vectors, dtype=float)
+    if actual_normals.shape != (len(actual_triangles), 3):
+        raise ValueError("shared normal vectors must have shape (n_facets,3)")
+    if not np.all(np.isfinite(actual_normals)):
+        raise ValueError("shared normal vectors must be finite")
+    normal_norms = np.linalg.norm(actual_normals, axis=1)
+    normals_normalized = bool(
+        len(normal_norms) and np.allclose(normal_norms, 1.0, rtol=0.0, atol=1.0e-12)
+    )
+    expected_triangles = np.asarray(
+        master_interface.get("interface_triangles"), dtype=np.int64
+    )
+    expected_normals = np.asarray(
+        master_interface.get("interface_normal_unit_vectors"), dtype=float
+    )
+    if expected_normals.shape != (len(expected_triangles), 3):
+        raise ValueError("master interface normal inventory is malformed")
+    interface_ids_array = np.asarray(
+        master_interface.get("interface_vertex_ids"), dtype=np.int64
+    ).reshape(-1)
+    if (
+        not len(interface_ids_array)
+        or np.any(interface_ids_array < 0)
+        or np.any(interface_ids_array >= len(vertices))
+    ):
+        raise ValueError("master interface vertex inventory is invalid")
+    shared_coordinates_exact = bool(
+        len(interface_ids_array)
+        and np.array_equal(
+            actual_vertices[interface_ids_array], vertices[interface_ids_array]
+        )
+    )
+    actual_xyz = actual_vertices[actual_triangles]
+    actual_area_vectors = np.cross(
+        actual_xyz[:, 1] - actual_xyz[:, 0],
+        actual_xyz[:, 2] - actual_xyz[:, 0],
+    )
+    actual_twice_areas = np.linalg.norm(actual_area_vectors, axis=1)
+    derived_normals_valid = bool(
+        len(actual_twice_areas)
+        and np.all(np.isfinite(actual_twice_areas))
+        and np.all(actual_twice_areas > 0.0)
+    )
+    derived_normals = (
+        actual_area_vectors / actual_twice_areas[:, None]
+        if derived_normals_valid
+        else np.full_like(actual_area_vectors, np.nan)
+    )
+    readback_normals_match_geometry = bool(
+        derived_normals_valid
+        and np.allclose(actual_normals, derived_normals, rtol=0.0, atol=1.0e-12)
+    )
+    expected_by_facet = {
+        tuple(sorted(map(int, face))): expected_normals[index]
+        for index, face in enumerate(expected_triangles)
+    }
+    normal_alignment = []
+    for face, normal in zip(actual_triangles, actual_normals, strict=True):
+        expected = expected_by_facet.get(tuple(sorted(map(int, face))))
+        normal_alignment.append(
+            float(expected @ normal) if expected is not None else -math.inf
+        )
+    normal_orientation_pass = bool(
+        normals_normalized
+        and readback_normals_match_geometry
+        and normal_alignment
+        and min(normal_alignment) >= 1.0 - 1.0e-12
+    )
+
+    seam = audit_sector_seam_continuity(
+        actual_vertices,
+        actual_triangles,
+        periodic_cut_plane_angles_degrees=periodic_cut_plane_angles_degrees,
+        geometric_tolerance_cm=tolerance,
+    )
+    vertex_distances = np.asarray(
+        source_vertex_signed_distances_cm, dtype=float
+    ).reshape(-1)
+    quadrature_distances = np.asarray(
+        source_quadrature_signed_distances_cm, dtype=float
+    )
+    expected_quadrature_shape = (
+        len(cells),
+        len(SOURCE_QUADRATURE_BARYCENTRICS),
+    )
+    if vertex_distances.shape != (len(vertices),):
+        raise ValueError("source vertex signed distances have wrong shape")
+    if quadrature_distances.shape != expected_quadrature_shape:
+        raise ValueError("source quadrature signed distances have wrong shape")
+    if not (
+        np.all(np.isfinite(vertex_distances))
+        and np.all(np.isfinite(quadrature_distances))
+    ):
+        raise ValueError("signed distances must be finite")
+
+    interface_ids = set(
+        int(value) for value in master_interface.get("interface_vertex_ids", [])
+    )
+    if not interface_ids or not interface_ids <= set(range(len(vertices))):
+        raise ValueError("master interface vertex inventory is invalid")
+    vertex_counts = {
+        "ON_SHARED_INTERFACE": 0,
+        "INSIDE": 0,
+        "OUTSIDE": 0,
+        "AMBIGUOUS": 0,
+    }
+    for vertex_id, distance in enumerate(vertex_distances):
+        if vertex_id in interface_ids and abs(distance) <= tolerance:
+            vertex_counts["ON_SHARED_INTERFACE"] += 1
+        elif distance < -tolerance and vertex_id not in interface_ids:
+            vertex_counts["INSIDE"] += 1
+        elif distance > tolerance:
+            vertex_counts["OUTSIDE"] += 1
+        else:
+            vertex_counts["AMBIGUOUS"] += 1
+    quadrature_counts = {
+        "INSIDE": int(np.count_nonzero(quadrature_distances < -tolerance)),
+        "OUTSIDE": int(np.count_nonzero(quadrature_distances > tolerance)),
+        "AMBIGUOUS": int(np.count_nonzero(np.abs(quadrature_distances) <= tolerance)),
+    }
+
+    immutable_hash_pass = bool(
+        _valid_sha256(observed_source_mesh_sha256)
+        and _valid_sha256(immutable_source_mesh_sha256)
+        and observed_source_mesh_sha256 == immutable_source_mesh_sha256
+    )
+    artifact_hashes_pass = all(
+        _valid_sha256(value)
+        for value in (
+            dagmc_h5m_sha256,
+            outer_layer_mapping_sha256,
+            material_identity_sha256,
+        )
+    )
+    operations = dict(prohibited_operations or {})
+    prohibited_names = (
+        "source_coordinate_projection",
+        "source_mesh_rescaling",
+        "source_strength_rescaling",
+        "source_clipping",
+        "blind_global_refinement",
+    )
+    no_prohibited_operations = bool(
+        set(operations) == set(prohibited_names)
+        and all(operations[name] is False for name in prohibited_names)
+    )
+    gates = {
+        "physical_input_class_pass": input_class == "PHYSICAL"
+        and fixture_only is False,
+        "tetrahedron_data_pass": arrays["tetrahedron_data_gate_pass"],
+        "immutable_input_hash_pass": immutable_hash_pass,
+        "source_semantic_identity_pass": semantic_identity_pass,
+        "source_strength_invariance_pass": strength_difference <= strength_tolerance,
+        "artifact_hash_binding_pass": artifact_hashes_pass,
+        "shared_interface_topology_pass": shared["shared_interface_topology_pass"],
+        "shared_vertex_coordinates_exact_pass": shared_coordinates_exact,
+        "normal_orientation_pass": normal_orientation_pass,
+        "sector_seam_continuity_pass": seam["sector_seam_continuity_pass"],
+        "zero_outside_vertices_pass": vertex_counts["OUTSIDE"] == 0,
+        "zero_outside_quadrature_pass": quadrature_counts["OUTSIDE"] == 0,
+        "zero_ambiguous_samples_pass": vertex_counts["AMBIGUOUS"] == 0
+        and quadrature_counts["AMBIGUOUS"] == 0,
+        "no_prohibited_operations_pass": no_prohibited_operations,
+    }
+    software_gates = {
+        name: passed
+        for name, passed in gates.items()
+        if name != "physical_input_class_pass"
+    }
+    software_qualification_pass = all(software_gates.values())
+    transport_eligible = all(gates.values())
+    return {
+        "schema": "parastell.source_conformal_physical_qualification/v1.0.0",
+        "status": (
+            "PASS"
+            if transport_eligible
+            else ("DIAGNOSTIC_ONLY" if software_qualification_pass else "FAIL")
+        ),
+        "input_class": input_class,
+        "fixture_only": fixture_only,
+        "signed_distance_convention": (
+            "negative=inside, zero=boundary, positive=outside"
+        ),
+        "geometric_tolerance_cm": tolerance,
+        "distance_only_interface_classification_allowed": False,
+        "source_mesh_sha256": observed_source_mesh_sha256,
+        "immutable_source_mesh_sha256": immutable_source_mesh_sha256,
+        "dagmc_h5m_sha256": dagmc_h5m_sha256,
+        "outer_layer_mapping_sha256": outer_layer_mapping_sha256,
+        "material_identity_sha256": material_identity_sha256,
+        "master_interface_sha256": master_interface.get("master_interface_sha256"),
+        "source_mesh_canonical_fingerprint": identity["canonical_fingerprint"],
+        "reference_source_mesh_canonical_fingerprint": reference_identity[
+            "canonical_fingerprint"
+        ],
+        "source_strength_relative_difference": float(strength_difference),
+        "source_strength_relative_tolerance": strength_tolerance,
+        "vertex_count": len(vertices),
+        "vertex_classification": vertex_counts,
+        "quadrature_point_count": int(quadrature_distances.size),
+        "quadrature_classification": quadrature_counts,
+        "vertex_signed_distances_sha256": _array_payload_sha256(
+            "parastell.source_conformal_vertex_signed_distance/v1",
+            vertex_distances,
+            "<f8",
+        ),
+        "quadrature_signed_distances_sha256": _array_payload_sha256(
+            "parastell.source_conformal_quadrature_signed_distance/v1",
+            quadrature_distances,
+            "<f8",
+        ),
+        "shared_connectivity_sha256": _array_payload_sha256(
+            "parastell.source_conformal_shared_connectivity/v1",
+            actual_triangles,
+            "<u8",
+        ),
+        "shared_vertex_coordinates_sha256": _array_payload_sha256(
+            "parastell.source_conformal_shared_vertex_coordinates/v1",
+            actual_vertices[interface_ids_array],
+            "<f8",
+        ),
+        "shared_normals_sha256": _array_payload_sha256(
+            "parastell.source_conformal_shared_normals/v1",
+            actual_normals,
+            "<f8",
+        ),
+        "minimum_normal_alignment": (
+            float(min(normal_alignment)) if normal_alignment else None
+        ),
+        "shared_interface_audit": shared,
+        "sector_seam_audit": seam,
+        "prohibited_operations": operations,
+        "software_qualification_pass": software_qualification_pass,
+        "gates": gates,
         "transport_eligible": transport_eligible,
         **arrays,
     }
@@ -591,9 +1020,7 @@ def build_targeted_p4_plan(
 ) -> dict[str, Any]:
     """Create a deterministic, resumable precision-4 diagnostic plan."""
 
-    if not (
-        _valid_sha256(geometry_sha256) and _valid_sha256(interface_sha256)
-    ):
+    if not (_valid_sha256(geometry_sha256) and _valid_sha256(interface_sha256)):
         raise ValueError("P4 inputs require SHA-256 identities")
     timeout = int(timeout_seconds_per_region)
     if timeout <= 0:
@@ -607,9 +1034,7 @@ def build_targeted_p4_plan(
         value = bounds.get(region_id)
         if value is not None:
             value = [float(item) for item in value]
-            if len(value) != 6 or not all(
-                math.isfinite(item) for item in value
-            ):
+            if len(value) != 6 or not all(math.isfinite(item) for item in value):
                 raise ValueError(f"invalid bounds for P4 region {region_id}")
         regions.append(
             {
@@ -652,17 +1077,14 @@ def summarize_p4_results(
     for row in results:
         region = str(row.get("region_id"))
         if region not in expected or region in by_region:
-            raise ValueError(
-                "P4 results contain an unknown or duplicate region"
-            )
+            raise ValueError("P4 results contain an unknown or duplicate region")
         if row.get("status") not in allowed_statuses:
             raise ValueError("P4 result status is unsupported")
         if int(row.get("precision", -1)) != 4:
             raise ValueError("P4 result precision is not 4")
         if (
             row.get("geometry_sha256") != plan.get("geometry_sha256")
-            or row.get("master_interface_sha256")
-            != plan.get("master_interface_sha256")
+            or row.get("master_interface_sha256") != plan.get("master_interface_sha256")
             or row.get("plan_sha256") != plan.get("canonical_plan_sha256")
         ):
             raise ValueError("P4 result is not hash-bound to the plan")
@@ -722,11 +1144,18 @@ def write_compact_json_create_only(
         raise FileExistsError(f"temporary receipt exists: {temporary}")
     payload = dict(value)
     payload.setdefault("created_utc", datetime.now(timezone.utc).isoformat())
-    serialized = (
-        json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    )
-    temporary.write_text(serialized, encoding="utf-8")
-    temporary.replace(destination)
+    serialized = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as stream:
+            stream.write(serialized)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # A hard-link publication is atomic and, unlike Path.replace(), fails
+        # if another writer creates the destination after the checks above.
+        os.link(temporary, destination)
+    finally:
+        if temporary.exists() and not temporary.is_symlink():
+            temporary.unlink()
     return {
         "path": str(destination.resolve()),
         "size_bytes": destination.stat().st_size,

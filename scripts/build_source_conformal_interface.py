@@ -23,7 +23,6 @@ import parastell.source_conformal_interface as source_conformal  # noqa: E402
 from parastell.source_conformal_interface import (  # noqa: E402
     P4_RECEIPT_SCHEMA,
     SOURCE_CONFORMAL_MANIFEST_SCHEMA,
-    audit_shared_interface_topology,
     audit_source_conformal_containment_arrays,
     extract_source_master_interface,
     load_indexed_source_mesh,
@@ -64,13 +63,17 @@ def build(args: argparse.Namespace) -> None:
         periodic_cut_plane_angles_degrees=args.periodic_cut_plane_angles_degrees,
         geometric_tolerance_cm=args.shared_interface_tolerance_cm,
     )
-    shared = audit_shared_interface_topology(
-        master,
-        shared_triangles=master["interface_triangles"],
-        surface_owners=[
-            ("chamber", "first_wall") for _ in master["interface_triangles"]
-        ],
-    )
+    # The extracted source facets are a construction constraint, not yet a
+    # shared chamber/first-wall surface.  Do not claim post-export topology
+    # before the outer geometry producer has written and read back a candidate.
+    shared = {
+        "schema": "parastell.shared_source_chamber_interface/v1.0.0",
+        "status": "BLOCKED_INPUT",
+        "master_interface_sha256": master["master_interface_sha256"],
+        "triangle_count": 0,
+        "blocked_reason": ("full chamber/first-wall geometry has not been constructed"),
+        "shared_interface_topology_pass": False,
+    }
     containment = audit_source_conformal_containment_arrays(
         source["vertices_cm"],
         source["tetrahedra"],
@@ -79,9 +82,7 @@ def build(args: argparse.Namespace) -> None:
         reference_vertices_cm=reference["vertices_cm"],
         reference_tetrahedra=reference["tetrahedra"],
         reference_tagged_volumes_cm3=reference["tagged_volumes_cm3"],
-        reference_source_strengths_n_per_s=reference[
-            "source_strengths_n_per_s"
-        ],
+        reference_source_strengths_n_per_s=reference["source_strengths_n_per_s"],
         master_interface=master,
         shared_interface=shared,
     )
@@ -89,18 +90,14 @@ def build(args: argparse.Namespace) -> None:
         _hash_file(source_path) != source_before
         or _hash_file(reference_path) != reference_before
     ):
-        raise RuntimeError(
-            "source input changed during master-interface extraction"
-        )
+        raise RuntimeError("source input changed during master-interface extraction")
 
     output.mkdir(parents=True)
     packet_path = output / "MASTER_SOURCE_INTERFACE.npz"
     np.savez_compressed(
         packet_path,
         vertices_cm=np.asarray(source["vertices_cm"], dtype="<f8"),
-        interface_triangles=np.asarray(
-            master["interface_triangles"], dtype="<u8"
-        ),
+        interface_triangles=np.asarray(master["interface_triangles"], dtype="<u8"),
         interface_normal_unit_vectors=np.asarray(
             master["interface_normal_unit_vectors"], dtype="<f8"
         ),
@@ -138,9 +135,7 @@ def build(args: argparse.Namespace) -> None:
         "master_interface_packet": packet_identity,
         "implementation": {
             "producer_sha256": _hash_file(Path(__file__).resolve()),
-            "module_sha256": _hash_file(
-                Path(source_conformal.__file__).resolve()
-            ),
+            "module_sha256": _hash_file(Path(source_conformal.__file__).resolve()),
         },
         "master_interface": {
             key: master[key]
@@ -155,7 +150,7 @@ def build(args: argparse.Namespace) -> None:
                 "source_master_interface_pass",
             )
         },
-        "shared_interface_topology": shared,
+        "expected_shared_interface_topology": shared,
         "prohibited_operations": {
             "source_coordinate_projection": False,
             "source_mesh_rescaling": False,
@@ -167,6 +162,10 @@ def build(args: argparse.Namespace) -> None:
             "construct full chamber/first-wall and radial stack around the "
             "exact packet",
             "audit written H5M shared surface ownership and senses",
+            "evaluate signed distances for every source vertex and registered "
+            "source quadrature point using the frozen tolerance and negative-inside convention",
+            "bind actual shared connectivity, unit normals, sector seam mapping, "
+            "outer-layer mapping, material identity, and immutable input hashes",
             "run targeted native precision-4 plan",
             "run global native precision-4 only after targeted pass",
             "launch OpenMC geometry debug only after physical containment and P4 pass",
@@ -175,15 +174,14 @@ def build(args: argparse.Namespace) -> None:
     compact_containment = {
         key: value
         for key, value in containment.items()
-        if key
-        not in {"source_mesh_identity", "reference_source_mesh_identity"}
+        if key not in {"source_mesh_identity", "reference_source_mesh_identity"}
     }
     compact_containment["source_mesh_canonical_fingerprint"] = containment[
         "source_mesh_identity"
     ]["canonical_fingerprint"]
-    compact_containment["reference_source_mesh_canonical_fingerprint"] = (
-        containment["reference_source_mesh_identity"]["canonical_fingerprint"]
-    )
+    compact_containment["reference_source_mesh_canonical_fingerprint"] = containment[
+        "reference_source_mesh_identity"
+    ]["canonical_fingerprint"]
     compact_containment.update(
         {
             "source_mesh_sha256": source_before,
@@ -242,6 +240,13 @@ def build(args: argparse.Namespace) -> None:
             "exact source semantic identity and relative strength difference <= 1e-12",
             "zero outside or ambiguous source vertices and quadrature points",
         ],
+        "missing_physical_inputs": [
+            "post-export DAGMC H5M candidate and SHA-256",
+            "read-back shared vertex coordinates, surface connectivity, owners, senses, and unit normals",
+            "signed-distance arrays for all source vertices and registered quadrature points",
+            "outer-layer parametric mapping and material-identity hashes",
+            "periodic seam coordinate mapping for the complete open-edge inventory",
+        ],
     }
     write_compact_json_create_only(
         output / "SOURCE_CONFORMAL_GEOMETRY_MANIFEST.json", manifest
@@ -250,12 +255,8 @@ def build(args: argparse.Namespace) -> None:
         output / "SOURCE_CONFORMAL_CONTAINMENT_RECEIPT.json",
         compact_containment,
     )
-    write_compact_json_create_only(
-        output / "DAGMC_TARGETED_P4_RECEIPT.json", targeted
-    )
-    write_compact_json_create_only(
-        output / "DAGMC_GLOBAL_P4_RECEIPT.json", global_p4
-    )
+    write_compact_json_create_only(output / "DAGMC_TARGETED_P4_RECEIPT.json", targeted)
+    write_compact_json_create_only(output / "DAGMC_GLOBAL_P4_RECEIPT.json", global_p4)
     write_compact_json_create_only(
         output / "OPENMC_GEOMETRY_DEBUG_RECEIPT.json", openmc
     )
@@ -284,9 +285,7 @@ def parse_args() -> argparse.Namespace:
         nargs=2,
         default=(0.0, 90.0),
     )
-    parser.add_argument(
-        "--shared-interface-tolerance-cm", type=float, default=1.0e-9
-    )
+    parser.add_argument("--shared-interface-tolerance-cm", type=float, default=1.0e-9)
     return parser.parse_args()
 
 
