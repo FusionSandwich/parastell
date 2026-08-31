@@ -1,14 +1,22 @@
 {
   "schema": "parastell.activation_integration_status/v1.0.0",
-  "status": "BLOCKED_PENDING_ACCEPTED_GEOMETRY_AND_MEDIUM_FIELD",
-  "geometry_binding": "SUPERSEDED_CONTINUOUS_MAGNET_ENVELOPE",
-  "current_geometry_binding": "INDIVIDUAL_SWEPT_30X30_CM_HOMOGENIZED_COILS",
+  "status": "BLOCKED_PENDING_ACCEPTED_SOURCE_AND_VOLUME_FIELD",
+  "geometry_binding": "ACCEPTED_CONTINUOUS_90_DEGREE_RADIAL_MODEL",
+  "current_geometry_binding": "CONTINUOUS_30_CM_HOMOGENIZED_MAGNET_ENVELOPE",
   "current_alara_workflow_report": "reports/activation/ALARA_WORKFLOW_QUALIFICATION.json",
   "producer_contract_implemented": true,
-  "bounded_activation_qualification_status": "BLOCKED_PENDING_ACCEPTED_GEOMETRY_AND_MEDIUM_FIELD",
+  "bounded_activation_qualification_status": "BLOCKED_PENDING_ACCEPTED_SOURCE_AND_VOLUME_FIELD",
   "production_activation_status": "BLOCKED_PRODUCTION_NUCLEAR_DATA",
   "execution_owner": "DPA_workflow",
   "producer_owner": "FusionSandwich/parastell",
+  "accepted_geometry": {
+    "modeled_extent_degrees": 90.0,
+    "physical_volume_count": 9,
+    "continuous_magnet_volume_id": 9,
+    "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+    "native_geometry_gate": "PASS",
+    "openmc_navigation_gate": "PENDING_CONTAINED_SOURCE"
+  },
   "depletion_chain": {
     "format": "OpenMC depletion chain XML",
     "nuclide_count": 3820,
@@ -69,7 +77,7 @@
     "strengths_sha256": "0ed18ab58bcc1e9884bf1b5c8bf19a7b7558ce7afe1869f1a2b01710148af6df",
     "strength_sum_per_s": 9.427053032700795e19,
     "old_prompt1b_rate_rejected_for_rebinding_per_s": 2.693734274881251e20,
-    "status": "QUALIFIED_HALF_PERIOD_SOURCE_INPUT_NOT_VALID_AS_90_DEGREE_SOURCE"
+    "status": "SUPERSEDED_REFERENCE_ONLY_NOT_VALID_AS_DIRECT_90_DEGREE_SOURCE"
   },
   "expanded_90_degree_source": {
     "extent_degrees": 90.0,
@@ -82,12 +90,10 @@
     "tetrahedron_count": 172800,
     "seam_unmatched_face_count": 0,
     "accepted_geometry_containment_run": false,
-    "status": "EXPANDED_90_SOURCE_CONSTRUCTION_PASS_CONTAINMENT_PENDING"
+    "status": "SUPERSEDED_TILED_SOURCE_REFERENCE_DIRECT_90_SOURCE_REQUIRED"
   },
   "remaining_gates": [
-    "accepted direct-90 H5M with canonical fingerprint",
-    "nine-volume material and component inventory",
-    "zero native watertightness and overlap defects",
+    "contained direct-90 source mesh",
     "two-seed OpenMC 0.16.0 navigation pass",
     "actual OpenMC cell and material ID discovery",
     "source-mesh domain, element-order, and normalization audit receipt",

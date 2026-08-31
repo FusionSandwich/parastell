@@ -27,7 +27,7 @@
       107
     ]
   },
-  "local_mesh_bins_per_magnet": 0,
+  "local_mesh_bins_per_magnet": 64,
   "reaction_family_count": 6,
   "scope": "BOUNDED_SOFTWARE_AND_GEOMETRY_SMOKE_ONLY",
   "statistics_qualified": false,

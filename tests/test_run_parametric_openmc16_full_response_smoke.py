@@ -139,6 +139,50 @@ def test_smoke_controls_are_hard_capped(changes):
         runner._validate_smoke_controls(**values)
 
 
+def test_location_mesh_is_cell_filtered_and_preserves_global_coordinates():
+    class Mesh:
+        def __init__(self, name):
+            self.name = name
+            self.lower_left = None
+            self.upper_right = None
+            self.dimension = None
+
+    class MeshFilter:
+        def __init__(self, mesh):
+            self.mesh = mesh
+
+    fake_openmc = SimpleNamespace(RegularMesh=Mesh, MeshFilter=MeshFilter)
+    model = SimpleNamespace(
+        geometry=SimpleNamespace(
+            bounding_box=([-2.0, -3.0, -4.0], [5.0, 6.0, 7.0])
+        )
+    )
+    filters, spec = runner._location_mesh_filters(
+        fake_openmc, model, cell_ids=[9], bins_per_axis=4
+    )
+    assert list(filters) == [9]
+    assert spec == {
+        "scope": "global_mesh_cell_filtered_to_selected_magnet",
+        "lower_left_cm": [-2.0, -3.0, -4.0],
+        "upper_right_cm": [5.0, 6.0, 7.0],
+        "dimension": [4, 4, 4],
+        "selected_cell_ids": [9],
+        "empty_bins_mean_outside_selected_cell_not_zero_response": True,
+    }
+
+
+@pytest.mark.parametrize("bins", [-1, 1, 65, 2.5, True])
+def test_location_mesh_rejects_unsafe_dimensions(bins):
+    fake_openmc = SimpleNamespace()
+    with pytest.raises(ValueError, match="local mesh bins"):
+        runner._location_mesh_filters(
+            fake_openmc,
+            SimpleNamespace(),
+            cell_ids=[9],
+            bins_per_axis=bins,
+        )
+
+
 @pytest.mark.parametrize("make_bank", [True, False])
 def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
     model_xml = tmp_path / "model.xml"

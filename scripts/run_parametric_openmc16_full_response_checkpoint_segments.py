@@ -18,6 +18,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import time
 from typing import Any, Callable
 
 from parastell.openmc_checkpoint_restart_plan import (
@@ -244,25 +245,84 @@ def _segment_receipt_path(segment_root: Path) -> Path:
 
 
 def _validated_existing_segment_receipt(
-    path: Path, *, segment: Mapping[str, Any], model_sha256: str
+    path: Path,
+    *,
+    segment: Mapping[str, Any],
+    model_path: Path,
+    model_sha256: str,
+    particles_per_batch: int,
 ) -> dict[str, Any]:
+    receipt_path = path.resolve(strict=True)
+    segment_root = receipt_path.parent
     receipt = json.loads(path.read_text(encoding="utf-8"))
     unsigned = dict(receipt)
     content_hash = unsigned.pop("receipt_content_sha256", None)
+    settings = receipt.get("settings")
+    statepoint_summary = receipt.get("statepoint_batches")
+    run = receipt.get("run")
+    instrumented = receipt.get("instrumented_model_xml")
+    schedule = _required_schedule(segment)
     if (
         receipt.get("schema") != SEGMENT_SCHEMA
         or receipt.get("status") != "PASS"
         or content_hash != _canonical_sha(unsigned)
+        or receipt.get("claim") != "SEGMENT_RESTART_EVIDENCE_ONLY"
+        or receipt.get("run_mode") != "fixed source"
+        or receipt.get("production_run_authorized") is not False
+        or receipt.get("preserved_tallies_and_surface_settings") is not True
         or receipt.get("segment_index") != segment.get("segment_index")
-        or receipt.get("settings", {}).get("seed") != segment.get("seed")
-        or receipt.get("settings", {}).get("requested_batches")
+        or Path(str(receipt.get("segment_root", ""))).resolve() != segment_root
+        or not isinstance(settings, Mapping)
+        or settings.get("seed") != segment.get("seed")
+        or settings.get("requested_batches")
         != segment.get("requested_batches")
-        or receipt.get("instrumented_model_xml", {}).get("sha256")
-        != model_sha256
-        or not receipt.get("statepoints")
-        or not receipt.get("surface_source_files")
+        or settings.get("particles_per_batch") != particles_per_batch
+        or settings.get("statepoint_batches") != schedule
+        or not isinstance(statepoint_summary, Mapping)
+        or statepoint_summary.get("expected") != schedule
+        or statepoint_summary.get("observed") != schedule
+        or statepoint_summary.get("complete") is not True
+        or not isinstance(run, Mapping)
+        or run.get("exit_code") != 0
+        or run.get("timed_out") is not False
+        or not isinstance(instrumented, Mapping)
+        or Path(str(instrumented.get("path", ""))).resolve()
+        != model_path.resolve(strict=True)
+        or instrumented.get("sha256") != model_sha256
+        or receipt.get("segment_source_histories")
+        != particles_per_batch * int(segment.get("requested_batches"))
     ):
         raise ValueError("existing segment receipt is not reusable")
+
+    statepoints = receipt.get("statepoints")
+    banks = receipt.get("surface_source_files")
+    if not isinstance(statepoints, list) or not isinstance(banks, list):
+        raise ValueError("existing segment receipt artifact lists are invalid")
+    if [row.get("batch") for row in statepoints] != schedule or not banks:
+        raise ValueError(
+            "existing segment receipt schedule or banks are invalid"
+        )
+    seen: set[Path] = set()
+    for label, rows in (("statepoint", statepoints), ("surface bank", banks)):
+        for row in rows:
+            if not isinstance(row, Mapping) or set(row) not in (
+                {"path", "sha256"},
+                {"batch", "path", "sha256"},
+            ):
+                raise ValueError(f"existing {label} binding is invalid")
+            try:
+                artifact = Path(str(row.get("path", ""))).resolve(strict=True)
+            except OSError as error:
+                raise ValueError(f"existing {label} is missing") from error
+            try:
+                artifact.relative_to(segment_root)
+            except ValueError as error:
+                raise ValueError(
+                    f"existing {label} is outside the segment root"
+                ) from error
+            if artifact in seen or _sha256(artifact) != row.get("sha256"):
+                raise ValueError(f"existing {label} hash is invalid")
+            seen.add(artifact)
     return receipt
 
 
@@ -488,6 +548,8 @@ def run_checkpoint_segments(
     expected_launch_authorization_sha256: str,
     threads: int = 1,
     timeout_seconds: int = RUN_TIMEOUT_SECONDS,
+    segment_index: int | None = None,
+    remaining_walltime_seconds: int | None = None,
     run_openmc: Callable[..., dict[str, Any]] = _run_openmc,
 ) -> dict[str, Any]:
     receipt_path = _read_and_validate_binding(
@@ -499,6 +561,17 @@ def run_checkpoint_segments(
         raise ValueError("threads must be positive")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
+    if segment_index is not None and (
+        not isinstance(segment_index, int) or segment_index <= 0
+    ):
+        raise ValueError("segment_index must be a positive integer")
+    if remaining_walltime_seconds is not None and (
+        not isinstance(remaining_walltime_seconds, int)
+        or remaining_walltime_seconds < 0
+    ):
+        raise ValueError(
+            "remaining_walltime_seconds must be a non-negative integer"
+        )
 
     full_response_receipt, instrumented_binding = _load_full_response_receipt(
         receipt_path, expected_full_response_receipt_sha256
@@ -558,8 +631,21 @@ def run_checkpoint_segments(
     ):
         raise ValueError("checkpoint plan and instrumented model disagree")
 
+    planned_indices = {
+        int(segment["segment_index"])
+        for segment in checkpoint_plan["segments"]
+    }
+    if segment_index is not None and segment_index not in planned_indices:
+        raise ValueError("segment_index is not present in the checkpoint plan")
+
     campaign_rows = []
+    walltime_guard_stopped = False
+    walltime_started = time.monotonic()
+    stop_grace_seconds = int(
+        checkpoint_plan["signal_requeue_contract"]["stop_grace_seconds"]
+    )
     for segment in checkpoint_plan["segments"]:
+        current_index = int(segment["segment_index"])
         segment_root = Path(str(segment["artifact_root"]))
         expected_batches = _required_schedule(segment)
         segment_root = segment_root.resolve()
@@ -570,9 +656,22 @@ def run_checkpoint_segments(
             segment_receipt = _validated_existing_segment_receipt(
                 segment_receipt_path,
                 segment=segment,
+                model_path=instrumented_model_xml,
                 model_sha256=instrumented_binding["sha256"],
+                particles_per_batch=int(
+                    checkpoint_plan["run_intent"]["particles_per_batch"]
+                ),
             )
         else:
+            if segment_index is not None and current_index != segment_index:
+                continue
+            if remaining_walltime_seconds is not None:
+                elapsed = int(time.monotonic() - walltime_started)
+                remaining = max(0, remaining_walltime_seconds - elapsed)
+                required = timeout_seconds + stop_grace_seconds
+                if remaining < required:
+                    walltime_guard_stopped = True
+                    continue
             if any(segment_root.iterdir()):
                 raise ValueError(
                     "partial segment without a sealed receipt requires a new plan"
@@ -616,6 +715,32 @@ def run_checkpoint_segments(
             }
         )
 
+    if len(campaign_rows) != len(checkpoint_plan["segments"]):
+        completed_indices = sorted(
+            int(row["segment_index"]) for row in campaign_rows
+        )
+        return {
+            "schema": "parastell.openmc_checkpoint_progress/v1.0.0",
+            "campaign_id": checkpoint_plan["campaign_id"],
+            "status": (
+                "WALLTIME_GUARD_STOP"
+                if walltime_guard_stopped
+                else "SEGMENTS_PENDING"
+            ),
+            "claim": "SEGMENTED_FIXED_SOURCE_RESTART_ONLY",
+            "production_run_authorized": False,
+            "completed_segment_indices": completed_indices,
+            "pending_segment_indices": sorted(
+                planned_indices - set(completed_indices)
+            ),
+            "requested_segment_index": segment_index,
+            "remaining_walltime_seconds_at_start": remaining_walltime_seconds,
+            "required_start_margin_seconds": (
+                timeout_seconds + stop_grace_seconds
+            ),
+            "aggregate_inventory_written": False,
+        }
+
     inventory = _build_inventory(
         campaign_id=checkpoint_plan["campaign_id"],
         full_response_receipt=full_response_receipt,
@@ -649,6 +774,8 @@ def main() -> None:
     parser.add_argument(
         "--timeout-seconds", type=int, default=RUN_TIMEOUT_SECONDS
     )
+    parser.add_argument("--segment-index", type=int)
+    parser.add_argument("--remaining-walltime-seconds", type=int)
     args = parser.parse_args()
 
     run_checkpoint_segments(
@@ -660,6 +787,8 @@ def main() -> None:
         expected_launch_authorization_sha256=args.expected_launch_authorization_sha256,
         threads=args.threads,
         timeout_seconds=args.timeout_seconds,
+        segment_index=args.segment_index,
+        remaining_walltime_seconds=args.remaining_walltime_seconds,
     )
 
 

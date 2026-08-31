@@ -281,6 +281,7 @@ def add_envelope_tallies(
                 name=f"pstl_magnet_{int(cell)}_{particle}_local_mesh_flux"
             )
             mesh_flux.filters = [
+                openmc.CellFilter([int(cell)]),
                 mesh_filter,
                 openmc.ParticleFilter([particle]),
                 openmc.EnergyFilter(edges),
@@ -292,6 +293,7 @@ def add_envelope_tallies(
                 name=f"pstl_magnet_{int(cell)}_{particle}_local_mesh_heating"
             )
             mesh_heat.filters = [
+                openmc.CellFilter([int(cell)]),
                 mesh_filter,
                 openmc.ParticleFilter([particle]),
                 openmc.EnergyFilter(edges),
@@ -401,6 +403,7 @@ def add_envelope_tallies(
                 name=f"pstl_magnet_{int(cell)}_neutron_local_mesh_damage_energy"
             )
             local_damage.filters = [
+                openmc.CellFilter([int(cell)]),
                 mesh_filter,
                 openmc.ParticleFilter(["neutron"]),
                 openmc.EnergyFilter(neutron_edges_eV),
@@ -434,6 +437,7 @@ def add_envelope_tallies(
                 name=f"pstl_magnet_{int(cell)}_neutron_local_mesh_gas"
             )
             local_gas.filters = [
+                openmc.CellFilter([int(cell)]),
                 mesh_filter,
                 openmc.ParticleFilter(["neutron"]),
                 openmc.EnergyFilter(neutron_edges_eV),

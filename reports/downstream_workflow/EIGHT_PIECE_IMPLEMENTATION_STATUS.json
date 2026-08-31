@@ -1,26 +1,26 @@
 {
   "schema": "parastell.eight_piece_implementation_status/v1.0.0",
-  "status": "INFRASTRUCTURE_IMPLEMENTED_PHYSICAL_GEOMETRY_PENDING",
+  "status": "INFRASTRUCTURE_IMPLEMENTED_SOURCE_AND_OPENMC_GATES_PENDING",
   "statistics_scope": "WORKFLOW_SMOKE_ONLY",
   "accepted_global_magnet_design": {
-    "configuration": "configs/wistell_d_parametric_full_period.json",
+    "configuration": "configs/wistell_d_direct90_80x90.json",
     "modeled_toroidal_extent_degrees": 90.0,
-    "representation": "individual_swept_filament_coils",
-    "cross_section_cm": [
-      30.0,
-      30.0
-    ],
+    "representation": "continuous_30_cm_homogenized_magnet_envelope",
+    "radial_thickness_cm": 30.0,
     "material": "homogenized_magnet",
     "casing_winding_split": false,
-    "continuous_winding_surface_layer": false,
-    "implementation": "WIRED_SOURCE_CAD_BUILD_AND_GEOMETRY_GATES_PENDING"
+    "continuous_winding_surface_layer": true,
+    "physical_volume_count": 9,
+    "continuous_magnet_volume_id": 9,
+    "dagmc_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+    "implementation": "NATIVE_WATERTIGHTNESS_AND_OVERLAP_GATES_PASS"
   },
   "pieces": [
     {
       "id": 1,
       "name": "parametric_direct_90_degree_geometry",
       "implementation": "WIRED",
-      "execution": "NOT_RUN_AFTER_DESIGN_CHANGE",
+      "execution": "DIRECT_90_NATIVE_DAGMC_GATE_PASS",
       "evidence": [
         "configs/wistell_d_parametric_full_period.json",
         "parastell/parametric_geometry.py",
@@ -31,7 +31,7 @@
       "id": 2,
       "name": "arbitrary_magnet_selection_and_stable_identity",
       "implementation": "IMPLEMENTED_AND_UNIT_TESTED",
-      "execution": "PHYSICAL_IDS_PENDING_GEOMETRY_BUILD",
+      "execution": "CONTINUOUS_GLOBAL_MAGNET_ID_BOUND_ENGINEERING_COILS_METADATA_ONLY",
       "evidence": [
         "parastell/selected_case_instrumentation.py",
         "parastell/parametric_geometry.py"
@@ -59,7 +59,8 @@
       "id": 4,
       "name": "boundary_phase_space_and_local_replay_contract",
       "implementation": "IMPLEMENTED_AND_BOUNDED_FIXTURE_TESTED",
-      "execution": "ACCEPTED_90_DEGREE_GEOMETRY_BANK_PENDING",
+      "execution": "CLOSED_SURFACE_MANIFEST_PASS_OPENMC_BANK_PENDING",
+      "surface_manifest_sha256": "99c2feeb681e6c9eeff919a4084a15f9b77bc50357d464ccfbb1469178e198fe",
       "canonical_weight_semantics": "raw_openmc_weight_divided_only_by_exact_source_histories"
     },
     {
@@ -109,6 +110,6 @@
     "used_for_current_qualification": false,
     "historical_receipts_from_that_lane": "REJECTED_REFERENCE_ONLY"
   },
-  "next_gate": "BUILD_AND_QUALIFY_DIRECT_90_DEGREE_SWEPT_COIL_DAGMC_GEOMETRY",
+  "next_gate": "QUALIFY_CONTAINED_SOURCE_MESH_THEN_PASS_TWO_SEED_OPENMC16_NAVIGATION",
   "production_authorized": false
 }

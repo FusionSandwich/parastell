@@ -1,6 +1,6 @@
 {
   "schema": "parastell.openmc_downstream_data_contract_status/v1.0.0",
-  "status": "INFRASTRUCTURE_IMPLEMENTED_PHYSICAL_GEOMETRY_PENDING",
+  "status": "INFRASTRUCTURE_IMPLEMENTED_SOURCE_AND_OPENMC_GATES_PENDING",
   "statistics_scope": "WORKFLOW_SMOKE_ONLY",
   "global_magnet_representation": "homogenized",
   "producer_products": {
@@ -23,9 +23,11 @@
     "activation_schedule_contract": "IMPLEMENTED_AND_UNIT_TESTED",
     "alara_175_group_handoff_and_deck_export": "IMPLEMENTED_AND_UNIT_TESTED",
     "alara_bounded_synthetic_runtime": "PASSED",
-    "alara_physical_wistell_d_runtime": "BLOCKED_GEOMETRY_GATE",
-    "consumer_import_of_physical_smoke_artifact": "BLOCKED_GEOMETRY_GATE",
-    "accepted_90_degree_physical_statepoint": "BLOCKED_GEOMETRY_GATE"
+    "alara_physical_wistell_d_runtime": "BLOCKED_ACCEPTED_VOLUME_FIELD",
+    "consumer_import_of_physical_smoke_artifact": "BLOCKED_SOURCE_AND_OPENMC_NAVIGATION_GATES",
+    "accepted_90_degree_physical_statepoint": "BLOCKED_SOURCE_AND_OPENMC_NAVIGATION_GATES",
+    "accepted_continuous90_native_geometry": "PASS",
+    "continuous_magnet_surface_manifest": "PASS_OPENMC_BANK_PENDING"
   },
   "scientific_firewalls": {
     "activation_uses_volume_scalar_flux": true,

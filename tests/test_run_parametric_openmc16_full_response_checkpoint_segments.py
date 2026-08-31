@@ -247,6 +247,98 @@ def test_segment_lane_builds_manifest_and_preserves_seed_control(
     )
 
 
+def test_existing_segment_reuse_rehashes_bound_artifacts(
+    monkeypatch, tmp_path
+):
+    (
+        plan,
+        plan_path,
+        plan_sha,
+        auth_path,
+        auth_sha,
+        smoke_path,
+        smoke_sha,
+    ) = _build_inputs(tmp_path)
+    monkeypatch.setattr(lane, "_load_openmc_model", _fake_openmc_factory([]))
+    lane.run_checkpoint_segments(
+        full_response_receipt_path=smoke_path,
+        expected_full_response_receipt_sha256=smoke_sha,
+        checkpoint_plan_path=plan_path,
+        expected_checkpoint_plan_sha256=plan_sha,
+        launch_authorization_path=auth_path,
+        expected_launch_authorization_sha256=auth_sha,
+        run_openmc=_fake_run,
+    )
+
+    segment = plan["segments"][0]
+    segment_root = Path(segment["artifact_root"])
+    receipt_path = segment_root / "OPENMC_FULL_RESPONSE_SEGMENT_RECEIPT.json"
+    model_path = tmp_path / "instrumented_model.xml"
+    lane._validated_existing_segment_receipt(
+        receipt_path,
+        segment=segment,
+        model_path=model_path,
+        model_sha256=_sha(model_path),
+        particles_per_batch=1_000,
+    )
+
+    (segment_root / "surface_source.h5").write_text(
+        "tampered", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="surface bank hash is invalid"):
+        lane._validated_existing_segment_receipt(
+            receipt_path,
+            segment=segment,
+            model_path=model_path,
+            model_sha256=_sha(model_path),
+            particles_per_batch=1_000,
+        )
+
+
+def test_existing_segment_reuse_revalidates_safety_fields(
+    monkeypatch, tmp_path
+):
+    (
+        plan,
+        plan_path,
+        plan_sha,
+        auth_path,
+        auth_sha,
+        smoke_path,
+        smoke_sha,
+    ) = _build_inputs(tmp_path)
+    monkeypatch.setattr(lane, "_load_openmc_model", _fake_openmc_factory([]))
+    lane.run_checkpoint_segments(
+        full_response_receipt_path=smoke_path,
+        expected_full_response_receipt_sha256=smoke_sha,
+        checkpoint_plan_path=plan_path,
+        expected_checkpoint_plan_sha256=plan_sha,
+        launch_authorization_path=auth_path,
+        expected_launch_authorization_sha256=auth_sha,
+        run_openmc=_fake_run,
+    )
+
+    segment = plan["segments"][0]
+    receipt_path = (
+        Path(segment["artifact_root"])
+        / "OPENMC_FULL_RESPONSE_SEGMENT_RECEIPT.json"
+    )
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["run_mode"] = "eigenvalue"
+    receipt.pop("receipt_content_sha256")
+    receipt["receipt_content_sha256"] = lane._canonical_sha(receipt)
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    model_path = tmp_path / "instrumented_model.xml"
+    with pytest.raises(ValueError, match="not reusable"):
+        lane._validated_existing_segment_receipt(
+            receipt_path,
+            segment=segment,
+            model_path=model_path,
+            model_sha256=_sha(model_path),
+            particles_per_batch=1_000,
+        )
+
+
 def test_segment_lane_requires_surface_bank(monkeypatch, tmp_path):
     (
         plan,
@@ -322,5 +414,129 @@ def test_segment_lane_requires_launch_authorization_binding(
             expected_checkpoint_plan_sha256=plan_sha,
             launch_authorization_path=auth_path,
             expected_launch_authorization_sha256=_sha(auth_path),
+            run_openmc=_fake_run,
+        )
+
+
+def test_segment_lane_runs_one_requested_segment_per_invocation(
+    monkeypatch, tmp_path
+):
+    (
+        _plan_payload,
+        plan_path,
+        plan_sha,
+        auth_path,
+        auth_sha,
+        smoke_path,
+        smoke_sha,
+    ) = _build_inputs(tmp_path)
+    model_log: list[FakeModel] = []
+    monkeypatch.setattr(
+        lane, "_load_openmc_model", _fake_openmc_factory(model_log)
+    )
+
+    first = lane.run_checkpoint_segments(
+        full_response_receipt_path=smoke_path,
+        expected_full_response_receipt_sha256=smoke_sha,
+        checkpoint_plan_path=plan_path,
+        expected_checkpoint_plan_sha256=plan_sha,
+        launch_authorization_path=auth_path,
+        expected_launch_authorization_sha256=auth_sha,
+        segment_index=1,
+        run_openmc=_fake_run,
+    )
+    assert first["status"] == "SEGMENTS_PENDING"
+    assert first["completed_segment_indices"] == [1]
+    assert first["pending_segment_indices"] == [2, 3]
+    assert first["aggregate_inventory_written"] is False
+    assert len(model_log) == 1
+
+    second = lane.run_checkpoint_segments(
+        full_response_receipt_path=smoke_path,
+        expected_full_response_receipt_sha256=smoke_sha,
+        checkpoint_plan_path=plan_path,
+        expected_checkpoint_plan_sha256=plan_sha,
+        launch_authorization_path=auth_path,
+        expected_launch_authorization_sha256=auth_sha,
+        segment_index=2,
+        run_openmc=_fake_run,
+    )
+    assert second["completed_segment_indices"] == [1, 2]
+    assert len(model_log) == 2
+
+    final = lane.run_checkpoint_segments(
+        full_response_receipt_path=smoke_path,
+        expected_full_response_receipt_sha256=smoke_sha,
+        checkpoint_plan_path=plan_path,
+        expected_checkpoint_plan_sha256=plan_sha,
+        launch_authorization_path=auth_path,
+        expected_launch_authorization_sha256=auth_sha,
+        segment_index=3,
+        run_openmc=_fake_run,
+    )
+    assert final["status"] == "SEGMENTS_COMPLETE"
+    assert len(model_log) == 3
+
+
+def test_segment_lane_walltime_guard_does_not_start_transport(
+    monkeypatch, tmp_path
+):
+    (
+        _plan_payload,
+        plan_path,
+        plan_sha,
+        auth_path,
+        auth_sha,
+        smoke_path,
+        smoke_sha,
+    ) = _build_inputs(tmp_path)
+    model_log: list[FakeModel] = []
+    monkeypatch.setattr(
+        lane, "_load_openmc_model", _fake_openmc_factory(model_log)
+    )
+
+    progress = lane.run_checkpoint_segments(
+        full_response_receipt_path=smoke_path,
+        expected_full_response_receipt_sha256=smoke_sha,
+        checkpoint_plan_path=plan_path,
+        expected_checkpoint_plan_sha256=plan_sha,
+        launch_authorization_path=auth_path,
+        expected_launch_authorization_sha256=auth_sha,
+        segment_index=1,
+        timeout_seconds=120,
+        remaining_walltime_seconds=239,
+        run_openmc=_fake_run,
+    )
+
+    assert progress["status"] == "WALLTIME_GUARD_STOP"
+    assert progress["completed_segment_indices"] == []
+    assert progress["pending_segment_indices"] == [1, 2, 3]
+    assert progress["required_start_margin_seconds"] == 240
+    assert model_log == []
+    assert not (
+        tmp_path
+        / "campaign/segment_001/OPENMC_FULL_RESPONSE_SEGMENT_RECEIPT.json"
+    ).exists()
+
+
+def test_segment_lane_rejects_segment_not_in_plan(tmp_path):
+    (
+        _plan_payload,
+        plan_path,
+        plan_sha,
+        auth_path,
+        auth_sha,
+        smoke_path,
+        smoke_sha,
+    ) = _build_inputs(tmp_path)
+    with pytest.raises(ValueError, match="not present"):
+        lane.run_checkpoint_segments(
+            full_response_receipt_path=smoke_path,
+            expected_full_response_receipt_sha256=smoke_sha,
+            checkpoint_plan_path=plan_path,
+            expected_checkpoint_plan_sha256=plan_sha,
+            launch_authorization_path=auth_path,
+            expected_launch_authorization_sha256=auth_sha,
+            segment_index=4,
             run_openmc=_fake_run,
         )

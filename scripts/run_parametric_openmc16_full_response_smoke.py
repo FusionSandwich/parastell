@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
+import numpy as np
+
 from parastell.parametric_openmc16_model import (
     _canonical_sha,
     _statepoint_batches,
@@ -32,6 +34,51 @@ from scripts.run_parametric_openmc16_geometry_debug import (
 
 
 SCHEMA = "parastell.parametric_openmc16_full_response_smoke/v1.0.0"
+
+
+def _location_mesh_filters(
+    openmc,
+    model,
+    *,
+    cell_ids: list[int],
+    bins_per_axis: int,
+) -> tuple[dict[int, Any], dict[str, Any] | None]:
+    if isinstance(bins_per_axis, bool) or not isinstance(bins_per_axis, int):
+        raise ValueError("local mesh bins per axis must be an integer")
+    if bins_per_axis == 0:
+        return {}, None
+    if bins_per_axis < 2 or bins_per_axis > 64:
+        raise ValueError("local mesh bins per axis must be between 2 and 64")
+    lower, upper = model.geometry.bounding_box
+    lower = np.asarray(lower, dtype=float)
+    upper = np.asarray(upper, dtype=float)
+    if (
+        lower.shape != (3,)
+        or upper.shape != (3,)
+        or not np.isfinite(lower).all()
+        or not np.isfinite(upper).all()
+        or np.any(upper <= lower)
+    ):
+        raise ValueError("model bounding box is not finite for location mesh")
+    mesh = openmc.RegularMesh(name="pstl_global_location_mesh")
+    mesh.lower_left = lower.tolist()
+    mesh.upper_right = upper.tolist()
+    mesh.dimension = [bins_per_axis] * 3
+    mesh_filter = openmc.MeshFilter(mesh)
+    unique_cells = sorted(set(int(value) for value in cell_ids))
+    if not unique_cells or unique_cells[0] <= 0:
+        raise ValueError("location mesh cell IDs are invalid")
+    return (
+        {cell: mesh_filter for cell in unique_cells},
+        {
+            "scope": "global_mesh_cell_filtered_to_selected_magnet",
+            "lower_left_cm": mesh.lower_left,
+            "upper_right_cm": mesh.upper_right,
+            "dimension": mesh.dimension,
+            "selected_cell_ids": unique_cells,
+            "empty_bins_mean_outside_selected_cell_not_zero_response": True,
+        },
+    )
 
 
 def _validate_smoke_controls(
@@ -206,6 +253,7 @@ def main() -> None:
     parser.add_argument("--max-particles", type=int, default=100_000)
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=1800)
+    parser.add_argument("--local-mesh-bins-per-axis", type=int, default=0)
     args = parser.parse_args()
 
     if openmc.__version__ != "0.16.0":
@@ -265,6 +313,12 @@ def main() -> None:
     model.settings.statepoint = {"batches": expected_statepoint_batches}
     model.settings.output = {"tallies": False}
     model.tallies = openmc.Tallies()
+    local_mesh_filters, location_mesh = _location_mesh_filters(
+        openmc,
+        model,
+        cell_ids=list(magnet_cell_ids.values()),
+        bins_per_axis=args.local_mesh_bins_per_axis,
+    )
     surface_spec = build_surface_instrumentation_spec(
         surface_ids=sorted(signs),
         energy_edges_by_particle=response_plan["energy_axes_eV"],
@@ -280,6 +334,7 @@ def main() -> None:
         surface_spec=surface_spec,
         magnet_cell_ids=magnet_cell_ids,
         tally_profile="activation_ready",
+        local_mesh_filters_by_cell=local_mesh_filters,
     )
     component_cell_ids = receipt.get("component_cell_ids")
     if not isinstance(component_cell_ids, dict):
@@ -348,6 +403,7 @@ def main() -> None:
             == expected_statepoint_batches,
         },
         "seed": args.seed,
+        "location_mesh": location_mesh,
         "threads": args.threads,
         "timeout_seconds": args.timeout_seconds,
         "timed_out": run["timed_out"],

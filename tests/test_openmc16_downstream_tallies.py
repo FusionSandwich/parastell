@@ -109,6 +109,13 @@ def test_activation_ready_profile_configures_every_downstream_observable(
     for name in inventory.volume_flux:
         assert by_name[name].scores == ["flux"]
     assert by_name[inventory.damage_energy].scores == ["damage-energy"]
+    for name in (
+        *inventory.local_mesh_flux,
+        *inventory.local_mesh_heating,
+        *inventory.local_mesh_damage,
+        *inventory.local_mesh_gas,
+    ):
+        assert by_name[name].filters[0].bins == [9]
 
 
 def test_unavailable_nuclear_data_response_is_missing_not_zero(monkeypatch):
