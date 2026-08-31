@@ -1,0 +1,88 @@
+{
+  "schema": "parastell.poster_campaign_plan/v1.0.0",
+  "campaign_id": "wistell-d-poster-campaign-example",
+  "producer": "ParaStell",
+  "device": "WISTELL-D",
+  "campaign_purpose": "compact geometry-neutral poster scan for public review",
+  "baseline_case": {
+    "geometry": {
+      "layout": "wistell-sector",
+      "breeder": {
+        "enabled": true,
+        "scale": 1.0
+      },
+      "shield": {
+        "enabled": true,
+        "thickness_cm": 2.0
+      },
+      "spatial": {
+        "radius_cm": 400.0,
+        "vertical_extent_cm": 120.0
+      },
+      "selected_location": {
+        "region": "inner-equatorial",
+        "label": "baseline"
+      }
+    }
+  },
+  "controlled_breeder_cases": [
+    {
+      "geometry": {
+        "breeder": {
+          "scale": 0.9
+        }
+      }
+    },
+    {
+      "geometry": {
+        "breeder": {
+          "scale": 1.2
+        }
+      }
+    }
+  ],
+  "shield_cases": [
+    {
+      "geometry": {
+        "shield": {
+          "thickness_cm": 1.5
+        }
+      }
+    },
+    {
+      "geometry": {
+        "shield": {
+          "thickness_cm": 3.0
+        }
+      }
+    }
+  ],
+  "spatial_thickness_cases": [
+    {
+      "geometry": {
+        "thickness_cm": 0.8
+      }
+    },
+    {
+      "geometry": {
+        "thickness_cm": 1.4
+      }
+    }
+  ],
+  "selected_location_cases": [
+    {
+      "geometry": {
+        "selected_location": {
+          "label": "upper-outboard"
+        }
+      }
+    },
+    {
+      "geometry": {
+        "selected_location": {
+          "label": "lower-inboard"
+        }
+      }
+    }
+  ]
+}
