@@ -123,6 +123,8 @@ def test_loads_hash_bound_wrapped_response_plan(tmp_path):
         {"timeout_seconds": 0},
         {"timeout_seconds": 3_601},
         {"max_particles": 1_000_001},
+        {"max_source_files": 129},
+        {"max_source_files": 0},
     ],
 )
 def test_smoke_controls_are_hard_capped(changes):
@@ -131,6 +133,7 @@ def test_smoke_controls_are_hard_capped(changes):
         "batches": 2,
         "seed": 1,
         "max_particles": 100_000,
+        "max_source_files": 1,
         "threads": 1,
         "timeout_seconds": 60,
     }
@@ -234,10 +237,12 @@ def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
     )
     monkeypatch.setattr(runner, "_nuclear_data_hashes", lambda receipt: {})
     monkeypatch.setattr(runner, "_replace_dagmc_filename", lambda *a: 27)
+    surface_controls = []
     monkeypatch.setattr(
         runner,
         "build_surface_instrumentation_spec",
-        lambda **kwargs: {
+        lambda **kwargs: surface_controls.append(kwargs)
+        or {
             "coupling_interface": "homogenized_magnet_outer_boundary",
             "surface_ids": kwargs["surface_ids"],
         },
@@ -278,6 +283,8 @@ def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
             _sha(surface),
             "--expected-response-plan-sha256",
             _sha(plan_path),
+            "--max-source-files",
+            "8",
         ],
     )
     if make_bank:
@@ -295,6 +302,7 @@ def test_main_wires_and_runs_or_fails_closed(tmp_path, monkeypatch, make_bank):
     )
     assert result["statistics_qualified"] is False
     assert result["production_run_authorized"] is False
+    assert surface_controls[0]["max_source_files"] == 8
     assert result["statepoint_policy"] == {
         "interval_batches": 1,
         "expected_batches": [1, 2],

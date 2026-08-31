@@ -87,6 +87,7 @@ def _validate_smoke_controls(
     batches: int,
     seed: int,
     max_particles: int,
+    max_source_files: int,
     threads: int,
     timeout_seconds: int,
 ) -> None:
@@ -95,6 +96,7 @@ def _validate_smoke_controls(
         batches,
         seed,
         max_particles,
+        max_source_files,
         threads,
         timeout_seconds,
     )
@@ -106,6 +108,8 @@ def _validate_smoke_controls(
         raise ValueError("bounded smoke is capped at four OpenMP threads")
     if max_particles > 1_000_000:
         raise ValueError("bounded smoke bank capacity is capped at 1,000,000")
+    if max_source_files > 128:
+        raise ValueError("surface bank file count is capped at 128")
     if timeout_seconds > 3_600:
         raise ValueError("bounded smoke timeout is capped at 3,600 seconds")
 
@@ -251,6 +255,7 @@ def main() -> None:
     parser.add_argument("--statepoint-interval-batches", type=int, default=1)
     parser.add_argument("--seed", type=int, default=8_290_831)
     parser.add_argument("--max-particles", type=int, default=100_000)
+    parser.add_argument("--max-source-files", type=int, default=1)
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument("--local-mesh-bins-per-axis", type=int, default=0)
@@ -263,6 +268,7 @@ def main() -> None:
         batches=args.batches,
         seed=args.seed,
         max_particles=args.max_particles,
+        max_source_files=args.max_source_files,
         threads=args.threads,
         timeout_seconds=args.timeout_seconds,
     )
@@ -324,7 +330,7 @@ def main() -> None:
         energy_edges_by_particle=response_plan["energy_axes_eV"],
         openmc_normal_sign_by_surface=signs,
         max_particles_per_process=args.max_particles,
-        max_source_files=1,
+        max_source_files=args.max_source_files,
         mpi_ranks=1,
         coupling_interface=coupling_interface,
     )
