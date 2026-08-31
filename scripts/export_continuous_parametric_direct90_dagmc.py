@@ -48,6 +48,15 @@ BACKEND_ORDER = (
     "gap",
     "magnets",
 )
+REFACET_PROTOCOL_SCHEMA = (
+    "parastell.continuous_radial_refacet_protocol/v1.0.0"
+)
+FROZEN_MESHING = {
+    "minimum_cm": 5.0,
+    "maximum_cm": 20.0,
+    "algorithm": 1,
+    "threads": 32,
+}
 
 
 def _load_bound_json(path: Path, digest: str) -> dict[str, Any]:
@@ -97,6 +106,79 @@ def _validate_source_packet(args: argparse.Namespace) -> tuple[dict, dict]:
     ):
         raise ValueError("continuous source-CAD audit seal is invalid")
     return manifest, audit
+
+
+def _validate_meshing_contract(args: argparse.Namespace) -> dict | None:
+    """Preserve the frozen mode or validate an explicit refacet-only change."""
+    optional = (
+        args.refacet_protocol_path,
+        args.refacet_protocol_sha256,
+        args.reference_h5m_path,
+        args.reference_h5m_sha256,
+    )
+    if not any(optional):
+        topology_backend._validate_frozen_mesh_controls(
+            args.min_mesh_size_cm,
+            args.max_mesh_size_cm,
+            args.algorithm,
+            args.threads,
+        )
+        return None
+    if not all(optional):
+        raise ValueError(
+            "refaceting requires protocol and reference H5M paths and hashes"
+        )
+    protocol = _load_bound_json(
+        args.refacet_protocol_path.resolve(), args.refacet_protocol_sha256
+    )
+    reference_path = args.reference_h5m_path.resolve()
+    if sha256_file(reference_path) != args.reference_h5m_sha256:
+        raise ValueError("reference H5M hash mismatch")
+    source_packet = {
+        "manifest_sha256": args.manifest_sha256,
+        "audit_sha256": args.audit_sha256,
+        "audit_seal_sha256": args.audit_seal_sha256,
+        "audit_producer_sha256": args.audit_producer_sha256,
+    }
+    candidate_meshing = {
+        "minimum_cm": args.min_mesh_size_cm,
+        "maximum_cm": args.max_mesh_size_cm,
+        "algorithm": args.algorithm,
+        "threads": args.threads,
+    }
+    reference = protocol.get("reference", {})
+    candidate = protocol.get("candidate", {})
+    constraints = protocol.get("constraints", {})
+    if (
+        protocol.get("schema") != REFACET_PROTOCOL_SCHEMA
+        or protocol.get("status") != "PREREGISTERED"
+        or protocol.get("change_class")
+        != "REFACET_ONLY_SAME_CAD_SOURCE_AND_MATERIALS"
+        or protocol.get("source_packet") != source_packet
+        or reference.get("h5m_sha256") != args.reference_h5m_sha256
+        or reference.get("meshing") != FROZEN_MESHING
+        or candidate.get("meshing") != candidate_meshing
+        or candidate.get("output_root") != str(args.output_root.resolve())
+        or constraints
+        != {
+            "source_and_cad_immutable": True,
+            "materials_immutable": True,
+            "physical_h5m_mutation": False,
+            "output_create_only": True,
+            "transport_eligible_before_successor_gates": False,
+        }
+    ):
+        raise ValueError("refaceting protocol does not match this export")
+    if (
+        args.min_mesh_size_cm <= 0.0
+        or args.max_mesh_size_cm <= args.min_mesh_size_cm
+        or args.min_mesh_size_cm >= FROZEN_MESHING["minimum_cm"]
+        or args.max_mesh_size_cm >= FROZEN_MESHING["maximum_cm"]
+        or args.algorithm != FROZEN_MESHING["algorithm"]
+        or not 1 <= args.threads <= 64
+    ):
+        raise ValueError("candidate controls are not a bounded refinement")
+    return protocol
 
 
 def _canonicalize_roles(value: Any) -> Any:
@@ -167,12 +249,7 @@ def export(args: argparse.Namespace) -> None:
     if output.exists():
         raise FileExistsError(f"create-only output exists: {output}")
     manifest, _ = _validate_source_packet(args)
-    topology_backend._validate_frozen_mesh_controls(
-        args.min_mesh_size_cm,
-        args.max_mesh_size_cm,
-        args.algorithm,
-        args.threads,
-    )
+    refacet_protocol = _validate_meshing_contract(args)
     topology_backend._validate_thread_environment()
     import cad_to_dagmc
     import cadquery as cq
@@ -241,6 +318,12 @@ def export(args: argparse.Namespace) -> None:
             "source_manifest_sha256": args.manifest_sha256,
             "component_order": list(COMPONENT_ORDER),
             "magnet_representation": "continuous_30_cm_radial_envelope",
+            "export_mode": (
+                "hash_bound_refacet" if refacet_protocol else "frozen_coarse"
+            ),
+            "refacet_protocol_sha256": (
+                args.refacet_protocol_sha256 if refacet_protocol else None
+            ),
             "topology": topology,
         }
         (output / "PREMESH_TOPOLOGY.json").write_text(
@@ -291,6 +374,15 @@ def export(args: argparse.Namespace) -> None:
             "maximum_cm": args.max_mesh_size_cm,
             "algorithm": args.algorithm,
             "threads": args.threads,
+            "mode": (
+                "hash_bound_refacet" if refacet_protocol else "frozen_coarse"
+            ),
+            "refacet_protocol_sha256": (
+                args.refacet_protocol_sha256 if refacet_protocol else None
+            ),
+            "reference_h5m_sha256": (
+                args.reference_h5m_sha256 if refacet_protocol else None
+            ),
         },
         "import_assignment": assignment,
         "h5m": {
@@ -325,6 +417,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-mesh-size-cm", type=float, default=20.0)
     parser.add_argument("--algorithm", type=int, default=1)
     parser.add_argument("--threads", type=int, default=32)
+    parser.add_argument("--refacet-protocol-path", type=Path)
+    parser.add_argument("--refacet-protocol-sha256")
+    parser.add_argument("--reference-h5m-path", type=Path)
+    parser.add_argument("--reference-h5m-sha256")
     return parser.parse_args()
 
 
