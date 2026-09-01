@@ -10,9 +10,11 @@ from parastell.source_conformal_interface import (
     audit_source_conformal_containment_arrays,
     build_targeted_p4_plan,
     extract_source_master_interface,
+    qualify_source_conformal_outer_layer_readback_v2,
     qualify_source_conformal_physical_candidate_arrays,
     summarize_p4_results,
     write_compact_json_create_only,
+    write_source_conformal_v2_receipts_create_only,
 )
 
 
@@ -110,7 +112,9 @@ def test_shared_interface_requires_exact_connectivity_owners_and_opposite_senses
     duplicate_owner = audit_shared_interface_topology(
         master,
         shared_triangles=master["interface_triangles"],
-        surface_owners=[["chamber", "chamber"] for _ in master["interface_triangles"]],
+        surface_owners=[
+            ["chamber", "chamber"] for _ in master["interface_triangles"]
+        ],
     )
     assert duplicate_owner["gates"]["surface_ownership_pass"] is False
     assert duplicate_owner["shared_interface_topology_pass"] is False
@@ -257,7 +261,9 @@ def _physical_qualification(**overrides):
         ],
         "shared_normal_unit_vectors": master["interface_normal_unit_vectors"],
         "source_vertex_signed_distances_cm": np.zeros(len(vertices)),
-        "source_quadrature_signed_distances_cm": -np.ones((len(tetrahedra), 5)),
+        "source_quadrature_signed_distances_cm": -np.ones(
+            (len(tetrahedra), 5)
+        ),
         "observed_source_mesh_sha256": "a" * 64,
         "immutable_source_mesh_sha256": "a" * 64,
         "dagmc_h5m_sha256": "b" * 64,
@@ -328,7 +334,9 @@ def test_post_export_qualification_fails_closed_on_distance_normal_and_hash():
 def test_sector_seam_requires_one_to_one_rotational_coordinate_match():
     vertices, tetrahedra, _, _ = _quarter_sector_source()
     master = extract_source_master_interface(vertices, tetrahedra)
-    passing = audit_sector_seam_continuity(vertices, master["interface_triangles"])
+    passing = audit_sector_seam_continuity(
+        vertices, master["interface_triangles"]
+    )
     assert passing["sector_seam_continuity_pass"] is True
 
     changed = vertices.copy()
@@ -341,6 +349,120 @@ def test_sector_seam_requires_one_to_one_rotational_coordinate_match():
     assert failing["sector_seam_continuity_pass"] is False
 
 
+def _outer_layer_v2(**overrides):
+    geometry_hash = "a" * 64
+    interface_hash = "b" * 64
+    values = {
+        "source_qualification": {
+            "schema": "parastell.source_conformal_physical_qualification/v1.0.0",
+            "status": "DIAGNOSTIC_ONLY",
+            "dagmc_h5m_sha256": geometry_hash,
+            "master_interface_sha256": interface_hash,
+            "transport_eligible": False,
+        },
+        "dagmc_h5m_sha256": geometry_hash,
+        "master_interface_sha256": interface_hash,
+        "layer_order": ["first_wall", "blanket"],
+        "volume_rows": [
+            {
+                "volume_global_id": 1,
+                "layer_id": "first_wall",
+                "material_id": "steel",
+                "surface_global_ids": [10, 11, 12],
+            },
+            {
+                "volume_global_id": 2,
+                "layer_id": "blanket",
+                "material_id": "breeder",
+                "surface_global_ids": [12, 13, 14],
+            },
+        ],
+        "surface_rows": [
+            {
+                "surface_global_id": 10,
+                "owner_volume_ids": [1],
+                "owner_senses": [1],
+            },
+            {
+                "surface_global_id": 11,
+                "owner_volume_ids": [1],
+                "owner_senses": [1],
+            },
+            {
+                "surface_global_id": 12,
+                "owner_volume_ids": [1, 2],
+                "owner_senses": [1, -1],
+            },
+            {
+                "surface_global_id": 13,
+                "owner_volume_ids": [2],
+                "owner_senses": [1],
+            },
+            {
+                "surface_global_id": 14,
+                "owner_volume_ids": [2],
+                "owner_senses": [1],
+            },
+        ],
+        "master_interface_surface_ids": [12],
+        "master_interface_owner_layer_ids": ["first_wall", "blanket"],
+        "input_class": "FIXTURE",
+        "fixture_only": True,
+    }
+    values.update(overrides)
+    return qualify_source_conformal_outer_layer_readback_v2(**values)
+
+
+def test_outer_layer_v2_readback_closes_software_topology_without_physical_claim():
+    result = _outer_layer_v2()
+
+    assert result["status"] == "DIAGNOSTIC_ONLY"
+    assert result["software_qualification_pass"] is True
+    assert all(result["topology_gates"].values())
+    assert result["gates"]["source_v1_transport_eligible_pass"] is False
+    assert result["transport_eligible"] is False
+    assert result["physical_qualification_claimed"] is False
+    assert len(result["outer_layer_readback_sha256"]) == 64
+    assert len(result["source_v1_qualification_sha256"]) == 64
+
+
+def test_outer_layer_v2_rejects_bidirectional_incidence_mismatch():
+    result = _outer_layer_v2(
+        volume_rows=[
+            {
+                "volume_global_id": 1,
+                "layer_id": "first_wall",
+                "material_id": "steel",
+                "surface_global_ids": [10, 11, 12],
+            },
+            {
+                "volume_global_id": 2,
+                "layer_id": "blanket",
+                "material_id": "breeder",
+                "surface_global_ids": [13, 14],
+            },
+        ]
+    )
+
+    assert result["topology_gates"]["bidirectional_incidence_pass"] is False
+    assert result["incidence_mismatch_surface_ids"] == [12]
+    assert result["transport_eligible"] is False
+
+
+def test_outer_layer_v2_receipts_are_create_only(tmp_path):
+    result = _outer_layer_v2()
+    output = tmp_path / "source-conformal-v2"
+    identities = write_source_conformal_v2_receipts_create_only(output, result)
+
+    manifest = json.loads(
+        (output / "SOURCE_CONFORMAL_GEOMETRY_MANIFEST_V2.json").read_text()
+    )
+    assert len(identities["manifest"]["sha256"]) == 64
+    assert manifest["transport_eligible"] is False
+    with pytest.raises(FileExistsError):
+        write_source_conformal_v2_receipts_create_only(output, result)
+
+
 def test_p4_plan_is_precision_four_partitioned_and_resumable():
     plan = build_targeted_p4_plan(
         geometry_sha256="a" * 64,
@@ -348,7 +470,9 @@ def test_p4_plan_is_precision_four_partitioned_and_resumable():
         timeout_seconds_per_region=120,
         region_bounds_cm={"SOURCE_CHAMBER_INTERFACE": [0, 0, 0, 1, 1, 1]},
     )
-    assert [row["region_id"] for row in plan["regions"]] == list(P4_REGION_ORDER)
+    assert [row["region_id"] for row in plan["regions"]] == list(
+        P4_REGION_ORDER
+    )
     assert all(row["precision"] == 4 for row in plan["regions"])
 
     partial = summarize_p4_results(
@@ -412,7 +536,9 @@ def test_p4_plan_is_precision_four_partitioned_and_resumable():
 
 def test_compact_receipts_are_create_only_and_strict_json(tmp_path):
     path = tmp_path / "receipt.json"
-    identity = write_compact_json_create_only(path, {"status": "BLOCKED_INPUT"})
+    identity = write_compact_json_create_only(
+        path, {"status": "BLOCKED_INPUT"}
+    )
     assert len(identity["sha256"]) == 64
     assert json.loads(path.read_text())["status"] == "BLOCKED_INPUT"
     with pytest.raises(FileExistsError):
