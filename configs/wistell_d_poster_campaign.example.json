@@ -20,6 +20,20 @@
         "homogenized_magnet": 30.0
       },
       "material_binding_status": "REQUIRED_BEFORE_TRANSPORT",
+      "materials": {
+        "bundle_schema": "parastell.blanket_material_bundle/v1.0.0",
+        "preset": "dcll",
+        "pure_material_database": {
+          "repository": "https://github.com/FusionSandwich/fusion-material-db.git",
+          "revision": "9d8f84ad7b3ac2c587edfbe8ec1ed74891484498",
+          "path": "db-outputs/PureFusionMaterials_libv1.json",
+          "sha256": "bb15bbad56395269b2e07df183d35fa37894dd5f752ebc793166566d40d61577"
+        },
+        "role_recipe_overrides": {},
+        "binding_status": "GENERATE_AND_HASH_BIND_BEFORE_TRANSPORT",
+        "global_magnet_representation": "homogenized",
+        "explicit_rebco_layers": false
+      },
       "selected_location": {
         "metric": "damage-energy",
         "rank": 1,
@@ -29,6 +43,15 @@
     }
   },
   "controlled_breeder_cases": [
+    {
+      "geometry": {
+        "materials": {
+          "role_recipe_overrides": {
+            "breeder": "hcpb_beryllide_ceramic_breeder"
+          }
+        }
+      }
+    },
     {
       "geometry": {
         "radial_build_cm": {
@@ -45,6 +68,15 @@
     }
   ],
   "shield_cases": [
+    {
+      "geometry": {
+        "materials": {
+          "role_recipe_overrides": {
+            "high_temperature_shield": "hcpb_borated_rafs_helium_shield"
+          }
+        }
+      }
+    },
     {
       "geometry": {
         "radial_build_cm": {

@@ -1,0 +1,60 @@
+{
+  "schema": "parastell.blanket_reference_integration_audit/v1.0.0",
+  "status": "PASS_INFRASTRUCTURE_IMPLEMENTED_CASE_SELECTION_PENDING",
+  "reviewed_read_only_repositories": [
+    {
+      "identity": "StellaratorOptimization/BlanketNeutronics",
+      "revision": "bc4ab3d0f27369d4eda908a3fc187a10b6c7fedb",
+      "mirror_count": 4,
+      "modified": false
+    },
+    {
+      "identity": "FusionSandwich/fusion-material-db",
+      "revision": "9d8f84ad7b3ac2c587edfbe8ec1ed74891484498",
+      "modified": false
+    },
+    {
+      "identity": "FusionSandwich/radial_build_tools",
+      "revision": "d195d5a9f777c3ac42a9033646937558e07748e0",
+      "modified": false
+    }
+  ],
+  "implemented": {
+    "dcll_full_preset": true,
+    "hcpb_full_preset": true,
+    "controlled_breeder_substitution": true,
+    "controlled_shield_substitution": true,
+    "isotope_expansion": true,
+    "deterministic_openmc_materials_xml": true,
+    "source_revision_and_hash_provenance": true,
+    "global_magnet_homogenized": true,
+    "local_rebco_geometry_created": false,
+    "physical_geometry_changed": false
+  },
+  "tally_comparison": {
+    "blanket_required_responses": [
+      "tritium_production",
+      "heating",
+      "damage_energy",
+      "gas_production",
+      "fast_flux_and_fluence",
+      "relative_uncertainty"
+    ],
+    "current_parastell_superset": true,
+    "legacy_fixed_cell_id_code_copied": false
+  },
+  "bounded_generation": {
+    "source_database_sha256": "bb15bbad56395269b2e07df183d35fa37894dd5f752ebc793166566d40d61577",
+    "dcll_bundle_sha256": "26efec77e4579e8fbba207eaa983072c464133a19fc743ed45b88c7e05821d50",
+    "dcll_openmc_xml_sha256": "09c075117e4a9150a79551928d4ad581b68ba48730e0c6cd3cbe25ca5199f179",
+    "hcpb_bundle_sha256": "cd93eccd62cc80796c37e5de420084303910a0af2c5433289e746bb1cc4ca01a",
+    "hcpb_openmc_xml_sha256": "a2131875e624aed091cb69f1d51f166f22117b2904ea8bf02343aecaab7cffc8",
+    "transport_histories": 0,
+    "local_openmc_parser_available": false,
+    "structural_xml_validation": "PASS",
+    "focused_tests": "38_PASS",
+    "full_windows_suite": "BLOCKED_OPTIONAL_OPENMC_GMSH_PYMOAB_RUNTIMES_ABSENT"
+  },
+  "next_gate": "SELECT_AND_HASH_BIND_EXACT_MATERIAL_BUNDLE_IN_OPENMC16_RUNTIME",
+  "production_authorized": false
+}
