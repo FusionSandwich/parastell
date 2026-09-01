@@ -126,6 +126,37 @@ def test_conservative_mapping_closes_integrals_and_declares_density_rule():
     assert mapping["hidden_renormalization_used"] is False
 
 
+def test_conservative_mapping_caches_family_and_tape_identity_per_patch():
+    atlas = build_facet_patch_atlas(_catalog())
+    mapping = build_conservative_mapping_metadata(
+        atlas,
+        ["patch-a", "patch-b"],
+        family_id_by_facet=["family-a", "family-b"],
+        tape_id_by_facet=["tape-a", "tape-b"],
+    )
+
+    binding = mapping["identity_binding"]
+    assert binding["family_ids"] == ["family-a", "family-b"]
+    assert binding["tape_ids"] == ["tape-a", "tape-b"]
+    assert binding["complete_facet_identity_pass"] is True
+    assert [row["patch_id"] for row in binding["patch_bindings"]] == [
+        "patch-a",
+        "patch-b",
+    ]
+    assert len(mapping["mapping_sha256"]) == 64
+
+
+def test_conservative_mapping_rejects_mixed_family_identity_within_patch():
+    atlas = build_facet_patch_atlas(_catalog())
+    with pytest.raises(ValueError, match="exactly one REBCO family"):
+        build_conservative_mapping_metadata(
+            atlas,
+            ["shared", "shared"],
+            family_id_by_facet=["family-a", "family-b"],
+            tape_id_by_facet=["tape-a", "tape-b"],
+        )
+
+
 def test_atlas_bundle_is_create_only_and_remains_diagnostic(tmp_path):
     atlas = build_facet_patch_atlas(_catalog())
     mapping = build_conservative_mapping_metadata(atlas)

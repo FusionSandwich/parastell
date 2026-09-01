@@ -485,6 +485,9 @@ def localize_surface_crossings_cached(
 def build_conservative_mapping_metadata(
     atlas: FacetPatchAtlas,
     patch_id_by_facet: Sequence[str] | None = None,
+    *,
+    family_id_by_facet: Sequence[str] | None = None,
+    tape_id_by_facet: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Describe conservative integral/density maps without moving geometry."""
 
@@ -493,6 +496,24 @@ def build_conservative_mapping_metadata(
     ).astype(str)
     if patch_ids.shape != (atlas.facet_count,) or np.any(patch_ids == ""):
         raise ValueError("patch IDs must align one-to-one with facets")
+    if (family_id_by_facet is None) != (tape_id_by_facet is None):
+        raise ValueError(
+            "family and tape facet identities must be supplied together"
+        )
+    family_ids = None
+    tape_ids = None
+    if family_id_by_facet is not None:
+        family_ids = np.asarray(family_id_by_facet).astype(str)
+        tape_ids = np.asarray(tape_id_by_facet).astype(str)
+        if (
+            family_ids.shape != (atlas.facet_count,)
+            or tape_ids.shape != (atlas.facet_count,)
+            or np.any(family_ids == "")
+            or np.any(tape_ids == "")
+        ):
+            raise ValueError(
+                "family and tape IDs must align one-to-one with facets"
+            )
     unique_patches = sorted(set(patch_ids.tolist()))
     patch_index = {value: index for index, value in enumerate(unique_patches)}
     patch_areas = np.zeros(len(unique_patches))
@@ -541,6 +562,44 @@ def build_conservative_mapping_metadata(
         "hidden_renormalization_used": False,
         "physical_qualification_claimed": False,
     }
+    if family_ids is not None and tape_ids is not None:
+        patch_bindings = []
+        for patch_index_value, patch_id in enumerate(unique_patches):
+            facet_indices = np.flatnonzero(rows == patch_index_value)
+            patch_families = sorted(set(family_ids[facet_indices].tolist()))
+            patch_tapes = sorted(set(tape_ids[facet_indices].tolist()))
+            if len(patch_families) != 1 or len(patch_tapes) != 1:
+                raise ValueError(
+                    "every cached patch must bind exactly one REBCO family and tape"
+                )
+            patch_bindings.append(
+                {
+                    "patch_id": patch_id,
+                    "family_id": patch_families[0],
+                    "tape_id": patch_tapes[0],
+                    "facet_count": len(facet_indices),
+                    "facet_ids": sorted(
+                        atlas.facet_ids[facet_indices].tolist()
+                    ),
+                    "patch_area_cm2": float(patch_areas[patch_index_value]),
+                }
+            )
+        metadata["identity_binding"] = {
+            "schema": "parastell.family_tagged_facet_patch_identity/v1.0.0",
+            "family_ids": sorted(set(family_ids.tolist())),
+            "tape_ids": sorted(set(tape_ids.tolist())),
+            "family_ids_by_facet_sha256": _canonical_hash(
+                {"family_ids": family_ids.tolist()}
+            ),
+            "tape_ids_by_facet_sha256": _canonical_hash(
+                {"tape_ids": tape_ids.tolist()}
+            ),
+            "patch_bindings": patch_bindings,
+            "complete_facet_identity_pass": sum(
+                row["facet_count"] for row in patch_bindings
+            )
+            == atlas.facet_count,
+        }
     metadata["mapping_sha256"] = _canonical_hash(metadata)
     return metadata
 

@@ -8,6 +8,7 @@ from parastell.source_conformal_interface import (
     audit_sector_seam_continuity,
     audit_shared_interface_topology,
     audit_source_conformal_containment_arrays,
+    build_source_conformal_multirebco_producer_request_v2,
     build_targeted_p4_plan,
     extract_source_master_interface,
     qualify_source_conformal_outer_layer_readback_v2,
@@ -424,6 +425,135 @@ def test_outer_layer_v2_readback_closes_software_topology_without_physical_claim
     assert result["physical_qualification_claimed"] is False
     assert len(result["outer_layer_readback_sha256"]) == 64
     assert len(result["source_v1_qualification_sha256"]) == 64
+    assert result["gates"]["exact_immutable_interface_readback_pass"] is False
+    assert result["gates"]["multi_rebco_patch_tape_identity_pass"] is False
+
+
+def _multirebco_readback(**overrides):
+    vertices, tetrahedra, _, _ = _quarter_sector_source()
+    master = extract_source_master_interface(vertices, tetrahedra)
+    interface_hash = master["master_interface_sha256"]
+    values = {
+        "source_qualification": {
+            "schema": "parastell.source_conformal_physical_qualification/v1.0.0",
+            "status": "DIAGNOSTIC_ONLY",
+            "dagmc_h5m_sha256": "a" * 64,
+            "master_interface_sha256": interface_hash,
+            "transport_eligible": False,
+        },
+        "master_interface_sha256": interface_hash,
+        "expected_interface_vertices_cm": vertices,
+        "expected_interface_triangles": master["interface_triangles"],
+        "readback_interface_vertices_cm": vertices.copy(),
+        "readback_interface_triangles": np.asarray(
+            master["interface_triangles"], dtype=np.int64
+        ),
+        "rebco_family_rows": [
+            {
+                "family_id": "family-a",
+                "tape_stack_id": "stack-a",
+                "tape_stack_sha256": "c" * 64,
+                "material_id": "steel",
+                "tape_ids": ["tape-a"],
+            },
+            {
+                "family_id": "family-b",
+                "tape_stack_id": "stack-b",
+                "tape_stack_sha256": "d" * 64,
+                "material_id": "breeder",
+                "tape_ids": ["tape-b"],
+            },
+        ],
+        "rebco_patch_rows": [
+            {
+                "patch_id": "patch-a",
+                "family_id": "family-a",
+                "tape_id": "tape-a",
+                "volume_global_id": 1,
+                "surface_global_ids": [10],
+                "facet_ids": ["facet-a"],
+                "facet_catalog_sha256": "e" * 64,
+                "atlas_sha256": "f" * 64,
+                "mapping_sha256": "3" * 64,
+            },
+            {
+                "patch_id": "patch-b",
+                "family_id": "family-b",
+                "tape_id": "tape-b",
+                "volume_global_id": 2,
+                "surface_global_ids": [13],
+                "facet_ids": ["facet-b"],
+                "facet_catalog_sha256": "e" * 64,
+                "atlas_sha256": "f" * 64,
+                "mapping_sha256": "3" * 64,
+            },
+        ],
+    }
+    values.update(overrides)
+    return _outer_layer_v2(**values)
+
+
+def test_outer_layer_v2_binds_exact_interface_and_multiple_rebco_families():
+    result = _multirebco_readback()
+
+    assert result["status"] == "DIAGNOSTIC_ONLY"
+    assert result["gates"]["exact_immutable_interface_readback_pass"] is True
+    assert result["gates"]["multi_rebco_patch_tape_identity_pass"] is True
+    identity = result["outer_layer_readback"]["multirebco_patch_tape_identity"]
+    assert identity["family_count"] == 2
+    assert identity["tape_count"] == 2
+    assert identity["patch_count"] == 2
+    assert len(identity["identity_sha256"]) == 64
+    assert result["transport_eligible"] is False
+    assert result["physical_qualification_claimed"] is False
+
+
+def test_outer_layer_v2_rejects_one_bit_interface_coordinate_change():
+    vertices, _, _, _ = _quarter_sector_source()
+    changed = vertices.copy()
+    changed[0, 0] = np.nextafter(changed[0, 0], 1.0)
+    result = _multirebco_readback(readback_interface_vertices_cm=changed)
+
+    audit = result["outer_layer_readback"]["immutable_interface_readback"]
+    assert audit["coordinates_bitwise_exact_pass"] is False
+    assert audit["readback_hash_binding_pass"] is False
+    assert result["gates"]["exact_immutable_interface_readback_pass"] is False
+    assert result["transport_eligible"] is False
+
+
+def test_outer_layer_v2_requires_every_declared_tape_to_have_a_patch():
+    result = _multirebco_readback(
+        rebco_patch_rows=_multirebco_readback()["outer_layer_readback"][
+            "multirebco_patch_tape_identity"
+        ]["patches"][:1]
+    )
+
+    identity = result["outer_layer_readback"]["multirebco_patch_tape_identity"]
+    assert identity["missing_tape_ids"] == ["tape-b"]
+    assert identity["multi_rebco_identity_pass"] is False
+    assert result["transport_eligible"] is False
+
+
+def test_multirebco_producer_request_is_explicit_and_never_launches():
+    request = build_source_conformal_multirebco_producer_request_v2(
+        master_interface_sha256="a" * 64,
+        master_interface_packet={
+            "path": "MASTER_SOURCE_INTERFACE.npz",
+            "size_bytes": 123,
+            "sha256": "b" * 64,
+        },
+        requested_family_ids=["family-a", "family-b"],
+        requested_tape_ids_by_family={
+            "family-a": ["tape-a"],
+            "family-b": ["tape-b"],
+        },
+    )
+
+    assert request["status"] == "BLOCKED_PHYSICAL_CANDIDATE"
+    assert request["p4_launch_authorized"] is False
+    assert request["openmc_launch_authorized"] is False
+    assert request["physical_qualification_claimed"] is False
+    assert len(request["request_sha256"]) == 64
 
 
 def test_outer_layer_v2_rejects_bidirectional_incidence_mismatch():
@@ -450,7 +580,7 @@ def test_outer_layer_v2_rejects_bidirectional_incidence_mismatch():
 
 
 def test_outer_layer_v2_receipts_are_create_only(tmp_path):
-    result = _outer_layer_v2()
+    result = _multirebco_readback()
     output = tmp_path / "source-conformal-v2"
     identities = write_source_conformal_v2_receipts_create_only(output, result)
 
@@ -459,6 +589,9 @@ def test_outer_layer_v2_receipts_are_create_only(tmp_path):
     )
     assert len(identities["manifest"]["sha256"]) == 64
     assert manifest["transport_eligible"] is False
+    assert manifest["exact_immutable_interface_readback_pass"] is True
+    assert manifest["multi_rebco_patch_tape_identity_pass"] is True
+    assert len(manifest["multirebco_identity_sha256"]) == 64
     with pytest.raises(FileExistsError):
         write_source_conformal_v2_receipts_create_only(output, result)
 

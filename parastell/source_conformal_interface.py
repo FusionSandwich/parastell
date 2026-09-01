@@ -40,6 +40,9 @@ SOURCE_CONFORMAL_V2_SCHEMA = (
 OUTER_LAYER_READBACK_SCHEMA = (
     "parastell.source_conformal_outer_layer_readback/v2.0.0"
 )
+MULTIREBCO_PRODUCER_REQUEST_SCHEMA = (
+    "parastell.source_conformal_multirebco_producer_request/v2.1.0"
+)
 P4_PLAN_SCHEMA = "parastell.dagmc_targeted_p4_plan/v1.0.0"
 P4_RECEIPT_SCHEMA = "parastell.dagmc_p4_receipt/v1.0.0"
 
@@ -1101,6 +1104,363 @@ def qualify_source_conformal_physical_candidate_arrays(
     }
 
 
+def _audit_exact_immutable_interface_readback(
+    *,
+    master_interface_sha256: str,
+    expected_vertices_cm: Any | None,
+    expected_triangles: Any | None,
+    readback_vertices_cm: Any | None,
+    readback_triangles: Any | None,
+) -> dict[str, Any]:
+    """Require bitwise-identical indexed interface arrays after H5M readback."""
+
+    supplied = (
+        expected_vertices_cm,
+        expected_triangles,
+        readback_vertices_cm,
+        readback_triangles,
+    )
+    if all(value is None for value in supplied):
+        return {
+            "schema": "parastell.immutable_interface_readback/v1.0.0",
+            "status": "BLOCKED_INPUT",
+            "exact_immutable_interface_pass": False,
+            "missing_inputs": [
+                "master packet vertices_cm",
+                "master packet interface_triangles",
+                "post-export readback vertices_cm",
+                "post-export readback interface_triangles",
+            ],
+        }
+    if any(value is None for value in supplied):
+        raise ValueError(
+            "immutable-interface readback arrays must be supplied together"
+        )
+    expected_vertices = np.asarray(expected_vertices_cm, dtype="<f8")
+    actual_vertices = np.asarray(readback_vertices_cm, dtype="<f8")
+    expected_faces = np.asarray(expected_triangles)
+    actual_faces = np.asarray(readback_triangles)
+    for name, vertices in (
+        ("master packet", expected_vertices),
+        ("post-export readback", actual_vertices),
+    ):
+        if (
+            vertices.ndim != 2
+            or vertices.shape[1:] != (3,)
+            or not len(vertices)
+            or not np.all(np.isfinite(vertices))
+        ):
+            raise ValueError(
+                f"{name} vertices must be finite with shape (n,3)"
+            )
+    normalized_faces = []
+    for name, faces, vertex_count in (
+        ("master packet", expected_faces, len(expected_vertices)),
+        ("post-export readback", actual_faces, len(actual_vertices)),
+    ):
+        if faces.ndim != 2 or faces.shape[1:] != (3,) or not len(faces):
+            raise ValueError(
+                f"{name} interface triangles must have shape (n,3)"
+            )
+        if not np.issubdtype(faces.dtype, np.integer) and (
+            not np.all(np.isfinite(faces))
+            or not np.all(faces == np.floor(faces))
+        ):
+            raise ValueError(f"{name} interface triangles must be integral")
+        faces = np.asarray(faces, dtype="<i8")
+        if np.any(faces < 0) or np.any(faces >= vertex_count):
+            raise ValueError(
+                f"{name} interface triangles reference invalid vertices"
+            )
+        if any(len({int(value) for value in row}) != 3 for row in faces):
+            raise ValueError(
+                f"{name} interface contains a degenerate triangle"
+            )
+        normalized_faces.append(faces)
+    expected_faces, actual_faces = normalized_faces
+    expected_hash = _face_payload_hash(expected_vertices, expected_faces)
+    actual_hash = _face_payload_hash(actual_vertices, actual_faces)
+    coordinates_exact = bool(
+        expected_vertices.shape == actual_vertices.shape
+        and np.array_equal(expected_vertices, actual_vertices)
+    )
+    connectivity_exact = bool(
+        expected_faces.shape == actual_faces.shape
+        and np.array_equal(expected_faces, actual_faces)
+    )
+    expected_hash_bound = expected_hash == master_interface_sha256
+    readback_hash_bound = actual_hash == master_interface_sha256
+    passed = bool(
+        coordinates_exact
+        and connectivity_exact
+        and expected_hash_bound
+        and readback_hash_bound
+    )
+    return {
+        "schema": "parastell.immutable_interface_readback/v1.0.0",
+        "status": "PASS" if passed else "FAIL",
+        "coordinate_dtype": "float64-little-endian",
+        "connectivity_dtype": "int64-little-endian",
+        "vertex_count": len(actual_vertices),
+        "triangle_count": len(actual_faces),
+        "coordinates_bitwise_exact_pass": coordinates_exact,
+        "connectivity_bitwise_exact_pass": connectivity_exact,
+        "master_packet_recomputed_sha256": expected_hash,
+        "readback_recomputed_sha256": actual_hash,
+        "master_packet_hash_binding_pass": expected_hash_bound,
+        "readback_hash_binding_pass": readback_hash_bound,
+        "exact_immutable_interface_pass": passed,
+    }
+
+
+def _audit_multirebco_patch_tape_identity(
+    *,
+    family_rows: Sequence[Mapping[str, Any]] | None,
+    patch_rows: Sequence[Mapping[str, Any]] | None,
+    normalized_volumes: Sequence[Mapping[str, Any]],
+    declared_surface_ids: set[int],
+) -> dict[str, Any]:
+    """Bind every REBCO facet patch to one family, tape, volume, and surface."""
+
+    if family_rows is None and patch_rows is None:
+        return {
+            "schema": "parastell.multirebco_patch_tape_identity/v1.0.0",
+            "status": "BLOCKED_INPUT",
+            "multi_rebco_identity_pass": False,
+            "missing_inputs": ["rebco_family_rows", "rebco_patch_rows"],
+        }
+    if family_rows is None or patch_rows is None:
+        raise ValueError(
+            "REBCO family and patch identity rows must be supplied together"
+        )
+    families = []
+    family_ids = []
+    tape_owner: dict[str, str] = {}
+    for raw in family_rows:
+        family_id = str(raw.get("family_id", ""))
+        tape_stack_id = str(raw.get("tape_stack_id", ""))
+        tape_stack_sha256 = str(raw.get("tape_stack_sha256", ""))
+        material_id = str(raw.get("material_id", ""))
+        tape_ids = [str(value) for value in raw.get("tape_ids", [])]
+        if (
+            not family_id
+            or not tape_stack_id
+            or not _valid_sha256(tape_stack_sha256)
+            or not material_id
+            or not tape_ids
+            or any(not value for value in tape_ids)
+            or len(tape_ids) != len(set(tape_ids))
+        ):
+            raise ValueError("REBCO family identity row is malformed")
+        for tape_id in tape_ids:
+            if tape_id in tape_owner:
+                raise ValueError("REBCO tape IDs must be globally unique")
+            tape_owner[tape_id] = family_id
+        family_ids.append(family_id)
+        families.append(
+            {
+                "family_id": family_id,
+                "tape_stack_id": tape_stack_id,
+                "tape_stack_sha256": tape_stack_sha256.lower(),
+                "material_id": material_id,
+                "tape_ids": sorted(tape_ids),
+            }
+        )
+    tape_stack_ids = [row["tape_stack_id"] for row in families]
+    if (
+        len(families) < 2
+        or len(family_ids) != len(set(family_ids))
+        or len(tape_stack_ids) != len(set(tape_stack_ids))
+    ):
+        raise ValueError(
+            "multi-REBCO qualification requires unique families and tape stacks"
+        )
+    family_by_id = {row["family_id"]: row for row in families}
+    volume_by_id = {
+        int(row["volume_global_id"]): row for row in normalized_volumes
+    }
+    normalized_patches = []
+    patch_ids = []
+    assigned_facets: set[str] = set()
+    covered_tapes: set[str] = set()
+    for raw in patch_rows:
+        patch_id = str(raw.get("patch_id", ""))
+        family_id = str(raw.get("family_id", ""))
+        tape_id = str(raw.get("tape_id", ""))
+        volume_id = int(raw.get("volume_global_id", 0))
+        surface_ids = [
+            int(value) for value in raw.get("surface_global_ids", [])
+        ]
+        facet_ids = [str(value) for value in raw.get("facet_ids", [])]
+        facet_catalog_sha256 = str(raw.get("facet_catalog_sha256", ""))
+        atlas_sha256 = str(raw.get("atlas_sha256", ""))
+        mapping_sha256 = str(raw.get("mapping_sha256", ""))
+        family = family_by_id.get(family_id)
+        volume = volume_by_id.get(volume_id)
+        valid = bool(
+            patch_id
+            and family is not None
+            and tape_id
+            and tape_owner.get(tape_id) == family_id
+            and volume is not None
+            and volume["material_id"] == family["material_id"]
+            and surface_ids
+            and len(surface_ids) == len(set(surface_ids))
+            and set(surface_ids) <= declared_surface_ids
+            and set(surface_ids) <= set(volume["surface_global_ids"])
+            and facet_ids
+            and all(facet_ids)
+            and len(facet_ids) == len(set(facet_ids))
+            and _valid_sha256(facet_catalog_sha256)
+            and _valid_sha256(atlas_sha256)
+            and _valid_sha256(mapping_sha256)
+        )
+        if not valid:
+            raise ValueError(
+                "REBCO patch identity row is malformed or inconsistent"
+            )
+        if assigned_facets.intersection(facet_ids):
+            raise ValueError(
+                "a facet cannot be assigned to multiple REBCO patches"
+            )
+        assigned_facets.update(facet_ids)
+        covered_tapes.add(tape_id)
+        patch_ids.append(patch_id)
+        normalized_patches.append(
+            {
+                "patch_id": patch_id,
+                "family_id": family_id,
+                "tape_id": tape_id,
+                "volume_global_id": volume_id,
+                "surface_global_ids": sorted(surface_ids),
+                "facet_ids": sorted(facet_ids),
+                "facet_catalog_sha256": facet_catalog_sha256.lower(),
+                "atlas_sha256": atlas_sha256.lower(),
+                "mapping_sha256": mapping_sha256.lower(),
+            }
+        )
+    if not normalized_patches or len(patch_ids) != len(set(patch_ids)):
+        raise ValueError("REBCO patch IDs must be nonempty and unique")
+    if len({row["facet_catalog_sha256"] for row in normalized_patches}) != 1:
+        raise ValueError("all REBCO patches must bind one facet catalog")
+    if len({row["atlas_sha256"] for row in normalized_patches}) != 1:
+        raise ValueError("all REBCO patches must bind one cached facet atlas")
+    if len({row["mapping_sha256"] for row in normalized_patches}) != 1:
+        raise ValueError(
+            "all REBCO patches must bind one conservative mapping"
+        )
+    missing_tapes = sorted(set(tape_owner) - covered_tapes)
+    normalized_patches.sort(key=lambda row: row["patch_id"])
+    families.sort(key=lambda row: row["family_id"])
+    payload = {
+        "schema": "parastell.multirebco_patch_tape_identity/v1.0.0",
+        "families": families,
+        "patches": normalized_patches,
+        "family_count": len(families),
+        "tape_count": len(tape_owner),
+        "patch_count": len(normalized_patches),
+        "facet_count": len(assigned_facets),
+        "missing_tape_ids": missing_tapes,
+        "unique_patch_ids_pass": len(patch_ids) == len(set(patch_ids)),
+        "unique_facet_assignment_pass": True,
+        "complete_tape_coverage_pass": not missing_tapes,
+    }
+    passed = bool(not missing_tapes)
+    payload["multi_rebco_identity_pass"] = passed
+    payload["status"] = "PASS" if passed else "FAIL"
+    payload["identity_sha256"] = _canonical_json_sha256(payload)
+    return payload
+
+
+def build_source_conformal_multirebco_producer_request_v2(
+    *,
+    master_interface_sha256: str,
+    master_interface_packet: Mapping[str, Any],
+    requested_family_ids: Sequence[str],
+    requested_tape_ids_by_family: Mapping[str, Sequence[str]],
+) -> dict[str, Any]:
+    """Create a compact fail-closed request when no physical candidate exists."""
+
+    packet_sha256 = master_interface_packet.get("sha256")
+    packet_path = str(master_interface_packet.get("path", ""))
+    packet_size = int(master_interface_packet.get("size_bytes", 0))
+    if (
+        not _valid_sha256(master_interface_sha256)
+        or not _valid_sha256(packet_sha256)
+        or not packet_path
+        or packet_size <= 0
+    ):
+        raise ValueError(
+            "producer request requires immutable packet SHA-256 identities"
+        )
+    family_ids = [str(value) for value in requested_family_ids]
+    if (
+        len(family_ids) < 2
+        or any(not value for value in family_ids)
+        or len(family_ids) != len(set(family_ids))
+    ):
+        raise ValueError(
+            "producer request requires at least two unique REBCO families"
+        )
+    unknown = set(requested_tape_ids_by_family) - set(family_ids)
+    if unknown:
+        raise ValueError(
+            f"tape inventory contains unknown families: {sorted(unknown)}"
+        )
+    families = []
+    global_tapes: set[str] = set()
+    for family_id in family_ids:
+        tapes = [
+            str(value)
+            for value in requested_tape_ids_by_family.get(family_id, [])
+        ]
+        if (
+            not tapes
+            or any(not value for value in tapes)
+            or len(tapes) != len(set(tapes))
+        ):
+            raise ValueError(
+                "every requested REBCO family needs unique nonempty tape IDs"
+            )
+        if global_tapes.intersection(tapes):
+            raise ValueError("requested tape IDs must be globally unique")
+        global_tapes.update(tapes)
+        families.append({"family_id": family_id, "tape_ids": tapes})
+    payload = {
+        "schema": MULTIREBCO_PRODUCER_REQUEST_SCHEMA,
+        "status": "BLOCKED_PHYSICAL_CANDIDATE",
+        "transport_eligible": False,
+        "p4_launch_authorized": False,
+        "openmc_launch_authorized": False,
+        "master_interface_sha256": master_interface_sha256.lower(),
+        "master_interface_packet": dict(master_interface_packet),
+        "requested_rebco_families": families,
+        "required_candidate_readback": [
+            "post-export DAGMC H5M path, size, and SHA-256",
+            "bitwise float64 vertices_cm read back in master packet index order",
+            "bitwise int64 interface_triangles read back in master packet order",
+            "complete volume-to-surface and surface-to-volume/sense incidence",
+            "one immutable family/tape/patch/facet/volume/surface identity row per patch",
+            "family-tagged cached facet-atlas SHA-256 and facet-catalog SHA-256",
+            "physical tape-stack SHA-256 and material identity for every family",
+        ],
+        "prohibited_operations": [
+            "projecting, rescaling, clipping, reindexing, reordering, or remeshing the master interface",
+            "merging distinct REBCO families, tapes, patches, or materials",
+            "launching P4 or OpenMC before all physical gates pass",
+        ],
+        "missing_physical_inputs": [
+            "physical post-export DAGMC candidate",
+            "physical multi-REBCO family and tape-stack identities",
+            "exact immutable-interface post-export readback arrays",
+            "family-tagged patch/facet atlas mapping",
+        ],
+        "physical_qualification_claimed": False,
+    }
+    payload["request_sha256"] = _canonical_json_sha256(payload)
+    return payload
+
+
 def qualify_source_conformal_outer_layer_readback_v2(
     source_qualification: Mapping[str, Any],
     *,
@@ -1111,6 +1471,12 @@ def qualify_source_conformal_outer_layer_readback_v2(
     surface_rows: Sequence[Mapping[str, Any]],
     master_interface_surface_ids: Sequence[int],
     master_interface_owner_layer_ids: Sequence[str],
+    expected_interface_vertices_cm: Any | None = None,
+    expected_interface_triangles: Any | None = None,
+    readback_interface_vertices_cm: Any | None = None,
+    readback_interface_triangles: Any | None = None,
+    rebco_family_rows: Sequence[Mapping[str, Any]] | None = None,
+    rebco_patch_rows: Sequence[Mapping[str, Any]] | None = None,
     input_class: str = "FIXTURE",
     fixture_only: bool = True,
 ) -> dict[str, Any]:
@@ -1273,6 +1639,19 @@ def qualify_source_conformal_outer_layer_readback_v2(
         and source_qualification.get("master_interface_sha256")
         == master_interface_sha256
     )
+    immutable_interface = _audit_exact_immutable_interface_readback(
+        master_interface_sha256=master_interface_sha256,
+        expected_vertices_cm=expected_interface_vertices_cm,
+        expected_triangles=expected_interface_triangles,
+        readback_vertices_cm=readback_interface_vertices_cm,
+        readback_triangles=readback_interface_triangles,
+    )
+    multirebco_identity = _audit_multirebco_patch_tape_identity(
+        family_rows=rebco_family_rows,
+        patch_rows=rebco_patch_rows,
+        normalized_volumes=normalized_volumes,
+        declared_surface_ids=declared_surface_set,
+    )
     topology_gates = {
         "unique_surface_ids_pass": bool(surface_ids)
         and not duplicate_surface_ids,
@@ -1298,6 +1677,12 @@ def qualify_source_conformal_outer_layer_readback_v2(
         "physical_input_class_pass": physical_input_class_pass,
         "source_v1_transport_eligible_pass": source_transport_eligible_pass,
         "outer_layer_readback_pass": outer_layer_readback_pass,
+        "exact_immutable_interface_readback_pass": immutable_interface[
+            "exact_immutable_interface_pass"
+        ],
+        "multi_rebco_patch_tape_identity_pass": multirebco_identity[
+            "multi_rebco_identity_pass"
+        ],
     }
     normalized_volumes.sort(key=lambda row: row["volume_global_id"])
     normalized_surfaces.sort(key=lambda row: row["surface_global_id"])
@@ -1310,6 +1695,8 @@ def qualify_source_conformal_outer_layer_readback_v2(
         "surfaces": normalized_surfaces,
         "master_interface_surface_ids": sorted(master_surfaces),
         "master_interface_owner_layer_ids": expected_master_owner_layers,
+        "immutable_interface_readback": immutable_interface,
+        "multirebco_patch_tape_identity": multirebco_identity,
     }
     readback_sha256 = _canonical_json_sha256(readback_payload)
     transport_eligible = all(gates.values())
@@ -1341,6 +1728,8 @@ def qualify_source_conformal_outer_layer_readback_v2(
         "orphan_surface_ids": orphan_surfaces,
         "missing_layer_ids": missing_layers,
         "inconsistent_material_layer_ids": inconsistent_material_layers,
+        "immutable_interface_readback": immutable_interface,
+        "multirebco_patch_tape_identity": multirebco_identity,
         "software_qualification_pass": software_qualification_pass,
         "gates": gates,
         "transport_eligible": transport_eligible,
@@ -1375,6 +1764,17 @@ def write_source_conformal_v2_receipts_create_only(
         "source_v1_qualification_sha256": qualification.get(
             "source_v1_qualification_sha256"
         ),
+        "exact_immutable_interface_readback_pass": qualification.get(
+            "gates", {}
+        ).get("exact_immutable_interface_readback_pass")
+        is True,
+        "multi_rebco_patch_tape_identity_pass": qualification.get(
+            "gates", {}
+        ).get("multi_rebco_patch_tape_identity_pass")
+        is True,
+        "multirebco_identity_sha256": qualification.get(
+            "multirebco_patch_tape_identity", {}
+        ).get("identity_sha256"),
         "transport_eligible": qualification.get("transport_eligible") is True,
         "physical_qualification_claimed": qualification.get(
             "physical_qualification_claimed"
