@@ -1,0 +1,30 @@
+{
+  "schema": "parastell.poster_parametric_request/v1.0.0",
+  "device": "WISTELL-D",
+  "modeled_extent_degrees": 90.0,
+  "strategy": "staged_without_cartesian_product",
+  "baseline_case_id": "P00",
+  "cases": {
+    "P00": "LiPb/DCLL-like published baseline plus WC shield",
+    "P01": "HCPB",
+    "P02": "FLiBe-LIB",
+    "P03": "HCLL (conditional)",
+    "P04": "SCLV (conditional on complete data coverage)",
+    "P05": "natural-boron W2B5 shield",
+    "P06": "Type One optimized HTS/LTS shield",
+    "P07": "TiH2 then W2B5 layered shield"
+  },
+  "transport": {
+    "openmc_version": "0.16.0",
+    "mode": "analog_baseline",
+    "weight_windows_enabled": false,
+    "photon_transport": true,
+    "regular_statepoints": true,
+    "target_segment_minutes": 60,
+    "surface_phase_space_export": true
+  },
+  "execution": {
+    "large_campaign_authorized": false,
+    "scheduler_submission_created": false
+  }
+}

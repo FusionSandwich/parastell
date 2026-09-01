@@ -49,6 +49,23 @@ REFERENCE_SOURCES = (
         "sha256": "050a9fa5bc3c875dfd61f59f22bf7fdc312a90014b8c4cfd3112cba1c5d06131",
         "role": "portable_HCPB_recipe_reference",
     },
+    {
+        "repository": "https://github.com/StellaratorOptimization/BlanketNeutronics.git",
+        "revision": "ed3e8bad9c1f5f7910c452cfd4b3bc84e3088aee",
+        "path": "flibe_toroidal_models/60percLi6/1_makeMaterials_FLiBe.py",
+        "role": "FLiBe_LIB_recipe_reference",
+    },
+    {
+        "repository": "https://github.com/StellaratorOptimization/BlanketNeutronics.git",
+        "revision": "080077656bd977cf9af9f92d09fe632b12691bdf",
+        "path": "neutronics_hcll_torus/make_materials.py",
+        "role": "HCLL_recipe_reference",
+    },
+    {
+        "repository": "https://github.com/StellaratorOptimization/stellarator_optimization.git",
+        "path": "stellarator_optimization/utils/constants.py",
+        "role": "Type_One_W2B5_HTS_LTS_reference",
+    },
 )
 
 
@@ -137,6 +154,54 @@ RECIPES: dict[str, dict[str, Any]] = {
         "citation": "DavisFusEngDes_2018",
         "note": "global homogenized transport proxy; not a REBCO local model",
     },
+    "flibe_inconel_first_wall": {
+        "volume_fractions": {"Inconel718": 1.0},
+        "citation": "BlanketNeutronics FLiBe-LIB 60-percent Li-6 radial build",
+    },
+    "flibe_li60_inconel_breeder": {
+        "volume_fractions": {"FlibeLi60.0": 0.9, "Inconel718": 0.1},
+        "citation": "BlanketNeutronics FLiBe-LIB 60-percent Li-6 radial build",
+    },
+    "flibe_tank_wall": {
+        "volume_fractions": {"Inconel718": 0.99, "FlibeLi60.0": 0.01},
+        "citation": "BlanketNeutronics FLiBe-LIB tank-wall recipe",
+    },
+    "flibe_wc_inconel_helium_shield": {
+        "volume_fractions": {
+            "Inconel718": 0.28,
+            "WC": 0.52,
+            "HeT410P80": 0.2,
+        },
+        "citation": "BlanketNeutronics FLiBe-LIB Type One HTS recipe",
+    },
+    "flibe_zrh2_steel_water_lts": {
+        "volume_fractions": {"SS316L": 0.39, "ZrH2": 0.29, "Water": 0.32},
+        "citation": "BlanketNeutronics FLiBe-LIB Type One LTS recipe",
+    },
+    "hcll_pb157li90_eurofer_helium_breeder": {
+        "volume_fractions": {
+            "Pb157Li90": 0.79,
+            "EUROFER97": 0.158,
+            "HeT410P80": 0.052,
+        },
+        "citation": "BlanketNeutronics HCLL advanced-plus MMS recipe",
+    },
+    "hcll_eurofer_helium_back_wall": {
+        "volume_fractions": {"EUROFER97": 0.698, "HeT410P80": 0.302},
+        "citation": "10.1016/j.nds.2024.01.001",
+    },
+    "natural_boron_w2b5": {
+        "volume_fractions": {"W2B5": 1.0},
+        "citation": "stellarator_optimization Type One material constants",
+    },
+    "type_one_w2b5_rafs_helium_hts": {
+        "volume_fractions": {"W2B5": 0.6, "MF82H": 0.2, "HeT410P80": 0.2},
+        "citation": "stellarator_optimization Type One material constants",
+    },
+    "type_one_rafs_borated_rafs_water_lts": {
+        "volume_fractions": {"MF82H": 0.2, "BMF82H": 0.3, "Water": 0.5},
+        "citation": "stellarator_optimization Type One material constants",
+    },
 }
 
 
@@ -159,7 +224,69 @@ PRESETS = {
         "low_temperature_shield": "water_borated_rafs_low_temperature_shield",
         "homogenized_magnet": "hcpb_homogenized_nb3sn_coil",
     },
+    "flibe_lib": {
+        "first_wall": "flibe_inconel_first_wall",
+        "breeder": "flibe_li60_inconel_breeder",
+        "back_wall": "flibe_tank_wall",
+        "high_temperature_shield": "flibe_wc_inconel_helium_shield",
+        "vacuum_vessel": "dcll_homogenized_vacuum_vessel",
+        "low_temperature_shield": "flibe_zrh2_steel_water_lts",
+        "homogenized_magnet": "blanket_legacy_homogenized_hts_coil",
+    },
+    "hcll": {
+        "first_wall": "dcll_rafs_helium_first_wall",
+        "breeder": "hcll_pb157li90_eurofer_helium_breeder",
+        "back_wall": "hcll_eurofer_helium_back_wall",
+        "high_temperature_shield": "dcll_wc_rafs_helium_shield",
+        "vacuum_vessel": "dcll_homogenized_vacuum_vessel",
+        "low_temperature_shield": "water_borated_rafs_low_temperature_shield",
+        "homogenized_magnet": "blanket_legacy_homogenized_hts_coil",
+    },
 }
+
+
+def _with_derived_w2b5(pure: Mapping[str, Any]) -> dict[str, Any]:
+    """Add a traceable natural-boron W2B5 primitive to a material database.
+
+    The database contains elemental W and natural boron inside BMF82H but no
+    standalone boron or W2B5 row.  The Type One reference supplies the W2B5
+    density.  Isotopic mass distributions are inherited from those database
+    rows; no transport-library availability is implied here.
+    """
+    resolved = dict(pure)
+    if "W2B5" in resolved:
+        return resolved
+    if "W" not in pure or "BMF82H" not in pure:
+        return resolved
+    tungsten = _normalized_composition(pure["W"], "W")
+    borated = _normalized_composition(pure["BMF82H"], "BMF82H")
+    boron = {
+        key: value for key, value in borated.items() if key.startswith("B")
+    }
+    boron_total = sum(boron.values())
+    if boron_total <= 0.0:
+        return resolved
+    boron = {key: value / boron_total for key, value in boron.items()}
+    tungsten_mass = 2.0 * 183.84
+    boron_mass = 5.0 * 10.81
+    total_mass = tungsten_mass + boron_mass
+    composition = {
+        key: value * tungsten_mass / total_mass
+        for key, value in tungsten.items()
+    }
+    for key, value in boron.items():
+        composition[key] = (
+            composition.get(key, 0.0) + value * boron_mass / total_mass
+        )
+    resolved["W2B5"] = {
+        "density": 15.3,
+        "comp": composition,
+        "metadata": {
+            "citation": "stellarator_optimization Type One constants; natural B and W isotope distributions from fusion-material-db",
+            "derived_formula": "W2B5",
+        },
+    }
+    return resolved
 
 
 def _sha256(path: Path) -> str:
@@ -275,7 +402,7 @@ def build_blanket_material_bundle(
 ) -> dict[str, Any]:
     """Resolve a DCLL/HCPB or controlled role-substitution material bundle."""
     source = Path(pure_materials_path).resolve(strict=True)
-    pure = json.loads(source.read_text(encoding="utf-8"))
+    pure = _with_derived_w2b5(json.loads(source.read_text(encoding="utf-8")))
     if not isinstance(pure, Mapping) or preset not in PRESETS:
         raise ValueError("pure material database or blanket preset is invalid")
     temperature = float(temperature_K)
