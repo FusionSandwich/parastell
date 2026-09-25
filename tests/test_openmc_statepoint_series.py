@@ -9,10 +9,16 @@ import pytest
 from parastell.openmc_statepoint_series import qualify_statepoint_series
 
 
-def _statepoint(path: Path, *, current_batch: int, total_batches: int = 10):
+def _statepoint(
+    path: Path,
+    *,
+    current_batch: int,
+    total_batches: int = 10,
+    openmc_version=(0, 16, 0),
+):
     with h5py.File(path, "x") as target:
         target.attrs["filetype"] = np.bytes_("statepoint")
-        target.attrs["openmc_version"] = np.asarray([0, 16, 0])
+        target.attrs["openmc_version"] = np.asarray(openmc_version)
         target["run_mode"] = np.bytes_("fixed source")
         target["n_particles"] = 100
         target["n_batches"] = total_batches
@@ -69,3 +75,20 @@ def test_statepoint_series_fails_on_missing_or_misbound_checkpoint(tmp_path):
             total_batches=10,
             seed=17,
         )
+
+
+def test_statepoint_series_accepts_current_openmc_development_version(
+    tmp_path,
+):
+    path = tmp_path / "statepoint.1.h5"
+    _statepoint(
+        path, current_batch=1, total_batches=1, openmc_version=(0, 16, 1)
+    )
+    result = qualify_statepoint_series(
+        [path],
+        expected_batches=[1],
+        particles_per_batch=100,
+        total_batches=1,
+        seed=17,
+    )
+    assert result["statepoints"][0]["metadata"]["openmc_version"] == [0, 16, 1]

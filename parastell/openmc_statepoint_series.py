@@ -10,6 +10,8 @@ from typing import Any, Iterable
 import h5py
 import numpy as np
 
+from .openmc_compat import statepoint_version_supported
+
 
 SCHEMA = "parastell.openmc16_statepoint_series/v1.0.0"
 _STATEPOINT_NAME = re.compile(r"^statepoint\.(\d+)\.h5$")
@@ -89,7 +91,7 @@ def qualify_statepoint_series(
             }
         valid = bool(
             metadata["filetype"] == "statepoint"
-            and tuple(metadata["openmc_version"][:3]) == (0, 16, 0)
+            and statepoint_version_supported(metadata["openmc_version"])
             and metadata["run_mode"] == "fixed source"
             and metadata["particles_per_batch"] == particles_per_batch
             and metadata["total_batches"] == total_batches

@@ -99,6 +99,25 @@ def test_segmented_checkpoint_plan_expresses_restart_contract(tmp_path):
     assert len(plan["plan_sha256"]) == 64
 
 
+def test_checkpoint_plan_accepts_current_openmc_development_version(tmp_path):
+    receipt = _receipt(tmp_path)
+    receipt["openmc_version"] = "0.16.1.dev46+g1d75981db"
+    plan = build_openmc_checkpoint_restart_plan(
+        campaign_id="current-openmc-development",
+        producer="ParaStell",
+        openmc_model_receipt=receipt,
+        particles_per_batch=100,
+        total_batches=2,
+        segment_batches=1,
+        base_seed=101,
+    )
+    validate_openmc_checkpoint_restart_plan(plan)
+    assert (
+        plan["openmc_model_binding"]["openmc_version"]
+        == receipt["openmc_version"]
+    )
+
+
 def test_checkpoint_plan_writer_is_create_only(tmp_path):
     plan = _build(tmp_path)
     destination = tmp_path / "checkpoint-plan.json"

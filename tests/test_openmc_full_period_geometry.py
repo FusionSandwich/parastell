@@ -92,11 +92,42 @@ def test_one_period_geometry_uses_stock_openmc_rotational_periodicity(
     )
 
 
+def test_one_period_geometry_accepts_current_016_development_build(
+    tmp_path, monkeypatch
+):
+    current = SimpleNamespace(
+        __version__="0.16.1.dev46+g1d75981db",
+        YPlane=_OpenMC.YPlane,
+        Plane=_OpenMC.Plane,
+        Sphere=_OpenMC.Sphere,
+        DAGMCUniverse=_OpenMC.DAGMCUniverse,
+        Cell=_OpenMC.Cell,
+        Universe=_OpenMC.Universe,
+        Geometry=_OpenMC.Geometry,
+    )
+    monkeypatch.setitem(sys.modules, "openmc", current)
+    monkeypatch.setattr(
+        reference_geometry_module,
+        "native_dagmc_id_inventory",
+        lambda _path: {"native_id_gate_pass": True, "maximum_native_id": 100},
+    )
+
+    geometry = _reference(tmp_path).openmc_one_period_geometry(
+        n_field_periods=4,
+        external_vacuum_radius_cm=2000.0,
+    )
+
+    assert (
+        geometry.root.kwargs["cells"][0].kwargs["fill"].kwargs["auto_geom_ids"]
+        is False
+    )
+
+
 def test_one_period_geometry_rejects_non_openmc_016(tmp_path, monkeypatch):
     wrong = SimpleNamespace(__version__="0.15.2")
     monkeypatch.setitem(sys.modules, "openmc", wrong)
 
-    with pytest.raises(RuntimeError, match="expected 0.16.0"):
+    with pytest.raises(RuntimeError, match=r">=0.16.0,<0.17.0"):
         _reference(tmp_path).openmc_one_period_geometry(
             n_field_periods=4,
             external_vacuum_radius_cm=2000.0,

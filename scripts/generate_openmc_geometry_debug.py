@@ -14,6 +14,7 @@ import numpy as np
 from parastell.reference_geometry import ReferenceGeometry
 from parastell.reference_geometry import native_dagmc_id_inventory
 from parastell.reference_geometry import sha256_file
+from parastell.openmc_compat import require_supported_openmc_version
 
 
 def _material(openmc, material_id, name, nuclide, density):
@@ -305,10 +306,9 @@ def generate(
 
     import openmc
 
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(
-            f"OpenMC 0.16.0 is required, got {openmc.__version__}"
-        )
+    require_supported_openmc_version(
+        openmc.__version__, context="geometry-debug model generation"
+    )
 
     openmc.reset_auto_ids()
     reference = ReferenceGeometry.open(

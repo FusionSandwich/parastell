@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 
+from .openmc_compat import require_supported_openmc_version
+
 
 def build_surface_instrumentation_spec(
     *,
@@ -148,10 +150,9 @@ def configure_openmc16_surface_bank(model, spec: Mapping) -> None:
     """Configure the crossing bank without creating duplicate current tallies."""
     import openmc
 
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(
-            f"expected OpenMC 0.16.0, found {openmc.__version__}"
-        )
+    require_supported_openmc_version(
+        openmc.__version__, context="surface-source instrumentation"
+    )
     if spec.get("schema") != "parastell.surface_source_instrumentation/v1.0.0":
         raise ValueError("unknown surface instrumentation schema")
     required = {"surface_ids", "max_particles", "max_source_files"}

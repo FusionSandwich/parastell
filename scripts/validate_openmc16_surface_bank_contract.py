@@ -11,6 +11,7 @@ import numpy as np
 import openmc
 
 from parastell.surface_source_phase_space import read_openmc16_surface_sources
+from parastell.openmc_compat import require_supported_openmc_version
 
 
 def _hash(path: Path) -> str:
@@ -23,10 +24,9 @@ def main() -> None:
     args = parser.parse_args()
     output = args.output_directory.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(
-            f"expected OpenMC 0.16.0, found {openmc.__version__}"
-        )
+    require_supported_openmc_version(
+        openmc.__version__, context="surface-bank contract"
+    )
 
     expected = [
         openmc.SourceParticle(

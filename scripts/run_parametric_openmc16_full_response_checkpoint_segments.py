@@ -24,6 +24,7 @@ from typing import Any, Callable
 from parastell.openmc_checkpoint_restart_plan import (
     validate_openmc_checkpoint_restart_plan,
 )
+from parastell.openmc_compat import openmc_version_supported
 
 SCHEMA = "parastell.parametric_openmc16_full_response_smoke/v1.0.0"
 SEGMENT_SCHEMA = "parastell.parametric_openmc16_full_response_segment/v1.0.0"
@@ -34,7 +35,6 @@ LAUNCH_AUTH_SCHEMA = (
     "parastell.parametric_openmc16_full_response_launch_authorization/v1.0.0"
 )
 RUN_TIMEOUT_SECONDS = 1_800
-OPENMC_VERSION = "0.16.0"
 
 
 def _canonical_sha(payload: Any) -> str:
@@ -139,8 +139,10 @@ def _load_full_response_receipt(
         raise ValueError("full-response smoke receipt is not PASS")
     if receipt.get("claim") != "BOUNDED_INFRASTRUCTURE_SMOKE_ONLY":
         raise ValueError("full-response smoke claim is unexpected")
-    if receipt.get("openmc_version") != OPENMC_VERSION:
-        raise ValueError("full-response openmc version is not 0.16.0")
+    if not openmc_version_supported(receipt.get("openmc_version")):
+        raise ValueError(
+            "full-response OpenMC version is not in >=0.16.0,<0.17.0"
+        )
     if receipt.get("run_mode") != "fixed source":
         raise ValueError("full-response model is not fixed source")
     if receipt.get("all_bound_inputs_immutable") is not True:

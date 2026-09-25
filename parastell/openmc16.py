@@ -8,8 +8,10 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+from .openmc_compat import OPENMC_MINIMUM
+from .openmc_compat import openmc_version_supported
 
-OPENMC_MINIMUM = (0, 16, 0)
+
 PDG_PARTICLES = {
     "neutron": 2112,
     "photon": 22,
@@ -65,11 +67,6 @@ def _openmc():
     return openmc
 
 
-def _version_tuple(value: str) -> tuple[int, int, int]:
-    parts = value.split("+")[0].split(".")
-    return tuple(int(item) for item in parts[:3])
-
-
 def capability_report() -> dict[str, Any]:
     """Exercise required Python APIs and return machine-readable provenance."""
     openmc = _openmc()
@@ -80,8 +77,7 @@ def capability_report() -> dict[str, Any]:
     }
     report = {
         "version": openmc.__version__,
-        "version_supported": _version_tuple(openmc.__version__)
-        >= OPENMC_MINIMUM,
+        "version_supported": openmc_version_supported(openmc.__version__),
         "classes": classes,
         "settings": setting_apis,
         "fusion_neutron_spectrum": hasattr(

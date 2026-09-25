@@ -15,6 +15,7 @@ from typing import Any
 
 import numpy as np
 
+from .openmc_compat import openmc_version_supported
 from .openmc16_response_results import SCHEMA as RESULT_SCHEMA
 from .radiation_consumer_handoff import (
     build_radiation_consumer_handoff,
@@ -88,8 +89,10 @@ def _validate_response_set(
         raise ValueError("response-set normalization is ambiguous")
     if response_set.get("status") != "SMOKE_RESULT":
         raise ValueError("response set is not a completed extracted result")
-    if response_set.get("openmc_version") != "0.16.0":
-        raise ValueError("response set is not from OpenMC 0.16.0")
+    if not openmc_version_supported(response_set.get("openmc_version")):
+        raise ValueError(
+            "response set is not from qualified OpenMC >=0.16.0,<0.17.0"
+        )
     for key in ("statepoint_sha256", "source_histories"):
         if response_set.get(key) != provenance.get(key):
             raise ValueError(f"response-set {key} is not provenance-bound")

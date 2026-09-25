@@ -16,6 +16,8 @@ from typing import Any
 import h5py
 import numpy as np
 
+from .openmc_compat import statepoint_version_supported
+
 SCHEMA = "parastell.openmc16_response_results/v1.0.0"
 SCORE_SEMANTICS = {
     "flux": ("scalar_flux_spectrum", "1/cm2/source_history/bin", True),
@@ -167,8 +169,10 @@ def _run_metadata(statepoint: h5py.File) -> dict[str, Any]:
             statepoint.attrs.get("openmc_version", ()), dtype=int
         ).tolist()
     )
-    if version != (0, 16, 0):
-        raise ValueError("statepoint is not from OpenMC 0.16.0")
+    if not statepoint_version_supported(version):
+        raise ValueError(
+            "statepoint is not from qualified OpenMC >=0.16.0,<0.17.0"
+        )
     run_mode = _text(statepoint["run_mode"][()])
     particles = int(statepoint["n_particles"][()])
     batches = int(statepoint["n_batches"][()])
@@ -181,7 +185,7 @@ def _run_metadata(statepoint: h5py.File) -> dict[str, Any]:
     ):
         raise ValueError("statepoint fixed-source run is incomplete")
     return {
-        "openmc_version": "0.16.0",
+        "openmc_version": ".".join(str(item) for item in version),
         "run_mode": run_mode,
         "particles_per_batch": particles,
         "batches": batches,

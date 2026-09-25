@@ -17,6 +17,8 @@ import xml.etree.ElementTree as ET
 import h5py
 import numpy as np
 
+from .openmc_compat import statepoint_version_supported
+
 
 OPENMC16_PHASE_FIELDS = (
     "r",
@@ -136,13 +138,13 @@ def _verify_history_binding(
         }
     if (
         filetype != "statepoint"
-        or version != (0, 16, 0)
+        or not statepoint_version_supported(version)
         or run_mode != "fixed source"
         or state_values
         != {"particles": particles, "batches": batches, "seed": seed}
     ):
         raise ValueError(
-            "statepoint disagrees with exact OpenMC 0.16 settings"
+            "statepoint disagrees with qualified OpenMC 0.16-series settings"
         )
     return {
         "kind": kind,
@@ -155,7 +157,7 @@ def _verify_history_binding(
         "settings_payload_sha256": settings_hash,
         "statepoint_path": str(statepoint_path),
         "statepoint_sha256": statepoint_hash,
-        "openmc_version": "0.16.0",
+        "openmc_version": ".".join(str(item) for item in version),
     }
 
 

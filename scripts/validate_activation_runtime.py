@@ -11,6 +11,7 @@ import openmc
 import openmc.deplete
 
 from parastell.activation_handoff import inspect_activation_data
+from parastell.openmc_compat import openmc_version_supported
 
 
 def main() -> None:
@@ -31,7 +32,7 @@ def main() -> None:
     chain = openmc.deplete.Chain.from_xml(arguments.chain)
     library = openmc.data.DataLibrary.from_xml(arguments.cross_sections)
     gate = bool(
-        openmc.__version__ == "0.16.0"
+        openmc_version_supported(openmc.__version__)
         and data["chain"]["qualified"]
         and data["transport_catalog"]["qualified"]
         and data["transport_catalog"]["payloads_all_present"]

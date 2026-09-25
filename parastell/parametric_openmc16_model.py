@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 from .reference_geometry import ReferenceGeometry, sha256_file
+from .openmc_compat import require_supported_openmc_version
 from .source_domain import _source_arrays, audit_source_tetrahedra_arrays
 from .continuous_radial_contract import COMPONENT_ORDER
 
@@ -519,8 +520,9 @@ def build_model(
     }
     import openmc
 
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(f"OpenMC 0.16.0 required, got {openmc.__version__}")
+    require_supported_openmc_version(
+        openmc.__version__, context="parametric model export"
+    )
     dagmc_hash = control["inputs"]["dagmc_h5m"]["sha256"]
     source_hash = control["inputs"]["source_mesh_h5m"]["sha256"]
     reference = ReferenceGeometry.open(

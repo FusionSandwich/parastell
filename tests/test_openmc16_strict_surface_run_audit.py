@@ -125,10 +125,10 @@ def _filter(parent, identifier, kind, bins):
     )
 
 
-def _write_statepoint(path: Path):
+def _write_statepoint(path: Path, version=(0, 16, 0)):
     with h5py.File(path, "x") as target:
         target.attrs["filetype"] = np.bytes_(b"statepoint")
-        target.attrs["openmc_version"] = np.asarray([0, 16, 0])
+        target.attrs["openmc_version"] = np.asarray(version)
         target.create_dataset("run_mode", data=np.bytes_(b"fixed source"))
         target.create_dataset("n_particles", data=1)
         target.create_dataset("n_batches", data=1)
@@ -159,19 +159,26 @@ def _write_statepoint(path: Path):
         tally.create_dataset("results", data=results)
 
 
-def _fixture(tmp_path, *, mpi_ranks=2, max_particles=10):
+def _fixture(
+    tmp_path,
+    *,
+    mpi_ranks=2,
+    max_particles=10,
+    runtime_version="0.16.0",
+    statepoint_version=(0, 16, 0),
+):
     dagmc = tmp_path / "fake.h5m"
     dagmc.write_bytes(b"unit-test-h5m-placeholder")
     model = tmp_path / "model.xml"
     _write_model(model, max_particles=max_particles)
     statepoint = tmp_path / "statepoint.1.h5"
-    _write_statepoint(statepoint)
+    _write_statepoint(statepoint, statepoint_version)
     bank = tmp_path / "surface_source.h5"
     _write_bank(bank)
     mpi_line = f"MPI Processes | {mpi_ranks}\n" if mpi_ranks != 1 else ""
     log = tmp_path / "openmc.log"
     log.write_text(
-        "Version | 0.16.0\n"
+        f"Version | {runtime_version}\n"
         + mpi_line
         + "Loading file fake.h5m\n"
         + "FIXED SOURCE TRANSPORT SIMULATION\n"
@@ -292,6 +299,22 @@ def test_strict_audit_parses_artifacts_and_binds_localization(
     assert result["same_run_integrity"][
         "root_acceptance_receipt_sha256"
     ] == _sha(Path(artifacts.root_acceptance_receipt_path))
+
+
+def test_strict_audit_accepts_current_openmc_development_version(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(
+        tmp_path,
+        runtime_version="0.16.1-dev46",
+        statepoint_version=(0, 16, 1),
+    )
+    _patch_single_magnet_group(monkeypatch, envelope)
+    result = audit_openmc16_surface_run(
+        artifacts, envelope_requests=[request], required_particles=["neutron"]
+    )
+    assert result["terminal_log"]["openmc_version"] == "0.16.1-dev46"
+    assert result["statepoint"]["openmc_version"] == "0.16.1"
 
 
 def test_mpi_capacity_is_proved_below_cap_and_fails_at_cap():

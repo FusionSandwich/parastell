@@ -15,6 +15,7 @@ import shlex
 from typing import Any
 
 from .openmc_geometry_debug import parse_openmc_geometry_debug_log
+from .openmc_compat import openmc_version_supported
 
 
 MODEL_RECEIPT_SCHEMA = "parastell.parametric_openmc16_sealed_model/v1.0.0"
@@ -102,7 +103,9 @@ def load_sealed_model_receipt(
         or receipt.get("claim") != "BOUNDED_SMOKE_ONLY"
         or not valid_sha256(claimed)
         or canonical_sha256(candidate) != claimed
-        or receipt.get("openmc_runtime", {}).get("version") != "0.16.0"
+        or not openmc_version_supported(
+            receipt.get("openmc_runtime", {}).get("version")
+        )
         or receipt.get("photon_transport") is not True
         or receipt.get("all_bound_inputs_immutable") is not True
         or receipt.get("physical_h5m_mutation") is not False

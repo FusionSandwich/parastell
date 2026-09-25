@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from xml.etree import ElementTree
 
+from .openmc_compat import openmc_version_supported
+
 from .radiation_consumer_handoff import (
     validate_activation_schedule_reference,
 )
@@ -618,8 +620,11 @@ def _validate_scalar_flux_artifact(
         raise ActivationHandoffError("scalar flux is not geometry-bound")
     if scalar_flux.get("source_mesh_sha256") != source_mesh.get("sha256"):
         raise ActivationHandoffError("scalar flux is not source-mesh-bound")
-    if scalar_flux.get("openmc_version") != "0.16.0":
-        raise ActivationHandoffError("scalar flux requires OpenMC 0.16.0")
+    if not openmc_version_supported(scalar_flux.get("openmc_version")):
+        raise ActivationHandoffError(
+            "scalar flux requires OpenMC 0.16.0-series "
+            "(qualified range >=0.16.0,<0.17.0)"
+        )
     if (
         scalar_flux.get("particle") != "neutron"
         or scalar_flux.get("score") != "flux"

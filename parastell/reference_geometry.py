@@ -17,6 +17,8 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+from .openmc_compat import require_supported_openmc_version
+
 
 REFERENCE_SCHEMA = "parastell.reference_geometry/v1.0.0"
 PARITY_SCHEMA = "parastell.reference_geometry_parity/v1.0.0"
@@ -582,7 +584,7 @@ class ReferenceGeometry:
         *,
         n_field_periods: int,
         external_vacuum_radius_cm: float,
-        expected_openmc_version: str = "0.16.0",
+        expected_openmc_version: str | None = None,
     ) -> Any:
         """Wrap an immutable DAGMC model in one rotational field period.
 
@@ -595,7 +597,11 @@ class ReferenceGeometry:
         from .periodic_geometry import FieldPeriodContract
 
         actual_version = str(getattr(openmc, "__version__", ""))
-        if actual_version != expected_openmc_version:
+        if expected_openmc_version is None:
+            require_supported_openmc_version(
+                actual_version, context="one-period geometry wrapper"
+            )
+        elif actual_version != expected_openmc_version:
             raise RuntimeError(
                 "OpenMC version mismatch: expected "
                 f"{expected_openmc_version}, got {actual_version or 'unknown'}"

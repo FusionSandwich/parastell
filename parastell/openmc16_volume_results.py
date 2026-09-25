@@ -15,6 +15,8 @@ from typing import Any
 import h5py
 import numpy as np
 
+from .openmc_compat import statepoint_version_supported
+
 
 def _text(value: Any) -> str:
     if isinstance(value, (bytes, np.bytes_)):
@@ -53,8 +55,11 @@ def read_cell_scalar_flux_spectrum(
                 statepoint.attrs.get("openmc_version", ()), dtype=int
             ).tolist()
         )
-        if version != (0, 16, 0):
-            raise ValueError("statepoint is not from OpenMC 0.16.0")
+        if not statepoint_version_supported(version):
+            raise ValueError(
+                "statepoint is not from OpenMC 0.16.0-series "
+                "(qualified range >=0.16.0,<0.17.0)"
+            )
         run_mode = _text(statepoint["run_mode"][()])
         particles_per_batch = int(statepoint["n_particles"][()])
         batches = int(statepoint["n_batches"][()])
@@ -176,7 +181,7 @@ def read_cell_scalar_flux_spectrum(
         "tally_id": tally_name,
         "statepoint_path": str(path),
         "statepoint_sha256": statepoint_sha256,
-        "openmc_version": "0.16.0",
+        "openmc_version": ".".join(str(item) for item in version),
         "statepoint_file_version": list(statepoint_version),
         "run_mode": run_mode,
         "particles_per_batch": particles_per_batch,

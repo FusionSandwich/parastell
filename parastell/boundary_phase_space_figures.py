@@ -15,6 +15,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from .openmc_compat import openmc_version_supported
 
 SCHEMA = "parastell.boundary_phase_space_figure_manifest/v1.0.0"
 PARTICLE_LABELS = {2112: "neutron", 22: "photon"}
@@ -267,8 +268,10 @@ def _bound_source_histories(manifest: Mapping[str, Any]) -> int:
         raise ValueError("a fixed-source-run history binding is required")
     if binding.get("source_histories") != histories:
         raise ValueError("phase manifest and history binding disagree")
-    if binding.get("openmc_version") != "0.16.0":
-        raise ValueError("history binding is not OpenMC 0.16.0")
+    if not openmc_version_supported(binding.get("openmc_version")):
+        raise ValueError(
+            "history binding is not qualified OpenMC >=0.16.0,<0.17.0"
+        )
     if not str(binding.get("run_id", "")).strip():
         raise ValueError("history binding omits run_id")
     for name in ("settings_payload_sha256", "statepoint_sha256"):
@@ -1094,7 +1097,10 @@ def write_phase_space_figures(
             "kind": "fixed_source_run",
             "run_id": strict["model"]["sha256"],
             "source_histories": histories,
-            "openmc_version": "0.16.0",
+            "openmc_version": strict["statepoint"].get(
+                "openmc_version",
+                strict["terminal_log"].get("openmc_version", "0.16.0"),
+            ),
             "settings_payload_path": str(model_path),
             "settings_payload_sha256": _sha256(model_path),
             "statepoint_path": str(statepoint_path),

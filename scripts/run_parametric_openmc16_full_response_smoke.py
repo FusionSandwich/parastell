@@ -16,6 +16,7 @@ from parastell.parametric_openmc16_model import (
     _statepoint_batches,
 )
 from parastell.openmc16 import add_reactor_component_tallies
+from parastell.openmc_compat import require_supported_openmc_version
 from parastell.selected_case_instrumentation import instrument_selected_case
 from parastell.surface_source_instrumentation import (
     build_surface_instrumentation_spec,
@@ -261,8 +262,9 @@ def main() -> None:
     parser.add_argument("--local-mesh-bins-per-axis", type=int, default=0)
     args = parser.parse_args()
 
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(f"OpenMC 0.16.0 required, got {openmc.__version__}")
+    require_supported_openmc_version(
+        openmc.__version__, context="full-response smoke"
+    )
     _validate_smoke_controls(
         particles=args.particles,
         batches=args.batches,

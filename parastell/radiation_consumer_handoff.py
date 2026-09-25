@@ -20,6 +20,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from .openmc_compat import openmc_version_supported
 from .reaction_identity import canonical_mt, canonical_nuclide, mt_label
 
 SCHEMA = "parastell.radiation_consumer_handoff/v1.0.0"
@@ -284,8 +285,10 @@ def validate_radiation_consumer_handoff(bundle: Mapping[str, Any]) -> None:
         "root_acceptance_receipt_sha256",
     ):
         _sha256(provenance.get(key), key)
-    if provenance.get("openmc_version") != "0.16.0":
-        raise RadiationHandoffError("producer must identify OpenMC 0.16.0")
+    if not openmc_version_supported(provenance.get("openmc_version")):
+        raise RadiationHandoffError(
+            "producer must identify qualified OpenMC >=0.16.0,<0.17.0"
+        )
     histories = provenance.get("source_histories")
     if isinstance(histories, bool) or int(histories) <= 0:
         raise RadiationHandoffError("source histories must be positive")

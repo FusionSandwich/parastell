@@ -19,6 +19,8 @@ from typing import Any
 
 import numpy as np
 
+from .openmc_compat import require_supported_openmc_version
+
 SEAL_SCHEMA = "parastell.parametric_openmc16_geometry_transport_seal/v1.0.0"
 RECEIPT_SCHEMA = "parastell.parametric_openmc16_sealed_model/v1.0.0"
 SEAL_FILENAME = "GEOMETRY_TRANSPORT_SEAL.json"
@@ -493,8 +495,9 @@ def export_sealed_openmc16_model(
 
     import openmc
 
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(f"OpenMC 0.16.0 required, got {openmc.__version__}")
+    require_supported_openmc_version(
+        openmc.__version__, context="sealed OpenMC model export"
+    )
     first = summary["geometry"]["first_available_wrapper_id"]
     extent_radians = math.radians(90.0)
     start = openmc.YPlane(surface_id=first, boundary_type="periodic")
@@ -612,7 +615,7 @@ def export_sealed_openmc16_model(
             "size_bytes": model_path.stat().st_size,
         },
         "runtime_dependency_boundary": {
-            "required": ["openmc==0.16.0", "numpy"],
+            "required": [f"openmc=={openmc.__version__}", "numpy"],
             "forbidden": list(FORBIDDEN_RUNTIME_IMPORTS),
         },
         "photon_transport": True,

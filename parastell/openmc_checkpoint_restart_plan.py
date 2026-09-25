@@ -8,11 +8,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .openmc_compat import openmc_version_supported
+
 SCHEMA = "parastell.openmc_checkpoint_restart_plan/v1.0.0"
 OPENMC_SCHEMAS = {
     "parastell.parametric_openmc16_full_response_smoke/v1.0.0",
 }
-OPENMC_VERSION = "0.16.0"
 SUPPORTED_SIGNALS = {
     "SIGTERM",
     "SIGINT",
@@ -88,8 +89,10 @@ def _validate_openmc_receipt(receipt: Mapping[str, Any]) -> None:
     version = receipt.get(
         "openmc_version", receipt.get("openmc_runtime", {}).get("version")
     )
-    if version != OPENMC_VERSION:
-        raise ValueError("OpenMC model receipt must be fixed-source 0.16.0")
+    if not openmc_version_supported(version):
+        raise ValueError(
+            "OpenMC model receipt must use qualified OpenMC >=0.16.0,<0.17.0"
+        )
     if receipt.get("run_mode") != "fixed source":
         raise ValueError("OpenMC model receipt must declare fixed source mode")
     if receipt.get("production_run_authorized") is not False:
@@ -395,7 +398,7 @@ def validate_openmc_checkpoint_restart_plan(plan: Mapping[str, Any]) -> None:
     )
     if binding.get("schema") not in OPENMC_SCHEMAS:
         raise ValueError("openmc binding schema is invalid")
-    if str(binding.get("openmc_version", "")) != OPENMC_VERSION:
+    if not openmc_version_supported(binding.get("openmc_version")):
         raise ValueError("openmc version is invalid")
     receipt_hash = _text(binding.get("receipt_content_sha256"), "receipt hash")
     if len(receipt_hash) != 64 or any(

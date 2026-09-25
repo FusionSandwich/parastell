@@ -18,6 +18,7 @@ from parastell.surface_source_instrumentation import (
     apply_openmc16_surface_instrumentation,
     build_surface_instrumentation_spec,
 )
+from parastell.openmc_compat import require_supported_openmc_version
 
 
 def _sha256(path: Path) -> str:
@@ -103,10 +104,9 @@ def main() -> None:
     parser.add_argument("--threads", type=int, default=1)
     args = parser.parse_args()
 
-    if openmc.__version__ != "0.16.0":
-        raise RuntimeError(
-            f"expected OpenMC 0.16.0, found {openmc.__version__}"
-        )
+    require_supported_openmc_version(
+        openmc.__version__, context="DAGMC surface qualification"
+    )
     model_xml = args.model_xml.resolve(strict=True)
     dagmc_path = args.dagmc_h5m.resolve(strict=True)
     surface_manifest = args.surface_manifest.resolve(strict=True)

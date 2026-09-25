@@ -20,10 +20,11 @@ from .magnet_boundary_envelope import assign_adaptive_surface_patches
 from .magnet_boundary_envelope import classify_crossing_bank
 from .magnet_boundary_envelope import write_handoff
 from .openmc16 import PDG_PARTICLES
+from .openmc_compat import openmc_version_supported
+from .openmc_compat import statepoint_version_supported
 
 
 OPENMC16_SOURCE_FORMAT = (18, 2)
-OPENMC16_VERSION = (0, 16, 0)
 OPENMC16_SOURCE_FIELDS = frozenset(
     {"r", "u", "E", "time", "wgt", "delayed_group", "surf_id", "particle"}
 )
@@ -660,8 +661,10 @@ def _statepoint_header(
             "current_batch": int(statepoint["current_batch"][()]),
             "seed": int(statepoint["seed"][()]),
         }
-    if filetype != "statepoint" or version != OPENMC16_VERSION:
-        raise ValueError("statepoint is not an exact OpenMC 0.16.0 statepoint")
+    if filetype != "statepoint" or not statepoint_version_supported(version):
+        raise ValueError(
+            "statepoint is not from qualified OpenMC >=0.16.0,<0.17.0"
+        )
     expected = {
         "run_mode": "fixed source",
         "particles_per_batch": model["particles_per_batch"],
@@ -674,7 +677,7 @@ def _statepoint_header(
     return {
         "path": str(statepoint_path),
         "sha256": _hash(statepoint_path),
-        "openmc_version": "0.16.0",
+        "openmc_version": ".".join(str(item) for item in version),
         **values,
     }
 
@@ -897,8 +900,17 @@ def _parse_terminal_log(
     statepoint_path: Path,
 ) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8", errors="strict")
-    if not re.search(r"Version\s*\|\s*0\.16\.0\b", text):
-        raise ValueError("terminal log does not identify OpenMC 0.16.0")
+    version_match = re.search(
+        r"Version\s*\|\s*(0\.16\.\d+(?:(?:\.dev|-dev|rc|a|b)\d+)?)\b",
+        text,
+    )
+    if version_match is None or not openmc_version_supported(
+        version_match.group(1)
+    ):
+        raise ValueError(
+            "terminal log does not identify qualified OpenMC "
+            ">=0.16.0,<0.17.0"
+        )
     if (
         "FIXED SOURCE TRANSPORT SIMULATION" not in text
         or "RESULTS" not in text
@@ -939,7 +951,7 @@ def _parse_terminal_log(
     return {
         "path": str(path),
         "sha256": _hash(path),
-        "openmc_version": "0.16.0",
+        "openmc_version": version_match.group(1),
         "run_completed": True,
         "writer_rows": writer_rows,
         "mpi_ranks": int(mpi[0]) if mpi else 1,

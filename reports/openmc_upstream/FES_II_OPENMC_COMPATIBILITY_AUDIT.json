@@ -1,0 +1,51 @@
+{
+  "schema": "parastell.openmc_upstream_compatibility_audit/v1.0.0",
+  "recorded_date": "2026-09-25",
+  "official_openmc": {
+    "develop_sha": "1d75981dbf3fd78962e516c12b550d034f2e7daa",
+    "stable_tag": "v0.16.0",
+    "stable_sha": "617d35a5063c57796b43428bc401e627d2011046"
+  },
+  "fusion_fork": {
+    "develop_sha": "9a62e431d3101799e6179a6d0cf3b37440062e23",
+    "behind_official_develop_commits": 43,
+    "unique_commits": 0
+  },
+  "fes_ii": {
+    "repository": "https://github.com/openmc-dev/fes-project-ii",
+    "main_sha": "f1e3b53204f459870e96875af71c2f133e8cc1cb"
+  },
+  "parastell_compatibility": {
+    "accepted_range": ">=0.16.0,<0.17.0",
+    "focused_tests_passed": 189,
+    "focused_tests_skipped": 1,
+    "broad_dependency_available_tests_passed": 736,
+    "broad_dependency_available_tests_skipped": 4,
+    "dependency_bound_modules_excluded": 8,
+    "compileall_pass": true,
+    "black_pass": true,
+    "diff_check_pass": true,
+    "package_build_no_isolation_pass": true,
+    "wheel_nested_build_entries": 0
+  },
+  "openmc_candidate": {
+    "branch": "JS/fes-ii-dagmc-geometry-debug-neighbor-20260925",
+    "base_sha": "1d75981dbf3fd78962e516c12b550d034f2e7daa",
+    "candidate_commit": "56eddcf6878d30055f265c756fcb55e3fc3e8cab",
+    "pushed_to_fusion_fork": true,
+    "changed_files": [
+      "src/geometry.cpp",
+      "tests/regression_tests/dagmc/legacy/test.py"
+    ],
+    "patch_sha256": "14663dff13781f054a259930da0d8ed83cfbeea0399092f49eaac24657a777ed",
+    "classification": "PR_CANDIDATE_RUNTIME_VALIDATION_PENDING"
+  },
+  "remote_attempt": {
+    "root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-compat-v1-20260925T135255Z",
+    "build_started": false,
+    "transport_started": false,
+    "blocker": "shared Bateman persistent SSH channel closed after bounded staging"
+  },
+  "pr_created": false,
+  "production_runtime_authorized": false
+}
