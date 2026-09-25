@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+import math
 from pathlib import Path
 import traceback
 
@@ -654,23 +655,183 @@ def classify_case(port_stitched, intersection_count, downstream_error):
     return "PASS_NO_REPRODUCIBLE_PLC_FAILURE"
 
 
-def terminal_classification(case_results):
-    baseline = any(
-        item["intersection_count"] > 0 and not item["case"]["port"]
-        for item in case_results
+def _nonnegative_integer(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _valid_mesh_audit(audit):
+    required_counts = (
+        "inverted_tetrahedron_count",
+        "zero_volume_tetrahedron_count",
+        "duplicate_tetrahedron_count",
+        "nonconformal_interface_face_count",
+        "disconnected_region_count",
     )
-    ported = any(
-        item["intersection_count"] > 0 and item["case"]["port"]
-        for item in case_results
+    if not isinstance(audit, dict) or not audit:
+        return False
+    required = {
+        "region_tetrahedron_counts",
+        "region_minimum_tetrahedron_volume",
+        "region_maximum_tetrahedron_volume",
+        "region_total_tetrahedron_volume",
+        "tetrahedron_count",
+        *required_counts,
+        "region_reference_volume",
+        "region_relative_volume_error",
+        "region_minimum_scaled_jacobian",
+        "region_minimum_mean_ratio",
+        "region_minimum_radius_ratio",
+        "region_minimum_dihedral_angle",
+        "region_maximum_dihedral_angle",
+        "region_minimum_edge_length",
+        "region_maximum_edge_length",
+        "region_quality_threshold_counts",
+        "quality_thresholds",
+    }
+    if not required.issubset(audit):
+        return False
+    regions = audit["region_tetrahedron_counts"]
+    total = audit["tetrahedron_count"]
+    if (
+        not isinstance(regions, dict)
+        or not regions
+        or not _nonnegative_integer(total)
+        or total == 0
+        or any(
+            not _nonnegative_integer(value) or value == 0
+            for value in regions.values()
+        )
+        or sum(regions.values()) != total
+    ):
+        return False
+    if any(
+        not _nonnegative_integer(audit[key]) or audit[key] != 0
+        for key in required_counts
+    ):
+        return False
+    numeric_region_fields = required - {
+        "region_tetrahedron_counts",
+        "tetrahedron_count",
+        *required_counts,
+        "region_quality_threshold_counts",
+        "quality_thresholds",
+    }
+    for field in numeric_region_fields:
+        values = audit[field]
+        if (
+            not isinstance(values, dict)
+            or set(values) != set(regions)
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                for value in values.values()
+            )
+        ):
+            return False
+    if any(
+        audit[field][region] <= 0
+        for field in (
+            "region_minimum_tetrahedron_volume",
+            "region_maximum_tetrahedron_volume",
+            "region_total_tetrahedron_volume",
+            "region_reference_volume",
+            "region_minimum_edge_length",
+            "region_maximum_edge_length",
+        )
+        for region in regions
+    ):
+        return False
+    if any(
+        audit["region_relative_volume_error"][region] < 0
+        or audit["region_minimum_tetrahedron_volume"][region]
+        > audit["region_maximum_tetrahedron_volume"][region]
+        or audit["region_minimum_edge_length"][region]
+        > audit["region_maximum_edge_length"][region]
+        for region in regions
+    ):
+        return False
+    thresholds = audit["quality_thresholds"]
+    if (
+        not isinstance(thresholds, dict)
+        or not thresholds
+        or any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            for value in thresholds.values()
+        )
+    ):
+        return False
+    quality_counts = audit["region_quality_threshold_counts"]
+    return (
+        isinstance(quality_counts, dict)
+        and set(quality_counts) == set(regions)
+        and all(
+            isinstance(counts, dict)
+            and bool(counts)
+            and set(counts) == set(thresholds)
+            and all(
+                _nonnegative_integer(count) and count == 0
+                for count in counts.values()
+            )
+            for counts in quality_counts.values()
+        )
     )
+
+
+def terminal_classification(case_results, expected_repository_sha=None):
+    if not isinstance(case_results, (list, tuple)):
+        return "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    valid_intersections = [
+        item
+        for item in case_results
+        if isinstance(item, dict)
+        and _nonnegative_integer(item.get("intersection_count"))
+        and item["intersection_count"] > 0
+        and isinstance(item.get("case"), dict)
+        and isinstance(item["case"].get("port"), bool)
+    ]
+    baseline = any(not item["case"]["port"] for item in valid_intersections)
+    ported = any(item["case"]["port"] for item in valid_intersections)
     if baseline and ported:
         return "BLOCKED_BASELINE_AND_PORTED_PLC_INTERSECTION"
     if baseline:
         return "BLOCKED_BASELINE_RADIAL_PLC_INTERSECTION"
     if ported:
         return "BLOCKED_PORT_STITCH_PLC_INTERSECTION"
-    if any(item.get("downstream_error") for item in case_results):
+
+    # Preserve the explicit reproducible downstream failure classification.
+    if any(
+        isinstance(item, dict) and item.get("downstream_error") is not None
+        for item in case_results
+    ):
         return "BLOCKED_OTHER_REPRODUCIBLE_PLC_FAILURE"
+
     if len(case_results) != len(CASE_MATRIX):
         return "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    if not isinstance(expected_repository_sha, str) or not expected_repository_sha:
+        return "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    for expected, item in zip(CASE_MATRIX, case_results):
+        if not isinstance(item, dict):
+            return "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+        if item.get("case") != expected.to_dict():
+            return "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+        if (
+            item.get("schema_version") != "1.0"
+            or item.get("scope")
+            != "PLC/topology diagnostic; not qualified transport geometry"
+            or "downstream_error" not in item
+            or item.get("port_geometry_present") is not expected.port
+            or item.get("radial_diagonal") != expected.radial_diagonal
+            or item.get("repository_sha") != expected_repository_sha
+            or item.get("process_return_code") != 0
+            or item.get("passed") is not True
+            or item.get("classification") != "PASS_NO_REPRODUCIBLE_PLC_FAILURE"
+            or not _nonnegative_integer(item.get("intersection_count"))
+            or item["intersection_count"] != 0
+            or item.get("downstream_error") is not None
+            or not _valid_mesh_audit(item.get("mesh_validation"))
+        ):
+            return "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
     return "PASS_NO_REPRODUCIBLE_PLC_FAILURE"

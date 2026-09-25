@@ -274,3 +274,115 @@ def test_unported_and_ported_classifications_remain_distinct():
         ]
     )
     assert combined == "BLOCKED_BASELINE_AND_PORTED_PLC_INTERSECTION"
+
+
+def _valid_matrix_payloads():
+    regions = {"plasma": 2, "blanket": 3}
+    mesh_audit = {
+        "region_tetrahedron_counts": regions,
+        "region_minimum_tetrahedron_volume": {name: 1.0 for name in regions},
+        "region_maximum_tetrahedron_volume": {name: 1.0 for name in regions},
+        "region_total_tetrahedron_volume": {name: float(count) for name, count in regions.items()},
+        "tetrahedron_count": 5,
+        "inverted_tetrahedron_count": 0,
+        "zero_volume_tetrahedron_count": 0,
+        "duplicate_tetrahedron_count": 0,
+        "nonconformal_interface_face_count": 0,
+        "disconnected_region_count": 0,
+        "region_reference_volume": {name: 1.0 for name in regions},
+        "region_relative_volume_error": {name: 0.0 for name in regions},
+        "region_minimum_scaled_jacobian": {name: 1.0 for name in regions},
+        "region_minimum_mean_ratio": {name: 1.0 for name in regions},
+        "region_minimum_radius_ratio": {name: 1.0 for name in regions},
+        "region_minimum_dihedral_angle": {name: 1.0 for name in regions},
+        "region_maximum_dihedral_angle": {name: 1.0 for name in regions},
+        "region_minimum_edge_length": {name: 1.0 for name in regions},
+        "region_maximum_edge_length": {name: 1.0 for name in regions},
+        "region_quality_threshold_counts": {
+            name: {"scaled_jacobian": 0} for name in regions
+        },
+        "quality_thresholds": {"scaled_jacobian": 0.1},
+    }
+    return [
+        {
+            "schema_version": "1.0",
+            "scope": "PLC/topology diagnostic; not qualified transport geometry",
+            "case": case.to_dict(),
+            "port_geometry_present": case.port,
+            "radial_diagonal": case.radial_diagonal,
+            "repository_sha": "expected-sha",
+            "process_return_code": 0,
+            "passed": True,
+            "classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE",
+            "intersection_count": 0,
+            "downstream_error": None,
+            "mesh_validation": dict(mesh_audit),
+        }
+        for case in CASE_MATRIX
+    ]
+
+
+def test_terminal_pass_requires_valid_complete_child_results():
+    assert (
+        terminal_classification(_valid_matrix_payloads(), "expected-sha")
+        == "PASS_NO_REPRODUCIBLE_PLC_FAILURE"
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda rows: rows[0].update(repository_sha="stale-sha"),
+        lambda rows: rows[0].update(case={**rows[0]["case"], "name": "B0"}),
+        lambda rows: rows.pop(),
+        lambda rows: rows.__setitem__(5, dict(rows[4])),
+        lambda rows: rows[0].update(process_return_code=2),
+        lambda rows: rows[0].pop("downstream_error"),
+        lambda rows: rows[0].update(mesh_validation=None),
+        lambda rows: rows[0]["mesh_validation"].update(tetrahedron_count=0),
+    ),
+    ids=(
+        "wrong-hash",
+        "wrong-identity",
+        "missing-case",
+        "duplicate-case",
+        "failed-child",
+        "missing-downstream-status",
+        "missing-mesh",
+        "bad-mesh-count",
+    ),
+)
+def test_malformed_or_failed_matrix_cannot_pass(mutate):
+    rows = _valid_matrix_payloads()
+    mutate(rows)
+    assert (
+        terminal_classification(rows, "expected-sha")
+        == "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_index", "expected"),
+    (
+        (0, "BLOCKED_BASELINE_RADIAL_PLC_INTERSECTION"),
+        (1, "BLOCKED_PORT_STITCH_PLC_INTERSECTION"),
+    ),
+)
+def test_intersections_remain_blocked_even_without_complete_mesh_audit(
+    case_index, expected
+):
+    rows = _valid_matrix_payloads()
+    rows[case_index]["intersection_count"] = 1
+    rows[case_index]["mesh_validation"] = None
+    assert terminal_classification(rows, "expected-sha") == expected
+
+
+def test_original_zero_crossing_counterexample_fails_closed():
+    rows = _valid_matrix_payloads()
+    for row in rows:
+        row.pop("mesh_validation")
+        row["passed"] = False
+    assert (
+        terminal_classification(rows, "expected-sha")
+        == "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    )
