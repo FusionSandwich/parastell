@@ -329,6 +329,32 @@ def test_terminal_pass_requires_valid_complete_child_results():
     )
 
 
+@pytest.mark.parametrize("invalid_region_name", ("", "   "))
+def test_blank_region_names_cannot_pass(invalid_region_name):
+    rows = _valid_matrix_payloads()
+    for row in rows:
+        audit = row["mesh_validation"]
+        for field in audit:
+            if field.startswith("region_"):
+                values = audit[field]
+                audit[field] = {invalid_region_name: next(iter(values.values()))}
+        audit["region_tetrahedron_counts"] = {invalid_region_name: 5}
+        audit["tetrahedron_count"] = 5
+    assert (
+        terminal_classification(rows, "expected-sha")
+        == "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    )
+
+
+def test_boolean_process_return_code_cannot_pass():
+    rows = _valid_matrix_payloads()
+    rows[0]["process_return_code"] = False
+    assert (
+        terminal_classification(rows, "expected-sha")
+        == "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    )
+
+
 @pytest.mark.parametrize(
     "mutate",
     (
