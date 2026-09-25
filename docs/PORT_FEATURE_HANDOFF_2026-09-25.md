@@ -107,13 +107,17 @@ diagnostic artifacts belong outside Git with hash-bound receipts. Do not touch
 
 ## Resource and test state at handoff
 
-A broader repository test run was started from `tests/` on the integrated
+A broader repository test run was made from `tests/` on the integrated
 branch with the existing WSL runtime, `PYTHONPATH=..`,
 `PYTHONDONTWRITEBYTECODE=1`, `-q -x -p no:cacheprovider`, and a 20-minute
-timeout. Its terminal result was not yet available when this handoff was
-written. The machine had 31.9 GB RAM with about 8.2 GB free while another
-local Python geometry process was active. A fresh six-case Gmsh matrix, which
-previously used a 6 GB/4 CPU limit, was not started concurrently.
+timeout. It reached **37 passed, one failed** in 217 seconds and stopped at
+`test_nwl.py::test_nwl_io[ref_surf0]`: OpenMC's Python package was present
+but its compiled `openmc` executable was absent from that WSL runtime's
+`PATH`. This is an environment gate for the existing NWL test, not a port
+geometry failure. The machine had 31.9 GB RAM with about 8.2 GB free while
+another local Python geometry process was active. A fresh six-case Gmsh
+matrix, which previously used a 6 GB/4 CPU limit, was not started
+concurrently.
 
 ## Suggested continuation prompt
 
