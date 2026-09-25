@@ -1,4 +1,5 @@
 import argparse
+from dataclasses import replace
 from pathlib import Path
 from abc import ABC
 
@@ -32,6 +33,13 @@ from .utils import (
     create_vol_mesh_from_surf_mesh,
     m2cm,
 )
+from .ports import PortGeometryResult, parse_ports
+from .port_aperture import (
+    ApertureBoundary,
+    build_aperture_model,
+    line_triangle_intersections,
+)
+from .native_port_geometry import build_native_port_surface_complex
 from .pystell import read_vmec
 
 
@@ -359,10 +367,27 @@ class InVesselBuild(object):
     """
 
     def __init__(self, ref_surf, radial_build, logger=None, **kwargs):
-
         self.logger = logger
         self.ref_surf = ref_surf
         self.radial_build = radial_build
+        self.ports = parse_ports(
+            kwargs.get("ports", None),
+            self.radial_build.user_layer_names,
+        )
+        self._ported_layer_names = set()
+        self.port_void_components = {}
+        self.port_liner_components = {}
+        self.port_outer_envelopes = {}
+        self.port_aperture_models = {}
+        self.port_specs = {port.name: port for port in self.ports}
+        self.port_geometry_diagnostics = {}
+        self.port_axis_diagnostics = {}
+        self.port_point_cloud_intersection_diagnostics = []
+        # Private aliases are retained for downstream Prompt-2 callers.
+        self._port_fill_components = self.port_void_components
+        self._port_fill_specs = self.port_specs
+        self._endpoint_reference_solids = {}
+        self._anchor_reference_surfaces = {}
 
         self.repeat = 0
         self.num_ribs = 61
@@ -516,6 +541,182 @@ class InVesselBuild(object):
         self._logger.info("Computing point cloud for in-vessel components...")
 
         [surface.calculate_loci() for surface in self.Surfaces.values()]
+        self._resolve_surface_port_placements()
+
+    def native_radial_stack(self):
+        """Return the authoritative ordered radial surfaces for native export.
+
+        ``RadialBuild`` already inserts the plasma and SOL surfaces for a split
+        chamber.  An unsplit chamber instead needs the independent plasma
+        reference surface prepended to its chamber and user-layer surfaces.
+        """
+
+        stack = list(self.Surfaces.items())
+        if not self.radial_build.split_chamber:
+            stack.insert(
+                0,
+                (
+                    "plasma",
+                    self._anchor_reference_surface("plasma_surface"),
+                ),
+            )
+        names = [name for name, _ in stack]
+        duplicates = sorted(
+            name for name in set(names) if names.count(name) > 1
+        )
+        if duplicates:
+            raise ValueError(
+                "Native radial stack contains duplicate region names: "
+                + ", ".join(duplicates)
+            )
+        return tuple(stack)
+
+    def _anchor_reference_surface(self, reference, layer=None):
+        """Resolve an anchor reference to a point-cloud-backed surface."""
+        if reference in {"layer_inner", "layer_outer"}:
+            surface_names = list(self.Surfaces)
+            outer_index = surface_names.index(layer)
+            selected_index = (
+                outer_index if reference == "layer_outer" else outer_index - 1
+            )
+            if selected_index < 0:
+                raise ValueError(f"Layer {layer!r} has no inner surface")
+            return self.Surfaces[surface_names[selected_index]]
+
+        if reference in self._anchor_reference_surfaces:
+            return self._anchor_reference_surfaces[reference]
+        s = 1.0 if reference == "plasma_surface" else self.radial_build.wall_s
+        offsets = np.zeros(
+            (len(self._toroidal_angles_exp), len(self._poloidal_angles_exp))
+        )
+        surface = Surface(
+            self._ref_surf,
+            s,
+            self._poloidal_angles_exp,
+            self._toroidal_angles_exp,
+            offsets,
+            self.scale,
+        )
+        surface.populate_ribs()
+        surface.calculate_loci()
+        self._anchor_reference_surfaces[reference] = surface
+        return surface
+
+    def _resolve_surface_port_placements(self):
+        """Resolve angular anchors and local frames after rib loci exist."""
+        resolved_ports = []
+        for port in self.ports:
+            placement = port.placement
+            if placement.mode != "surface" or placement.is_resolved:
+                resolved_ports.append(port)
+                continue
+            anchor_spec = placement.surface_anchor
+            axis_spec = placement.surface_axis
+            phi = np.deg2rad(anchor_spec.toroidal_angle)
+            theta = np.deg2rad(anchor_spec.poloidal_angle)
+            surface = self._anchor_reference_surface(
+                anchor_spec.reference, anchor_spec.layer
+            )
+            phi_min, phi_max = float(surface.phi_list[0]), float(
+                surface.phi_list[-1]
+            )
+            seam_tolerance = max(1e-9, (phi_max - phi_min) * 1e-7)
+            if phi_max - phi_min < 2.0 * np.pi - 1e-8 and (
+                abs(phi - phi_min) <= seam_tolerance
+                or abs(phi - phi_max) <= seam_tolerance
+            ):
+                raise ValueError(
+                    f"Port {port.name!r} surface anchor is ambiguous at a sector seam"
+                )
+            anchor, poloidal, toroidal, outward = surface.local_surface_frame(
+                phi, theta
+            )
+            radial_outward = surface.radial_build_normal(phi, theta)
+            outer_surface = self.native_radial_stack()[-1][1]
+            through = outer_surface.evaluate(phi, theta) - anchor
+            through_norm = np.linalg.norm(through)
+            if through_norm <= 1e-12:
+                raise ValueError(
+                    f"Port {port.name!r} through-build axis is degenerate"
+                )
+            through /= through_norm
+            base_axis = {
+                "outward_normal": outward,
+                "radial_build_normal": radial_outward,
+                "through_build": through,
+            }[axis_spec.mode]
+            poloidal_tilt = np.deg2rad(axis_spec.poloidal_tilt)
+            toroidal_tilt = np.deg2rad(axis_spec.toroidal_tilt)
+            tilted = (
+                np.cos(poloidal_tilt) * base_axis
+                + np.sin(poloidal_tilt) * poloidal
+            )
+            axis = (
+                np.cos(toroidal_tilt) * tilted
+                + np.sin(toroidal_tilt) * toroidal
+            )
+            axis /= np.linalg.norm(axis)
+            if np.dot(axis, outward) <= 0.0:
+                raise ValueError(
+                    f"Port {port.name!r} surface axis does not point outward"
+                )
+            radial_stack = self.native_radial_stack()
+            radial_coordinates = np.asarray(
+                [
+                    np.dot(item.evaluate(phi, theta) - anchor, axis)
+                    for _, item in radial_stack
+                ]
+            )
+            if axis_spec.mode in {"radial_build_normal", "through_build"}:
+                differences = np.diff(radial_coordinates)
+                if np.any(differences <= 1e-7):
+                    raise ValueError(
+                        f"Port {port.name!r} {axis_spec.mode!r} axis does not "
+                        "cross radial boundaries monotonically"
+                    )
+                if radial_coordinates[-1] <= 0.0:
+                    raise ValueError(
+                        f"Port {port.name!r} {axis_spec.mode!r} axis does not "
+                        "point through the radial build"
+                    )
+            local_reference = poloidal - np.dot(poloidal, axis) * axis
+            local_reference /= np.linalg.norm(local_reference)
+            local_normal = np.cross(axis, local_reference)
+            local_normal /= np.linalg.norm(local_normal)
+            roll = np.deg2rad(placement.roll)
+            local_reference = (
+                np.cos(roll) * local_reference + np.sin(roll) * local_normal
+            )
+            local_reference /= np.linalg.norm(local_reference)
+            resolved_placement = placement.resolve_surface_frame(
+                anchor, axis, local_reference
+            )
+            resolved_ports.append(replace(port, placement=resolved_placement))
+
+            def angle_degrees(left, right):
+                cosine = np.clip(np.dot(left, right), -1.0, 1.0)
+                return float(np.rad2deg(np.arccos(cosine)))
+
+            self.port_axis_diagnostics[port.name] = {
+                "axis_mode": axis_spec.mode,
+                "full_differential_normal": outward.tolist(),
+                "radial_build_normal": radial_outward.tolist(),
+                "through_build_axis": through.tolist(),
+                "selected_axis": axis.tolist(),
+                "full_to_radial_angle_degrees": angle_degrees(
+                    outward, radial_outward
+                ),
+                "full_to_through_angle_degrees": angle_degrees(
+                    outward, through
+                ),
+                "radial_to_through_angle_degrees": angle_degrees(
+                    radial_outward, through
+                ),
+                "radial_boundary_names": [name for name, _ in radial_stack],
+                "radial_boundary_coordinates": radial_coordinates.tolist(),
+            }
+        self.ports = tuple(resolved_ports)
+        self.port_specs = {port.name: port for port in self.ports}
 
     def generate_components(self):
         if self.use_pydagmc:
@@ -556,6 +757,971 @@ class InVesselBuild(object):
 
             self.Components[name] = component
             interior_surface = outer_surface
+
+        if self.ports:
+            self._apply_ports_to_components()
+
+    def _generate_endpoint_reference_solid(self, reference):
+        """Build the enclosed ``s=1`` or ``wall_s`` reference volume lazily."""
+        if reference in self._endpoint_reference_solids:
+            return self._endpoint_reference_solids[reference]
+        if not hasattr(self, "_toroidal_angles_exp"):
+            raise ValueError(
+                f"{reference} endpoint geometry is unavailable before surfaces "
+                "are populated."
+            )
+        s = 1.0 if reference == "plasma_surface" else self.radial_build.wall_s
+        offsets = np.zeros(
+            (len(self._toroidal_angles_exp), len(self._poloidal_angles_exp))
+        )
+        surface = Surface(
+            self._ref_surf,
+            s,
+            self._poloidal_angles_exp,
+            self._toroidal_angles_exp,
+            offsets,
+            self.scale,
+        )
+        surface.populate_ribs()
+        surface.calculate_loci()
+        segment = surface.generate_surface()
+        solid = segment
+        segment_angles = np.linspace(
+            self.radial_build.toroidal_angles[-1],
+            self._repeat * self.radial_build.toroidal_angles[-1],
+            num=self._repeat,
+        )
+        for angle in segment_angles:
+            solid = solid.fuse(segment.rotate((0, 0, 0), (0, 0, 1), angle))
+        solid = self._as_solid(solid)
+        self._require_valid_solid(solid, f"Internal {reference} volume")
+        self._endpoint_reference_solids[reference] = solid
+        return solid
+
+    def _shape_solids(self, shape):
+        if shape is None:
+            return []
+        try:
+            if shape.ShapeType() == "Solid":
+                return [cq.Shape.cast(shape.wrapped)]
+        except Exception:
+            pass
+        if hasattr(shape, "Solids"):
+            try:
+                solids = shape.Solids()
+                if isinstance(solids, (list, tuple)):
+                    return list(solids)
+                return list(solids.vals())
+            except Exception:
+                pass
+        if hasattr(shape, "solids"):
+            try:
+                return list(shape.solids().vals())
+            except Exception:
+                pass
+        if hasattr(shape, "val"):
+            try:
+                return [shape.val()]
+            except Exception:
+                pass
+        return []
+
+    def _shape_volume(self, shape):
+        solids = self._shape_solids(shape)
+        if solids:
+            return float(sum(abs(solid.Volume()) for solid in solids))
+        try:
+            return float(abs(shape.Volume()))
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _bool_tolerance(reference_volume: float) -> float:
+        """Scale-aware volume tolerance for OpenCascade boolean checks.
+
+        Lofted spline sectors accumulate more Boolean integration error than
+        analytic primitives, so closure uses 0.1 parts per million while
+        retaining a small absolute floor for model-scale solids.
+        """
+        return max(1e-7, 1e-7 * max(1.0, abs(reference_volume)))
+
+    def _as_solid(self, shape):
+        solids = self._shape_solids(shape)
+        if len(solids) == 0:
+            return None
+        if len(solids) == 1:
+            return solids[0]
+        e = NotImplementedError(
+            "Port intersections that are disconnected into multiple "
+            "components are not supported."
+        )
+        self._logger.error(e.args[0])
+        raise e
+
+    def _fuse_shapes(self, shapes):
+        fused = None
+        for shape in shapes:
+            if shape is None:
+                continue
+            fused = shape if fused is None else fused.fuse(shape)
+        return fused
+
+    def _require_valid_solid(self, solid, description):
+        if solid is None or not solid.isValid():
+            e = ValueError(f"{description} is not a valid OpenCascade solid.")
+            self._logger.error(e.args[0])
+            raise e
+
+    def _repair_and_require_valid_solid(self, solid, description):
+        if solid is not None and solid.isValid():
+            return solid
+
+        repaired = solid
+        for operation in ("clean", "fix", "clean_fix"):
+            try:
+                if operation == "clean":
+                    candidate = solid.clean()
+                elif operation == "fix":
+                    candidate = solid.fix()
+                else:
+                    candidate = solid.clean().fix()
+            except Exception:
+                continue
+            if candidate is not None and candidate.isValid():
+                repaired = candidate
+                break
+
+        self._require_valid_solid(repaired, description)
+        return repaired
+
+    def _assert_volume_closure(
+        self,
+        original_volume,
+        remaining_volume,
+        removed_volume,
+        description,
+    ):
+        error = abs(original_volume - remaining_volume - removed_volume)
+        tolerance = self._bool_tolerance(original_volume)
+        if error > tolerance:
+            e = ValueError(
+                f"{description} violates volume closure: error {error} "
+                f"exceeds tolerance {tolerance}."
+            )
+            self._logger.error(e.args[0])
+            raise e
+
+    def _build_port_prism(
+        self, port, start, end, radial_expansion=0.0, axial_expansion=0.0
+    ):
+        """Build a finite prism in the port's local frame."""
+        start = float(start) - float(axial_expansion)
+        end = float(end) + float(axial_expansion)
+        if end <= start:
+            raise ValueError(f"Port {port.name!r} has a nonpositive extent.")
+        axis = np.asarray(port.placement.local_axis, dtype=float)
+        reference = np.asarray(port.placement.local_reference, dtype=float)
+        origin = np.asarray(port.placement.anchor, dtype=float) + axis * start
+        plane = cq.Plane(
+            origin=tuple(origin), xDir=tuple(reference), normal=tuple(axis)
+        )
+        workplane = cq.Workplane(plane)
+        if port.cross_section.shape == "circle":
+            radius = port.cross_section.radius + radial_expansion
+            prism = workplane.circle(radius).extrude(end - start)
+        else:
+            width = port.cross_section.width + 2.0 * radial_expansion
+            height = port.cross_section.height + 2.0 * radial_expansion
+            prism = workplane.rect(width, height).extrude(end - start)
+        solid = self._as_solid(prism.val())
+        self._require_valid_solid(solid, f"Prism for port {port.name!r}")
+        return solid
+
+    def build_port_clearance_envelope(self, port):
+        """Return the configured conservative magnet-clearance envelope."""
+        result = self.port_geometry_diagnostics.get(port.name)
+        if result is None:
+            raise ValueError(f"Port {port.name!r} has not been generated.")
+        clearance = port.collision.minimum_magnet_clearance
+        radial = (
+            port.liner.thickness if port.liner.enabled else 0.0
+        ) + clearance
+        return self._build_port_prism(
+            port,
+            result.resolved_start,
+            result.resolved_end + result.outer_extension,
+            radial_expansion=radial,
+            axial_expansion=clearance,
+        )
+
+    def _line_interval(self, port, solid, description):
+        """Resolve one connected centerline interval inside a solid."""
+        half = port.placement.max_search_length / 2.0
+        anchor = np.asarray(port.placement.anchor, dtype=float)
+        axis = np.asarray(port.placement.local_axis, dtype=float)
+        line = cq.Edge.makeLine(
+            tuple(anchor - axis * half), tuple(anchor + axis * half)
+        )
+        intersection = solid.intersect(line)
+        edges = [edge for edge in intersection.Edges() if edge.Length() > 1e-8]
+        if not edges:
+            raise ValueError(
+                f"Port {port.name!r} centerline does not intersect {description}."
+            )
+        if len(edges) != 1:
+            raise NotImplementedError(
+                f"Port {port.name!r} centerline intersects {description} in "
+                "multiple disconnected or far-side locations."
+            )
+        coordinates = [
+            float(np.dot(np.asarray(vertex.toTuple()) - anchor, axis))
+            for vertex in edges[0].Vertices()
+        ]
+        if len(coordinates) < 2:
+            raise ValueError(
+                f"Port {port.name!r} has a degenerate centerline intersection "
+                f"with {description}."
+            )
+        return min(coordinates), max(coordinates)
+
+    def _resolve_port_endpoint(self, port, endpoint, source_components):
+        if port.placement.mode == "surface":
+            triangles, expected_point = self._endpoint_surface_data(
+                port, endpoint
+            )
+            coordinate = self._point_cloud_surface_coordinate(
+                port, triangles, expected_point, endpoint.reference
+            )
+            return coordinate + endpoint.axial_offset
+        if endpoint.reference == "layer":
+            solid = source_components[endpoint.layer]
+            low, high = self._line_interval(
+                port, solid, f"layer {endpoint.layer!r}"
+            )
+            coordinate = low + endpoint.fraction * (high - low)
+        else:
+            solid = self._generate_endpoint_reference_solid(endpoint.reference)
+            _, coordinate = self._line_interval(
+                port, solid, endpoint.reference
+            )
+        return coordinate + endpoint.axial_offset
+
+    def _point_cloud_surface_coordinate(
+        self, port, triangles, expected_point, description
+    ):
+        anchor = np.asarray(port.placement.anchor, dtype=float)
+        axis = np.asarray(port.placement.local_axis, dtype=float)
+        expected = float(np.dot(np.asarray(expected_point) - anchor, axis))
+        candidates = line_triangle_intersections(anchor, axis, triangles)
+        half = port.placement.max_search_length / 2.0
+        candidates = candidates[np.abs(candidates) <= half]
+        triangle_points = np.asarray(triangles, dtype=float).reshape(
+            (-1, 3, 3)
+        )
+        edge_lengths = np.linalg.norm(
+            np.concatenate(
+                (
+                    triangle_points[:, 1] - triangle_points[:, 0],
+                    triangle_points[:, 2] - triangle_points[:, 1],
+                    triangle_points[:, 0] - triangle_points[:, 2],
+                )
+            ),
+            axis=1,
+        )
+        local_edge = float(np.median(edge_lengths[edge_lengths > 1e-12]))
+        adjacent_scale = 0.0
+        if port.placement.surface_anchor is not None:
+            anchor_spec = port.placement.surface_anchor
+            phi = np.deg2rad(anchor_spec.toroidal_angle)
+            theta = np.deg2rad(anchor_spec.poloidal_angle)
+            radial_points = np.asarray(
+                [
+                    surface.evaluate(phi, theta)
+                    for _, surface in self.native_radial_stack()
+                ]
+            )
+            separations = np.linalg.norm(
+                radial_points - expected_point, axis=1
+            )
+            positive = separations[separations > 1e-7]
+            if len(positive):
+                adjacent_scale = float(np.min(positive))
+        geometric_tolerance = 0.05
+        allowed = min(
+            half,
+            max(
+                adjacent_scale,
+                2.0 * local_edge,
+                2.0 * self._port_aperture_half_width(port),
+                10.0 * geometric_tolerance,
+            ),
+        )
+        nearby = np.sort(candidates[np.abs(candidates - expected) <= allowed])
+        distinct = []
+        for candidate in nearby:
+            if not distinct or abs(candidate - distinct[-1]) > 1e-5:
+                distinct.append(float(candidate))
+        nearby = np.asarray(distinct)
+        centroids = triangle_points.mean(axis=1)
+        closest_index = int(
+            np.argmin(np.linalg.norm(centroids - expected_point, axis=1))
+        )
+        triangle = triangle_points[closest_index]
+        surface_normal = np.cross(
+            triangle[1] - triangle[0], triangle[2] - triangle[0]
+        )
+        surface_normal /= np.linalg.norm(surface_normal)
+        if np.dot(surface_normal, axis) < 0.0:
+            surface_normal = -surface_normal
+        normal_angle = float(
+            np.rad2deg(
+                np.arccos(np.clip(np.dot(surface_normal, axis), -1.0, 1.0))
+            )
+        )
+        diagnostic = {
+            "port_name": port.name,
+            "boundary_name": description,
+            "expected_axial_coordinate": expected,
+            "candidate_line_intersections": candidates.tolist(),
+            "selected_coordinate": None,
+            "allowed_search_interval": [
+                expected - allowed,
+                expected + allowed,
+            ],
+            "adjacent_layer_scale": adjacent_scale,
+            "local_point_cloud_edge_length": local_edge,
+            "aperture_outer_radius": self._port_aperture_half_width(port),
+            "geometric_tolerance": geometric_tolerance,
+            "local_surface_normal": surface_normal.tolist(),
+            "port_axis_angle_to_normal_degrees": normal_angle,
+        }
+        self.port_point_cloud_intersection_diagnostics.append(diagnostic)
+        if len(nearby) == 0:
+            raise ValueError(
+                f"Port {port.name!r} centerline has no point-cloud intersection "
+                f"with {description}."
+            )
+        if len(nearby) > 1:
+            raise ValueError(
+                f"Port {port.name!r} has multiple far-side point-cloud "
+                f"intersections with {description}."
+            )
+        coordinate = float(nearby[0])
+        diagnostic["selected_coordinate"] = coordinate
+        return coordinate
+
+    def _layer_boundary_surfaces(self, layer_name):
+        surface_names = list(self.Surfaces)
+        outer_index = surface_names.index(layer_name)
+        if outer_index == 0:
+            raise ValueError(f"Layer {layer_name!r} has no inner boundary")
+        return (
+            self.Surfaces[surface_names[outer_index - 1]],
+            self.Surfaces[layer_name],
+        )
+
+    def _endpoint_surface_data(self, port, endpoint):
+        anchor_spec = port.placement.surface_anchor
+        phi = np.deg2rad(anchor_spec.toroidal_angle)
+        theta = np.deg2rad(anchor_spec.poloidal_angle)
+        if endpoint.reference in {"plasma_surface", "wall_surface"}:
+            surface = self._anchor_reference_surface(endpoint.reference)
+            return self._port_surface_triangles(
+                port, surface
+            ), surface.evaluate(phi, theta)
+        inner, outer = self._layer_boundary_surfaces(endpoint.layer)
+        triangles = self._interpolate_surface_triangles(
+            port, inner, outer, endpoint.fraction
+        )
+        expected_point = (1.0 - endpoint.fraction) * inner.evaluate(
+            phi, theta
+        ) + endpoint.fraction * outer.evaluate(phi, theta)
+        return triangles, expected_point
+
+    def _port_layer_interval(self, port, layer_name, source_component):
+        if port.placement.mode != "surface":
+            return self._line_interval(
+                port, source_component, f"layer {layer_name!r}"
+            )
+        anchor_spec = port.placement.surface_anchor
+        phi = np.deg2rad(anchor_spec.toroidal_angle)
+        theta = np.deg2rad(anchor_spec.poloidal_angle)
+        inner, outer = self._layer_boundary_surfaces(layer_name)
+        low = self._point_cloud_surface_coordinate(
+            port,
+            self._port_surface_triangles(port, inner),
+            inner.evaluate(phi, theta),
+            f"inner boundary of layer {layer_name!r}",
+        )
+        high = self._point_cloud_surface_coordinate(
+            port,
+            self._port_surface_triangles(port, outer),
+            outer.evaluate(phi, theta),
+            f"outer boundary of layer {layer_name!r}",
+        )
+        return min(low, high), max(low, high)
+
+    @staticmethod
+    def _port_aperture_half_width(port):
+        liner = port.liner.thickness if port.liner.enabled else 0.0
+        if port.cross_section.shape == "circle":
+            return port.cross_section.radius + liner
+        return (
+            np.hypot(port.cross_section.width, port.cross_section.height) / 2.0
+            + np.sqrt(2.0) * liner
+        )
+
+    def _port_surface_triangles(self, port, surface):
+        """Refine the continuous build surface locally around one aperture."""
+        anchor_spec = port.placement.surface_anchor
+        return surface.triangulated_local_patch(
+            np.deg2rad(anchor_spec.toroidal_angle),
+            np.deg2rad(anchor_spec.poloidal_angle),
+            self._port_aperture_half_width(port),
+            0.05,
+        )
+
+    def _interpolate_surface_triangles(
+        self, port, inner_surface, outer_surface, fraction
+    ):
+        anchor_spec = port.placement.surface_anchor
+        parameter_grid = inner_surface.local_patch_parameter_grid(
+            np.deg2rad(anchor_spec.toroidal_angle),
+            np.deg2rad(anchor_spec.poloidal_angle),
+            self._port_aperture_half_width(port),
+            0.05,
+        )
+        inner = inner_surface.triangulate_parameter_grid(*parameter_grid)
+        outer = outer_surface.triangulate_parameter_grid(*parameter_grid)
+        if inner.shape != outer.shape:
+            raise ValueError(
+                "Radial boundary point clouds have different topology"
+            )
+        return (1.0 - fraction) * inner + fraction * outer
+
+    def _endpoint_boundary_triangles(self, port, endpoint):
+        if endpoint.reference in {"plasma_surface", "wall_surface"}:
+            return self._port_surface_triangles(
+                port, self._anchor_reference_surface(endpoint.reference)
+            )
+        inner, outer = self._layer_boundary_surfaces(endpoint.layer)
+        return self._interpolate_surface_triangles(
+            port, inner, outer, endpoint.fraction
+        )
+
+    def _aperture_boundaries(
+        self,
+        port,
+        source_components,
+        target_layers,
+        resolved_start,
+        resolved_end,
+    ):
+        entries = [
+            ApertureBoundary(
+                f"start:{port.extent.start.reference}",
+                self._endpoint_boundary_triangles(port, port.extent.start),
+                resolved_start,
+            )
+        ]
+        for layer_name in target_layers:
+            low, high = self._port_layer_interval(
+                port, layer_name, source_components[layer_name]
+            )
+            inner_surface, outer_surface = self._layer_boundary_surfaces(
+                layer_name
+            )
+            if resolved_start < low < resolved_end:
+                entries.append(
+                    ApertureBoundary(
+                        f"{layer_name}:inner",
+                        self._port_surface_triangles(port, inner_surface),
+                        low,
+                        (layer_name,),
+                    )
+                )
+            if resolved_start < high < resolved_end:
+                entries.append(
+                    ApertureBoundary(
+                        f"{layer_name}:outer",
+                        self._port_surface_triangles(port, outer_surface),
+                        high,
+                        (layer_name,),
+                    )
+                )
+        entries.append(
+            ApertureBoundary(
+                f"end:{port.extent.end.reference}",
+                self._endpoint_boundary_triangles(port, port.extent.end),
+                resolved_end,
+            )
+        )
+        entries.sort(key=lambda item: item.expected_w)
+        unique = []
+        for entry in entries:
+            if (
+                unique
+                and abs(entry.expected_w - unique[-1].expected_w) <= 1e-6
+            ):
+                previous = unique[-1]
+                unique[-1] = ApertureBoundary(
+                    f"{previous.name}|{entry.name}",
+                    previous.triangles,
+                    (previous.expected_w + entry.expected_w) / 2.0,
+                    tuple(dict.fromkeys((*previous.layers, *entry.layers))),
+                )
+            else:
+                unique.append(entry)
+        if len(unique) < 2:
+            raise ValueError(
+                f"Port {port.name!r} has fewer than two boundaries"
+            )
+        return tuple(unique)
+
+    def _trim_inner_endpoint(self, port, solid):
+        endpoint = port.extent.start
+        if endpoint.reference not in {"plasma_surface", "wall_surface"}:
+            return solid
+        if endpoint.axial_offset != 0.0:
+            return solid
+        reference = self._generate_endpoint_reference_solid(endpoint.reference)
+        trimmed = self._as_solid(solid.cut(reference))
+        if trimmed is None:
+            raise ValueError(
+                f"Port {port.name!r} was eliminated while conformally trimming "
+                f"to {endpoint.reference}."
+            )
+        return self._repair_and_require_valid_solid(
+            trimmed, f"Conformally trimmed port {port.name!r}"
+        )
+
+    @staticmethod
+    def _intersection_location(shape):
+        center = shape.CenterOfBoundBox()
+        return (float(center.x), float(center.y), float(center.z))
+
+    def _apply_ports_to_components(self):
+        user_layers = [
+            name
+            for name in self.radial_build.user_layer_names
+            if name in self.Components
+        ]
+        source_components = {
+            name: self._repair_and_require_valid_solid(
+                self._as_solid(self.Components[name]),
+                f"Source component {name!r}",
+            )
+            for name in user_layers
+        }
+        baseline_volumes = {
+            name: self._shape_volume(solid)
+            for name, solid in source_components.items()
+        }
+        baseline_adjacent_overlaps = {
+            (inner, outer): self._shape_volume(
+                source_components[inner].intersect(source_components[outer])
+            )
+            for inner, outer in zip(user_layers, user_layers[1:])
+        }
+        all_target_layers = set()
+
+        for port in self.ports:
+            void_name = f"{port.name}__void"
+            liner_name = f"{port.name}__liner"
+            if port.name in self.Components or void_name in self.Components:
+                raise ValueError(
+                    f"Port name {port.name!r} conflicts with an in-vessel component."
+                )
+            if port.repetition.mode == "per_period":
+                raise NotImplementedError(
+                    "per_period port repetition is not implemented yet."
+                )
+
+            resolved_start = self._resolve_port_endpoint(
+                port, port.extent.start, source_components
+            )
+            resolved_end = self._resolve_port_endpoint(
+                port, port.extent.end, source_components
+            )
+            tolerance = self._bool_tolerance(
+                max(baseline_volumes.values(), default=1.0)
+            )
+            if resolved_start >= resolved_end - tolerance:
+                raise ValueError(
+                    f"Port {port.name!r} resolves start coordinate "
+                    f"{resolved_start} at or beyond end coordinate {resolved_end}; "
+                    "the supplied axis may need to be reversed."
+                )
+            final_end = resolved_end + port.extent.outer_extension
+            liner_thickness = (
+                port.liner.thickness if port.liner.enabled else 0.0
+            )
+            transverse_pad = (
+                port.cross_section.radius
+                if port.cross_section.shape == "circle"
+                else max(port.cross_section.width, port.cross_section.height)
+                / 2.0
+            ) + liner_thickness
+            build_start = resolved_start
+            if (
+                port.extent.start.reference
+                in {"plasma_surface", "wall_surface"}
+                and port.extent.start.axial_offset == 0.0
+            ):
+                build_start -= transverse_pad + 1.0
+            aperture_model = None
+            if port.placement.mode == "surface":
+                preliminary_layers = []
+                for layer_name in user_layers:
+                    low, high = self._port_layer_interval(
+                        port, layer_name, source_components[layer_name]
+                    )
+                    if (
+                        high > resolved_start + tolerance
+                        and low < resolved_end - tolerance
+                    ):
+                        preliminary_layers.append(layer_name)
+                if not preliminary_layers:
+                    raise ValueError(
+                        f"Port {port.name!r} centerline does not cross a user layer"
+                    )
+                boundaries = self._aperture_boundaries(
+                    port,
+                    source_components,
+                    preliminary_layers,
+                    resolved_start,
+                    resolved_end,
+                )
+                aperture_model = build_aperture_model(port, boundaries)
+                inner_aperture = self._trim_inner_endpoint(
+                    port, aperture_model.inner_solid
+                )
+                outer_envelope = self._trim_inner_endpoint(
+                    port, aperture_model.outer_solid
+                )
+                liner = (
+                    self._trim_inner_endpoint(port, aperture_model.liner_solid)
+                    if aperture_model.liner_solid is not None
+                    else None
+                )
+                aperture_model = replace(
+                    aperture_model,
+                    inner_solid=inner_aperture,
+                    outer_solid=outer_envelope,
+                    liner_solid=liner,
+                )
+                self.port_aperture_models[port.name] = aperture_model
+            else:
+                inner_aperture = self._build_port_prism(
+                    port, build_start, final_end
+                )
+                outer_envelope = self._build_port_prism(
+                    port,
+                    build_start,
+                    final_end,
+                    radial_expansion=liner_thickness,
+                )
+                inner_aperture = self._trim_inner_endpoint(
+                    port, inner_aperture
+                )
+                outer_envelope = self._trim_inner_endpoint(
+                    port, outer_envelope
+                )
+
+                liner = None
+                if port.liner.enabled:
+                    liner = self._as_solid(outer_envelope.cut(inner_aperture))
+                    liner = self._repair_and_require_valid_solid(
+                        liner, f"Liner for port {port.name!r}"
+                    )
+
+            for existing_name, existing in self.port_outer_envelopes.items():
+                overlap_shape = outer_envelope.intersect(existing)
+                overlap_volume = self._shape_volume(overlap_shape)
+                if overlap_volume > self._bool_tolerance(
+                    outer_envelope.Volume()
+                ):
+                    location = self._intersection_location(overlap_shape)
+                    raise ValueError(
+                        f"Port {port.name!r} outer envelope overlaps port "
+                        f"{existing_name!r}: volume {overlap_volume}, "
+                        f"approximate location {location}."
+                    )
+
+            if port.placement.mode == "surface":
+                target_layers = tuple(preliminary_layers)
+            else:
+                layer_intersections = []
+                for index, layer_name in enumerate(user_layers):
+                    intersection = outer_envelope.intersect(
+                        source_components[layer_name]
+                    )
+                    volume = self._shape_volume(intersection)
+                    if volume > self._bool_tolerance(
+                        baseline_volumes[layer_name]
+                    ):
+                        low, _ = self._port_layer_interval(
+                            port, layer_name, source_components[layer_name]
+                        )
+                        layer_intersections.append((low, index, layer_name))
+                layer_intersections.sort()
+                target_layers = tuple(item[2] for item in layer_intersections)
+            if not target_layers:
+                box = outer_envelope.BoundingBox()
+                raise ValueError(
+                    f"Port {port.name!r} finite outer envelope does not intersect "
+                    "any user layer; envelope "
+                    f"volume={outer_envelope.Volume()}, "
+                    f"bbox=({box.xmin}, {box.ymin}, {box.zmin}) to "
+                    f"({box.xmax}, {box.ymax}, {box.zmax})."
+                )
+            if (
+                port.expected_layers is not None
+                and target_layers != port.expected_layers
+            ):
+                raise ValueError(
+                    f"Port {port.name!r} expected layers {port.expected_layers} "
+                    f"but geometrically intersects {target_layers}."
+                )
+            if port.resolution is not None and set(target_layers) != set(
+                port.resolution.layers
+            ):
+                raise ValueError(
+                    f"Deprecated layer_span for port {port.name!r} resolves "
+                    f"{port.resolution.layers} but finite geometry intersects "
+                    f"{target_layers}."
+                )
+
+            staged_components = {}
+            original_volume = 0.0
+            remaining_volume = 0.0
+            total_cut_volume = 0.0
+            blanket_union = None
+            for layer_name in target_layers:
+                component = self._repair_and_require_valid_solid(
+                    self._as_solid(self.Components[layer_name]),
+                    f"Current component {layer_name!r}",
+                )
+                before = self._shape_volume(component)
+                if aperture_model is not None:
+                    layer_low, layer_high = self._port_layer_interval(
+                        port, layer_name, source_components[layer_name]
+                    )
+                    cutters = [
+                        segment
+                        for segment_low, segment_high, segment in aperture_model.boolean_segments
+                        if segment_high > layer_low
+                        and segment_low < layer_high
+                    ]
+                    remaining_shape = component
+                    for cutter in cutters:
+                        cut_error = None
+                        for fuzzy_tolerance in (1e-7, 1e-6, 1e-5, 1e-4):
+                            try:
+                                candidate = remaining_shape.cut(
+                                    cutter, tol=fuzzy_tolerance
+                                )
+                            except (ValueError, RuntimeError) as error:
+                                cut_error = error
+                                continue
+                            if (
+                                candidate is not None
+                                and not candidate.isNull()
+                            ):
+                                remaining_shape = candidate
+                                break
+                        else:
+                            raise ValueError(
+                                f"Point-cloud aperture cut failed for port "
+                                f"{port.name!r}, layer {layer_name!r}"
+                            ) from cut_error
+                    remaining = self._as_solid(remaining_shape)
+                else:
+                    remaining = self._as_solid(
+                        component.cut(outer_envelope, tol=1e-6)
+                    )
+                if remaining is None:
+                    raise ValueError(
+                        f"Port {port.name!r} completely removes layer {layer_name!r}."
+                    )
+                remaining = self._repair_and_require_valid_solid(
+                    remaining,
+                    f"Remaining component for port {port.name!r}, layer {layer_name!r}",
+                )
+                after = self._shape_volume(remaining)
+                if port.placement.mode == "surface":
+                    removed_volume = before - after
+                else:
+                    removed = self._as_solid(
+                        component.intersect(outer_envelope)
+                    )
+                    if removed is None:
+                        raise ValueError(
+                            f"Port {port.name!r} does not remove positive volume "
+                            f"from layer {layer_name!r}."
+                        )
+                    removed_volume = self._shape_volume(removed)
+                if removed_volume <= self._bool_tolerance(before):
+                    raise ValueError(
+                        f"Port {port.name!r} does not remove positive volume "
+                        f"from layer {layer_name!r}."
+                    )
+                self._assert_volume_closure(
+                    before,
+                    after,
+                    removed_volume,
+                    f"Port {port.name!r}, layer {layer_name!r}",
+                )
+                for assembly_shape, kind in (
+                    (inner_aperture, "void"),
+                    (liner, "liner"),
+                ):
+                    if assembly_shape is None:
+                        continue
+                    overlap = self._shape_volume(
+                        remaining.intersect(assembly_shape)
+                    )
+                    if overlap > self._bool_tolerance(before):
+                        raise ValueError(
+                            f"Port {port.name!r} {kind} overlaps remaining "
+                            f"material in layer {layer_name!r}: volume "
+                            f"{overlap}, tolerance {self._bool_tolerance(before)}."
+                        )
+                staged_components[layer_name] = remaining
+                original_volume += before
+                remaining_volume += after
+                total_cut_volume += removed_volume
+                source = source_components[layer_name]
+                blanket_union = (
+                    source
+                    if blanket_union is None
+                    else blanket_union.fuse(source)
+                )
+
+            void_inside = self._shape_volume(
+                inner_aperture.intersect(blanket_union)
+            )
+            liner_inside = (
+                self._shape_volume(liner.intersect(blanket_union))
+                if liner is not None
+                else 0.0
+            )
+            void_outside = inner_aperture.Volume() - void_inside
+            liner_outside = (
+                (liner.Volume() - liner_inside) if liner is not None else 0.0
+            )
+            closure_error = abs(
+                original_volume - remaining_volume - void_inside - liner_inside
+            )
+            if closure_error > self._bool_tolerance(original_volume):
+                raise ValueError(
+                    f"Port {port.name!r} assembly violates blanket volume "
+                    f"closure: error {closure_error}."
+                )
+            partition_tolerance = self._bool_tolerance(total_cut_volume)
+            if aperture_model is not None:
+                partition_tolerance = max(
+                    partition_tolerance, 2e-4 * total_cut_volume
+                )
+            if (
+                abs(total_cut_volume - void_inside - liner_inside)
+                > partition_tolerance
+            ):
+                raise ValueError(
+                    f"Port {port.name!r} void and liner do not partition the "
+                    f"removed blanket volume: cut={total_cut_volume}, "
+                    f"void={void_inside}, liner={liner_inside}, tolerance="
+                    f"{partition_tolerance}."
+                )
+            if liner is not None:
+                void_liner_overlap = self._shape_volume(
+                    inner_aperture.intersect(liner)
+                )
+                if void_liner_overlap > self._bool_tolerance(liner.Volume()):
+                    raise ValueError(
+                        f"Port {port.name!r} liner overlaps its clear void."
+                    )
+
+            plasma_overlap = 0.0
+            if (
+                port.extent.start.reference == "plasma_surface"
+                and liner is not None
+            ):
+                plasma = self._generate_endpoint_reference_solid(
+                    "plasma_surface"
+                )
+                plasma_overlap = self._shape_volume(liner.intersect(plasma))
+                if plasma_overlap > self._bool_tolerance(plasma.Volume()):
+                    raise ValueError(
+                        f"Port {port.name!r} liner penetrates the plasma volume."
+                    )
+
+            self.Components.update(staged_components)
+            self.Components[void_name] = inner_aperture
+            if liner is not None:
+                self.Components[liner_name] = liner
+                self.port_liner_components[port.name] = liner
+            self.port_void_components[port.name] = inner_aperture
+            self.port_outer_envelopes[port.name] = outer_envelope
+            if aperture_model is not None:
+                self.port_aperture_models[port.name] = aperture_model
+            self._ported_layer_names.update(target_layers)
+            all_target_layers.update(target_layers)
+            self.port_geometry_diagnostics[port.name] = PortGeometryResult(
+                name=port.name,
+                resolved_start=resolved_start,
+                resolved_end=resolved_end,
+                outer_extension=port.extent.outer_extension,
+                ordered_intersected_layers=target_layers,
+                original_blanket_volume=original_volume,
+                remaining_blanket_volume=remaining_volume,
+                void_volume_inside_blanket=void_inside,
+                liner_volume_inside_blanket=liner_inside,
+                void_volume_outside_blanket=max(0.0, void_outside),
+                liner_volume_outside_blanket=max(0.0, liner_outside),
+                total_cut_volume=total_cut_volume,
+                closure_error=closure_error,
+                maximum_liner_overlap_with_plasma=plasma_overlap,
+            )
+
+        for layer_name in user_layers:
+            final_volume = self._shape_volume(self.Components[layer_name])
+            original_volume = baseline_volumes[layer_name]
+            tolerance = self._bool_tolerance(original_volume)
+            if layer_name in all_target_layers:
+                if final_volume >= original_volume - tolerance:
+                    raise ValueError(
+                        f"Ported layer {layer_name!r} did not lose positive volume."
+                    )
+            elif abs(final_volume - original_volume) > tolerance:
+                raise ValueError(
+                    f"Unselected layer {layer_name!r} changed volume by "
+                    f"{abs(final_volume - original_volume)}."
+                )
+
+        for pair, baseline_overlap in baseline_adjacent_overlaps.items():
+            inner, outer = pair
+            final_overlap = self._shape_volume(
+                self.Components[inner].intersect(self.Components[outer])
+            )
+            tolerance = self._bool_tolerance(
+                max(baseline_volumes[inner], baseline_volumes[outer])
+            )
+            if final_overlap > baseline_overlap + tolerance:
+                raise ValueError(
+                    f"Port booleans introduced overlap between adjacent layers "
+                    f"{inner!r} and {outer!r}."
+                )
+
+        for name in all_target_layers:
+            self._require_valid_solid(
+                self._as_solid(self.Components[name]),
+                f"Final component {name!r}",
+            )
+        for name, solid in self.port_void_components.items():
+            self._require_valid_solid(solid, f"Final port void {name!r}")
+        for name, solid in self.port_liner_components.items():
+            self._require_valid_solid(solid, f"Final port liner {name!r}")
 
     def _connect_ribs_with_tris_moab(self, rib1, rib2, reverse=False):
         """Creat MBTRI elements add add them to a surface between two ribs.
@@ -707,17 +1873,37 @@ class InVesselBuild(object):
             self.dag_model.volumes,
             list(self.radial_build.radial_build.items())[1:],
         ):
-
             mat = layer_data.get("mat_tag", layer_name)
             group = pydagmc.Group.create(self.dag_model, name="mat:" + mat)
             group.add_set(vol)
             layer_data["vol_id"] = vol.id
 
-    def generate_components_pydagmc(self):
-        """Use PyDAGMC to build a DAGMC model of the invessel components"""
+    def generate_components_pydagmc(
+        self,
+        *,
+        include_graveyard=True,
+        aperture_chord_tolerance=0.05,
+        vertex_merge_tolerance=1.0e-9,
+    ):
+        """Use PyDAGMC to build a DAGMC model of the invessel components.
+
+        Native port models can omit their graveyard while independent physical
+        models are assembled.  The default preserves the standalone behavior.
+        """
         self._logger.info(
             "Generating DAGMC model of in-vessel components with PyDAGMC..."
         )
+
+        if self.ports:
+            self.native_port_complex = build_native_port_surface_complex(
+                self,
+                include_graveyard=include_graveyard,
+                aperture_chord_tolerance=aperture_chord_tolerance,
+                vertex_merge_tolerance=vertex_merge_tolerance,
+            )
+            self.dag_model = self.native_port_complex.to_pydagmc()
+            self.mbc = self.dag_model.mb
+            return
 
         if np.isclose(
             self.radial_build.toroidal_angles[-1]
@@ -754,7 +1940,6 @@ class InVesselBuild(object):
         prev_outer_surface_id = None
 
         for data in self.radial_build.radial_build.values():
-
             inner_surface_id, outer_surface_id = orient_spline_surfaces(
                 data["vol_id"]
             )
@@ -790,6 +1975,12 @@ class InVesselBuild(object):
             )
             cq.exporters.export(component, str(export_path))
 
+    def export_native_port_artifacts(self, output_dir, **kwargs):
+        """Export native point-cloud DAGMC and conformal volume-mesh files."""
+        from .native_port_artifacts import export_native_port_artifacts
+
+        return export_native_port_artifacts(self, output_dir, **kwargs)
+
     def extract_solids_and_mat_tags(self):
         """Get a list of all cadquery solids, and a corresponding list of
         the respective material tags.
@@ -803,7 +1994,18 @@ class InVesselBuild(object):
 
         for name, solid in self.Components.items():
             solids.append(solid)
-            mat_tags.append(self.radial_build.radial_build[name]["mat_tag"])
+            if name in self.radial_build.radial_build:
+                mat_tags.append(
+                    self.radial_build.radial_build[name]["mat_tag"]
+                )
+            elif name.endswith("__void"):
+                port_spec = self.port_specs[name[: -len("__void")]]
+                mat_tags.append(port_spec.fill.mat_tag)
+            elif name.endswith("__liner"):
+                port_spec = self.port_specs[name[: -len("__liner")]]
+                mat_tags.append(port_spec.liner.mat_tag)
+            else:
+                raise ValueError(f"No material tag is defined for {name!r}.")
 
         return solids, mat_tags
 
@@ -840,6 +2042,27 @@ class InVesselBuild(object):
             remove_inner_component("plasma")
         elif "chamber" in components:
             remove_inner_component("chamber")
+
+        if self.ports:
+            affected = self._ported_layer_names.intersection(components)
+            if affected:
+                e = NotImplementedError(
+                    "MOAB mesh workflow is not supported for ported components: "
+                    f"{sorted(affected)}"
+                )
+                self._logger.error(e.args[0])
+                raise e
+            port_component_names = {
+                f"{name}__void" for name in self.port_void_components
+            }.union(f"{name}__liner" for name in self.port_liner_components)
+            affected_ports = port_component_names.intersection(components)
+            if affected_ports:
+                e = NotImplementedError(
+                    "MOAB mesh workflow is not supported for port fills: "
+                    f"{sorted(affected_ports)}"
+                )
+                self._logger.error(e.args[0])
+                raise e
 
         surface_keys = list(self.Surfaces.keys())
 
@@ -1114,7 +2337,6 @@ class Surface(object):
     """
 
     def __init__(self, ref_surf, s, theta_list, phi_list, offset_mat, scale):
-
         self.ref_surf = ref_surf
         self.s = s
         self.theta_list = theta_list
@@ -1123,6 +2345,214 @@ class Surface(object):
         self.scale = scale
 
         self.surface = None
+        self._offset_interpolator = None
+
+    def _canonical_angles(self, toroidal_angle, poloidal_angle):
+        phi = float(toroidal_angle)
+        theta = float(poloidal_angle)
+        phi_min, phi_max = float(self.phi_list[0]), float(self.phi_list[-1])
+        if phi < phi_min - 1e-12 or phi > phi_max + 1e-12:
+            raise ValueError(
+                f"Toroidal angle {np.rad2deg(phi)} degrees lies outside the "
+                f"surface sector [{np.rad2deg(phi_min)}, {np.rad2deg(phi_max)}]."
+            )
+        theta_min, theta_max = (
+            float(self.theta_list[0]),
+            float(self.theta_list[-1]),
+        )
+        period = theta_max - theta_min
+        if period <= 0.0:
+            raise ValueError("Surface poloidal coordinates are not increasing")
+        theta = (theta - theta_min) % period + theta_min
+        return min(max(phi, phi_min), phi_max), theta
+
+    def _offset_at(self, toroidal_angle, poloidal_angle):
+        if self._offset_interpolator is None:
+            self._offset_interpolator = RegularGridInterpolator(
+                (self.phi_list, self.theta_list),
+                self.offset_mat,
+                method="linear",
+                bounds_error=True,
+            )
+        return float(
+            self._offset_interpolator(
+                np.array([[toroidal_angle, poloidal_angle]], dtype=float)
+            )[0]
+        )
+
+    def evaluate(self, toroidal_angle, poloidal_angle):
+        """Evaluate the same continuous offset surface used by the rib cloud."""
+        phi, theta = self._canonical_angles(toroidal_angle, poloidal_angle)
+        theta_values = np.array([theta], dtype=float)
+        point = np.asarray(
+            self.ref_surf.angles_to_xyz(phi, theta_values, self.s, self.scale),
+            dtype=float,
+        ).reshape(-1, 3)[0]
+        offset = self._offset_at(phi, theta)
+        if offset != 0.0:
+            poloidal = np.asarray(
+                self.ref_surf.calculate_tangents(
+                    phi, theta_values, self.s, self.scale
+                ),
+                dtype=float,
+            ).reshape(-1, 3)[0]
+            toroidal_plane_normal = np.array(
+                [-np.sin(phi), np.cos(phi), 0.0], dtype=float
+            )
+            outward = np.cross(toroidal_plane_normal, poloidal)
+            outward /= np.linalg.norm(outward)
+            point = point + offset * outward
+        return point
+
+    def local_surface_frame(self, toroidal_angle, poloidal_angle):
+        """Return point, poloidal/toroidal tangents, and selected outward normal."""
+        phi, theta = self._canonical_angles(toroidal_angle, poloidal_angle)
+        phi_span = float(self.phi_list[-1] - self.phi_list[0])
+        delta = min(1e-5, max(phi_span * 1e-4, 1e-7))
+        if phi - delta < self.phi_list[0]:
+            toroidal = self.evaluate(phi + delta, theta) - self.evaluate(
+                phi, theta
+            )
+        elif phi + delta > self.phi_list[-1]:
+            toroidal = self.evaluate(phi, theta) - self.evaluate(
+                phi - delta, theta
+            )
+        else:
+            toroidal = self.evaluate(phi + delta, theta) - self.evaluate(
+                phi - delta, theta
+            )
+        poloidal = self.evaluate(phi, theta + delta) - self.evaluate(
+            phi, theta - delta
+        )
+        toroidal /= np.linalg.norm(toroidal)
+        poloidal = poloidal - np.dot(poloidal, toroidal) * toroidal
+        poloidal /= np.linalg.norm(poloidal)
+        outward = np.cross(toroidal, poloidal)
+        outward /= np.linalg.norm(outward)
+
+        reference_poloidal = np.asarray(
+            self.ref_surf.calculate_tangents(
+                phi, np.array([theta]), self.s, self.scale
+            ),
+            dtype=float,
+        ).reshape(-1, 3)[0]
+        expected_outward = np.cross(
+            np.array([-np.sin(phi), np.cos(phi), 0.0]), reference_poloidal
+        )
+        if np.dot(outward, expected_outward) < 0.0:
+            poloidal = -poloidal
+            outward = -outward
+        return self.evaluate(phi, theta), poloidal, toroidal, outward
+
+    def radial_build_normal(self, toroidal_angle, poloidal_angle):
+        """Return the poloidal-rib normal used for radial-build offsets."""
+
+        phi, theta = self._canonical_angles(toroidal_angle, poloidal_angle)
+        poloidal = np.asarray(
+            self.ref_surf.calculate_tangents(
+                phi, np.array([theta]), self.s, self.scale
+            ),
+            dtype=float,
+        ).reshape(-1, 3)[0]
+        toroidal_plane_normal = np.array(
+            [-np.sin(phi), np.cos(phi), 0.0], dtype=float
+        )
+        outward = np.cross(toroidal_plane_normal, poloidal)
+        outward /= np.linalg.norm(outward)
+        return outward
+
+    def triangulated_point_cloud(self):
+        """Triangulate the refined rib loci without creating a CAD surface."""
+        loci = self.get_loci()
+        triangles = []
+        for rib_index in range(loci.shape[0] - 1):
+            for point_index in range(loci.shape[1] - 1):
+                a = loci[rib_index, point_index]
+                b = loci[rib_index + 1, point_index]
+                c = loci[rib_index + 1, point_index + 1]
+                d = loci[rib_index, point_index + 1]
+                triangles.append((a, b, c))
+                triangles.append((a, c, d))
+        return np.asarray(triangles, dtype=float)
+
+    def triangulated_local_patch(
+        self,
+        toroidal_angle,
+        poloidal_angle,
+        physical_half_width,
+        geometric_tolerance,
+    ):
+        """Create a tolerance-driven local refinement of the continuous surface."""
+        parameter_grid = self.local_patch_parameter_grid(
+            toroidal_angle,
+            poloidal_angle,
+            physical_half_width,
+            geometric_tolerance,
+        )
+        return self.triangulate_parameter_grid(*parameter_grid)
+
+    def local_patch_parameter_grid(
+        self,
+        toroidal_angle,
+        poloidal_angle,
+        physical_half_width,
+        geometric_tolerance,
+    ):
+        """Return an angular grid shared by corresponding radial surfaces."""
+        phi, theta = self._canonical_angles(toroidal_angle, poloidal_angle)
+        delta = 1e-5
+        phi_speed = np.linalg.norm(
+            self.evaluate(phi + delta, theta)
+            - self.evaluate(phi - delta, theta)
+        ) / (2.0 * delta)
+        theta_speed = np.linalg.norm(
+            self.evaluate(phi, theta + delta)
+            - self.evaluate(phi, theta - delta)
+        ) / (2.0 * delta)
+        patch_radius = max(float(physical_half_width) * 1.75, 1.0)
+        phi_half_span = patch_radius / phi_speed
+        theta_half_span = patch_radius / theta_speed
+        phi_min = max(float(self.phi_list[0]), phi - phi_half_span)
+        phi_max = min(float(self.phi_list[-1]), phi + phi_half_span)
+        target_edge = max(
+            float(geometric_tolerance) * 4.0, patch_radius / 12.0
+        )
+        phi_count = max(
+            9, int(np.ceil((phi_max - phi_min) * phi_speed / target_edge)) + 1
+        )
+        theta_count = max(
+            17,
+            int(np.ceil(2.0 * theta_half_span * theta_speed / target_edge))
+            + 1,
+        )
+        phi_values = np.linspace(phi_min, phi_max, phi_count)
+        theta_values = np.linspace(
+            theta - theta_half_span, theta + theta_half_span, theta_count
+        )
+        return phi_values, theta_values
+
+    def triangulate_parameter_grid(self, phi_values, theta_values):
+        """Evaluate and triangulate this surface on a supplied angular grid."""
+        loci = np.asarray(
+            [
+                [
+                    self.evaluate(phi_value, theta_value)
+                    for theta_value in theta_values
+                ]
+                for phi_value in phi_values
+            ],
+            dtype=float,
+        )
+        triangles = []
+        for phi_index in range(len(phi_values) - 1):
+            for theta_index in range(len(theta_values) - 1):
+                a = loci[phi_index, theta_index]
+                b = loci[phi_index + 1, theta_index]
+                c = loci[phi_index + 1, theta_index + 1]
+                d = loci[phi_index, theta_index + 1]
+                triangles.append((a, b, c))
+                triangles.append((a, c, d))
+        return np.asarray(triangles, dtype=float)
 
     def populate_ribs(self):
         """Populates Rib class objects for each toroidal angle specified in
@@ -1192,7 +2622,6 @@ class Rib(object):
     """
 
     def __init__(self, ref_surf, s, theta_list, phi, offset_list, scale):
-
         self.ref_surf = ref_surf
         self.s = s
         self.theta_list = theta_list
@@ -1465,12 +2894,12 @@ class RadialBuild(object):
         logger=None,
         **kwargs,
     ):
-
         self.logger = logger
         self.toroidal_angles = toroidal_angles
         self.poloidal_angles = poloidal_angles
         self.wall_s = wall_s
         self.radial_build = radial_build
+        self._user_layer_names = tuple(self.radial_build.keys())
         self.split_chamber = split_chamber
 
         for name in kwargs.keys() & (
@@ -1566,10 +2995,10 @@ class RadialBuild(object):
             ):
                 e = AssertionError(
                     f"The dimensions of {name}'s thickness matrix "
-                    f'{component["thickness_matrix"].shape} must match the '
+                    f"{component['thickness_matrix'].shape} must match the "
                     "dimensions defined by the toroidal and poloidal angle "
                     "lists "
-                    f"{len(self._toroidal_angles),len(self._poloidal_angles)}, "
+                    f"{len(self._toroidal_angles), len(self._poloidal_angles)}, "
                     "which define the rows and columns of the matrix, "
                     "respectively."
                 )
@@ -1586,6 +3015,9 @@ class RadialBuild(object):
 
             if "mat_tag" not in component:
                 self._set_mat_tag(name, name)
+
+        if not hasattr(self, "_user_layer_names"):
+            self._user_layer_names = tuple(self._radial_build.keys())
 
     @property
     def split_chamber(self):
@@ -1681,6 +3113,11 @@ class RadialBuild(object):
         """
         self.radial_build[name]["mat_tag"] = mat_tag
 
+    @property
+    def user_layer_names(self):
+        """User-supplied radial build component names before inner regions are added."""
+        return self._user_layer_names
+
 
 def parse_args():
     """Parser for running as a script."""
@@ -1695,8 +3132,7 @@ def parse_args():
         "--export_dir",
         default="",
         help=(
-            "Directory to which output files are exported (default: working "
-            "directory)"
+            "Directory to which output files are exported (default: working directory)"
         ),
         metavar="",
     )
@@ -1705,8 +3141,7 @@ def parse_args():
         "--logger",
         default=False,
         help=(
-            "Flag to indicate whether to instantiate a logger object (default: "
-            "False)"
+            "Flag to indicate whether to instantiate a logger object (default: False)"
         ),
         metavar="",
     )

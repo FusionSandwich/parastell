@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "scope": "PLC/topology diagnostic; not qualified transport geometry",
+  "terminal_classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE",
+  "repository": {
+    "path": "D:\\parastell-worktrees\\actual-plc-repair-20260824",
+    "branch": "ports/actual-plc-repair-20260824",
+    "matrix_commit": "2fb50632ca47d2df7fa0e2afed4fd99bbe477ee9"
+  },
+  "external_root": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2",
+  "external_file_count": 22,
+  "external_total_bytes": 388731,
+  "all_output_hashes_and_sizes": {
+    "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\geometry_diagnostic_manifest.json",
+    "bytes": 8802,
+    "sha256": "d1552af41800173495cabda768893fd99e7cebb91ab56d9a2cc94602759d8997"
+  },
+  "case_matrix": [
+    {"case": "A0", "port": false, "resolution": "13x49", "radial_diagonal": "sector_edge_alternate", "intersection_count": 0, "tetrahedron_count": 85886, "classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE"},
+    {"case": "A1", "port": true, "resolution": "13x49", "radial_diagonal": "sector_edge_alternate", "intersection_count": 0, "tetrahedron_count": 87694, "classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE"},
+    {"case": "B0", "port": false, "resolution": "17x65", "radial_diagonal": "primary", "intersection_count": 0, "tetrahedron_count": 102227, "classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE"},
+    {"case": "B1", "port": true, "resolution": "17x65", "radial_diagonal": "alternate", "intersection_count": 0, "tetrahedron_count": 102540, "classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE"},
+    {"case": "C0", "port": false, "resolution": "21x81", "radial_diagonal": "alternate", "intersection_count": 0, "tetrahedron_count": 118118, "classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE"},
+    {"case": "C1", "port": true, "resolution": "21x81", "radial_diagonal": "primary", "intersection_count": 0, "tetrahedron_count": 120358, "classification": "PASS_NO_REPRODUCIBLE_PLC_FAILURE"}
+  ],
+  "required_evidence": [
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\plc_diagnostic_summary.json", "bytes": 2208, "sha256": "9e42f4ee6a07f2ea01fcfa2aaabc3369669859e7d7eeed762e8cbe361e5dd1a8"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\environment_manifest.json", "bytes": 3073, "sha256": "898713466916b1a2f3d379ab2e3718ce73e5adae4166c2f8ec253e6d27f9f3e5"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\input_manifest.json", "bytes": 4779, "sha256": "732d2ceffdb42a3b93cd9cc9e6ec9cba1bb8d44385aafe543014a1fce62f3724"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\A0\\case_receipt.json", "bytes": 29945, "sha256": "cb83e9082edd5e5c7e657940d598dcdd8a66d68158707c7d77c340a2ec3bd4c1"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\A1\\case_receipt.json", "bytes": 32413, "sha256": "59a23531cd544db02b5db7d07bf81cc69d667acf8506f76de6f782add3615e4c"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\B0\\case_receipt.json", "bytes": 29151, "sha256": "6e4088d7e797acf9f0ea54b521af7199125849a96708fe4a92c5ca2d313a1a8d"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\B1\\case_receipt.json", "bytes": 33259, "sha256": "2e2a8399a543803f7abb5d34b7180dc1b116aa4a55d90b9e5de1c8733564481d"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\C0\\case_receipt.json", "bytes": 31607, "sha256": "0593ca27310e876931e081be960a191b6efe11806543974e0c3bdf5cfd64228c"},
+    {"path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824-r2\\C1\\case_receipt.json", "bytes": 34885, "sha256": "f53fc20d6fb55433c4cc8132478c8dd802d6933bf710c2f5f0bf13cb6805c650"}
+  ],
+  "verification": {
+    "master_manifest_records_recomputed": 21,
+    "master_manifest_mismatches": 0,
+    "receipt_output_records_recomputed": 12,
+    "receipt_output_mismatches": 0,
+    "scoped_regression_tests_passed": 105
+  },
+  "superseded_immutable_attempts": [
+    {
+      "manifest": {
+        "path": "D:\\openc-hts-dpa-data\\geometry-diagnostics\\actual-plc-repair-20260824\\geometry_diagnostic_manifest.json",
+        "bytes": 8675,
+        "sha256": "2dafb5f11d75ed78a66b7df3029316bba6c6e34162f54bde4e91f0d5920f5b35"
+      },
+      "reason": "crossings were repaired, but a single global radial diagonal policy exposed invalid zero-tag Gmsh tetra connectivity in A1, B0, and C1"
+    }
+  ]
+}

@@ -1,14 +1,22 @@
 import argparse
 from pathlib import Path
+import warnings
 
 import cadquery as cq
 import cad_to_dagmc
+import numpy as np
+import pydagmc
 from pymoab import core
+from OCP.BRepExtrema import BRepExtrema_DistShapeShape
 
 from . import log
 from . import invessel_build as ivb
 from . import magnet_coils as mc
 from . import source_mesh as sm
+from .ports import PortCollisionRecord
+from .component_ledger import ComponentRecord, component_sort_key
+from .port_visualization import export_port_visual_validation
+from .port_local_visualization import export_port_local_validation
 from .cubit_utils import (
     create_new_cubit_instance,
     export_dagmc_cubit,
@@ -16,6 +24,14 @@ from .cubit_utils import (
     make_material_block,
 )
 from .utils import read_yaml_config, filter_kwargs, m2cm, combine_dagmc_models
+from .dagmc_assembly import (
+    audit_dagmc_model,
+    assert_no_graveyard,
+    close_with_graveyard,
+    ensure_geometry_names,
+    tag_volume_component,
+)
+from .native_port_geometry import build_native_port_surface_complex
 from .pystell import read_vmec
 
 export_cubit_dagmc_allowed_kwargs = [
@@ -67,6 +83,8 @@ class Stellarator(object):
         self.magnet_set = None
         self.source_mesh = None
         self.use_pydagmc = False
+        self.port_magnet_collision_report = ()
+        self.component_ledger = ()
 
     @property
     def ref_surf(self):
@@ -186,6 +204,179 @@ class Stellarator(object):
         self.invessel_build.populate_surfaces()
         self.invessel_build.calculate_loci()
         self.invessel_build.generate_components()
+        self._validate_port_magnet_clearance_if_available()
+
+    def _validate_port_magnet_clearance_if_available(self):
+        if (
+            self.invessel_build is not None
+            and self.magnet_set is not None
+            and self.invessel_build.port_outer_envelopes
+        ):
+            return self.check_port_magnet_clearance()
+        return []
+
+    def check_port_magnet_clearance(self):
+        """Classify port-envelope collision and clearance against every coil."""
+        if (
+            self.invessel_build is None
+            or not self.invessel_build.port_outer_envelopes
+        ):
+            return []
+        if self.magnet_set is None:
+            raise ValueError(
+                "Magnet geometry is required for port clearance checking."
+            )
+
+        try:
+            magnet_records = list(self.magnet_set.iter_coil_solids())
+        except (AttributeError, NotImplementedError) as exc:
+            raise NotImplementedError(
+                "Port–magnet collision checking is unavailable for this "
+                "magnet representation."
+            ) from exc
+
+        records = []
+        errors = []
+        for (
+            port_name,
+            outer_envelope,
+        ) in self.invessel_build.port_outer_envelopes.items():
+            port = self.invessel_build.port_specs[port_name]
+            clearance_envelope = (
+                self.invessel_build.build_port_clearance_envelope(port)
+            )
+            tolerance = self.invessel_build._bool_tolerance(
+                outer_envelope.Volume()
+            )
+            for magnet in magnet_records:
+                actual_overlap = self.invessel_build._shape_volume(
+                    outer_envelope.intersect(magnet.solid)
+                )
+                clearance_overlap = self.invessel_build._shape_volume(
+                    clearance_envelope.intersect(magnet.solid)
+                )
+                if actual_overlap > tolerance:
+                    status = "collision"
+                    policy = port.collision.magnet_policy
+                elif clearance_overlap > tolerance:
+                    status = "clearance_violation"
+                    policy = port.collision.clearance_policy
+                else:
+                    status = "clear"
+                    policy = "report"
+                distance = self._shape_distance_evidence(
+                    outer_envelope, magnet.solid
+                )
+                minimum_distance = distance["distance"]
+                record = PortCollisionRecord(
+                    port_name=port_name,
+                    coil_id=magnet.coil_id,
+                    magnet_region_kind=magnet.region_kind,
+                    actual_overlap_volume=actual_overlap,
+                    clearance_envelope_overlap_volume=clearance_overlap,
+                    required_clearance=port.collision.minimum_magnet_clearance,
+                    estimated_minimum_distance=minimum_distance,
+                    status=status,
+                    distance_evidence=distance["evidence"],
+                    closest_point_coordinates=distance["closest_points"],
+                )
+                records.append(record)
+                if status == "clear" or policy in {"report", "ignore"}:
+                    continue
+                message = (
+                    f"Port {port_name!r} {status.replace('_', ' ')} with coil "
+                    f"{magnet.coil_id!r} {magnet.region_kind}: overlap "
+                    f"{actual_overlap}, clearance-envelope overlap "
+                    f"{clearance_overlap}."
+                )
+                if policy == "warn":
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
+                    self._logger.warning(message)
+                elif policy == "error":
+                    errors.append(message)
+
+        self.port_magnet_collision_report = tuple(records)
+        counts = {
+            status: sum(record.status == status for record in records)
+            for status in ("collision", "clearance_violation", "clear")
+        }
+        self._logger.info(
+            f"Port–magnet clearance: {counts['collision']} collision(s), "
+            f"{counts['clearance_violation']} clearance violation(s), "
+            f"{counts['clear']} clear pair(s)."
+        )
+        if errors:
+            raise ValueError(" ".join(errors))
+        return list(records)
+
+    @staticmethod
+    def _shape_distance_evidence(first, second, tolerance=1.0e-7):
+        """Return checked exact distance or a conservative box lower bound."""
+
+        first_box = first.BoundingBox()
+        second_box = second.BoundingBox()
+        first_bounds = np.asarray(
+            (
+                (first_box.xmin, first_box.xmax),
+                (first_box.ymin, first_box.ymax),
+                (first_box.zmin, first_box.zmax),
+            )
+        )
+        second_bounds = np.asarray(
+            (
+                (second_box.xmin, second_box.xmax),
+                (second_box.ymin, second_box.ymax),
+                (second_box.zmin, second_box.zmax),
+            )
+        )
+        gaps = np.maximum(
+            np.maximum(
+                first_bounds[:, 0] - second_bounds[:, 1],
+                second_bounds[:, 0] - first_bounds[:, 1],
+            ),
+            0.0,
+        )
+        box_lower_bound = float(np.linalg.norm(gaps))
+        try:
+            calculation = BRepExtrema_DistShapeShape(
+                first.wrapped, second.wrapped
+            )
+            calculation.SetMultiThread(False)
+            calculation.Perform()
+            if not calculation.IsDone() or calculation.NbSolution() < 1:
+                raise RuntimeError("distance calculation has no solution")
+            distance = float(calculation.Value())
+            first_point = calculation.PointOnShape1(1)
+            second_point = calculation.PointOnShape2(1)
+            closest = np.asarray(
+                (
+                    (first_point.X(), first_point.Y(), first_point.Z()),
+                    (second_point.X(), second_point.Y(), second_point.Z()),
+                )
+            )
+            inside_first = np.all(
+                (closest[0] >= first_bounds[:, 0] - tolerance)
+                & (closest[0] <= first_bounds[:, 1] + tolerance)
+            )
+            inside_second = np.all(
+                (closest[1] >= second_bounds[:, 0] - tolerance)
+                & (closest[1] <= second_bounds[:, 1] + tolerance)
+            )
+            if not inside_first or not inside_second:
+                raise RuntimeError(
+                    "distance calculation returned a point outside its shape bounds"
+                )
+            return {
+                "distance": distance,
+                "evidence": "exact",
+                "closest_points": tuple(tuple(row) for row in closest),
+            }
+        except Exception:
+            return {
+                "distance": box_lower_bound,
+                "evidence": "bounding_box_lower_bound",
+                "closest_points": None,
+            }
 
     def export_invessel_build_step(self, export_dir=""):
         """Exports InVesselBuild component STEP files.
@@ -197,12 +388,22 @@ class Stellarator(object):
         self.invessel_build.export_step(export_dir=export_dir)
 
     def export_invessel_build_mesh_moab(
-        self, components, filename, export_dir=""
+        self,
+        components,
+        filename,
+        export_dir="",
+        geometry_source="auto",
+        min_mesh_size=5.0,
+        max_mesh_size=25.0,
+        quality_thresholds=None,
+        aperture_chord_tolerance=0.05,
+        vertex_merge_tolerance=1.0e-9,
     ):
-        """Creates a tetrahedral mesh of in-vessel component volumes via MOAB
-        and exports the mesh as a H5M file. Note that this mesh is created
-        using the point cloud of the specified components and as such, each
-        component's mesh will be one tetrahedron thick.
+        """Export a legacy structured or native discrete-PLC MOAB mesh.
+
+        ``auto`` preserves the structured point-cloud implementation for
+        unported models and selects the conformal native surface complex for a
+        supported surface port.
 
         Arguments:
             components (array of str): array containing the names of the
@@ -210,9 +411,70 @@ class Stellarator(object):
             filename (str): name of H5M output file.
             export_dir (str): directory to which to export the h5m output file
                 (defaults to empty string).
+            geometry_source (str): ``auto``, ``legacy_point_cloud``, or
+                ``native_surface_complex`` (defaults to ``auto``).
+            min_mesh_size (float): native PLC minimum element size.
+            max_mesh_size (float): native PLC maximum element size.
+            quality_thresholds (dict): optional native tetrahedron quality
+                failure thresholds.
+            aperture_chord_tolerance (float): maximum circular aperture chord
+                deviation in model units (defaults to 0.05 cm).
+            vertex_merge_tolerance (float): physical coordinate tolerance used
+                to reuse native PLC vertices (defaults to 1e-9 cm).
         """
-        self.invessel_build.mesh_components_moab(components)
-        self.invessel_build.export_mesh_moab(filename, export_dir=export_dir)
+        sources = {
+            "auto",
+            "legacy_point_cloud",
+            "native_surface_complex",
+        }
+        if geometry_source not in sources:
+            raise ValueError(
+                f"geometry_source must be one of {sorted(sources)}, got "
+                f"{geometry_source!r}"
+            )
+        ports = tuple(getattr(self.invessel_build, "ports", ()))
+        if geometry_source == "auto":
+            selected = (
+                "native_surface_complex" if ports else "legacy_point_cloud"
+            )
+        else:
+            selected = geometry_source
+        if selected == "legacy_point_cloud":
+            if ports:
+                raise ValueError(
+                    "legacy_point_cloud cannot represent a port; use "
+                    "geometry_source='native_surface_complex' or 'auto'"
+                )
+            self.invessel_build.mesh_components_moab(components)
+            self.invessel_build.export_mesh_moab(
+                filename, export_dir=export_dir
+            )
+            return Path(export_dir) / Path(filename).with_suffix(".h5m")
+
+        if len(ports) != 1 or ports[0].placement.mode != "surface":
+            raise NotImplementedError(
+                "native_surface_complex currently requires exactly one "
+                "surface-anchored port"
+            )
+        complex_ = getattr(self.invessel_build, "native_port_complex", None)
+        if complex_ is None or (
+            complex_.aperture_chord_tolerance
+            != float(aperture_chord_tolerance)
+            or complex_.vertex_merge_tolerance != float(vertex_merge_tolerance)
+        ):
+            complex_ = build_native_port_surface_complex(
+                self.invessel_build,
+                include_graveyard=False,
+                aperture_chord_tolerance=aperture_chord_tolerance,
+                vertex_merge_tolerance=vertex_merge_tolerance,
+            )
+            self.invessel_build.native_port_complex = complex_
+        mesh = complex_.tetrahedralize(min_mesh_size, max_mesh_size)
+        self.invessel_build.native_volume_mesh = mesh
+        self.invessel_build.native_volume_mesh_validation = mesh.validate(
+            quality_thresholds=quality_thresholds
+        )
+        return mesh.write(Path(export_dir) / filename)
 
     def export_invessel_build_mesh_gmsh(
         self,
@@ -334,6 +596,7 @@ class Stellarator(object):
 
         self.magnet_set.populate_magnet_coils()
         self.magnet_set.build_magnet_coils()
+        self._validate_port_magnet_clearance_if_available()
 
     def add_magnets_from_geometry(self, geometry_file, **kwargs):
         """Adds custom geometry via the MagnetSetFromGeometry class
@@ -355,6 +618,7 @@ class Stellarator(object):
             logger=self._logger,
             **kwargs,
         )
+        self._validate_port_magnet_clearance_if_available()
 
     def export_magnets_step(self, filename="magnet_set", export_dir=""):
         """Export STEP file of magnet set.
@@ -607,32 +871,87 @@ class Stellarator(object):
             "Building DAGMC neutronics model via CAD-to-DAGMC..."
         )
 
-        solids = []
-        self._material_tags = []
+        records = []
 
         if self.invessel_build:
-            ivb_solids, ivb_material_tags = (
-                self.invessel_build.extract_solids_and_mat_tags()
-            )
-            solids.extend(ivb_solids)
-            self._material_tags.extend(ivb_material_tags)
+            for name, solid in self.invessel_build.Components.items():
+                if name.endswith("__void"):
+                    port_name = name[: -len("__void")]
+                    kind = "port_void"
+                    material_tag = self.invessel_build.port_specs[
+                        port_name
+                    ].fill.mat_tag
+                elif name.endswith("__liner"):
+                    port_name = name[: -len("__liner")]
+                    kind = "port_liner"
+                    material_tag = self.invessel_build.port_specs[
+                        port_name
+                    ].liner.mat_tag
+                else:
+                    port_name = None
+                    kind = (
+                        "plasma_or_chamber"
+                        if name in {"plasma", "chamber"}
+                        else "blanket_layer"
+                    )
+                    material_tag = (
+                        self.invessel_build.radial_build.radial_build[name][
+                            "mat_tag"
+                        ]
+                    )
+                records.append(
+                    ComponentRecord(
+                        name=name,
+                        kind=kind,
+                        material_tag=material_tag,
+                        solid=solid,
+                        expected_volume=float(solid.Volume()),
+                        source_port_name=port_name,
+                    )
+                )
 
         if self.magnet_set:
-            magnet_solids = self.magnet_set.all_coil_solids
-            solids.extend(magnet_solids)
-
-            if isinstance(self.magnet_set.mat_tag, (list, tuple)):
-                magnet_mat_tags = self.magnet_set.mat_tag * len(
-                    self.magnet_set.coil_solids
+            for magnet in self.magnet_set.iter_coil_solids():
+                kind = (
+                    "magnet_casing"
+                    if magnet.region_kind == "outer_casing"
+                    else "magnet_conductor"
                 )
-            else:
-                magnet_mat_tags = [self.magnet_set.mat_tag] * len(
-                    magnet_solids
+                records.append(
+                    ComponentRecord(
+                        name=(
+                            f"magnet_{magnet.coil_id}__"
+                            f"{magnet.region_kind}"
+                        ),
+                        kind=kind,
+                        material_tag=magnet.mat_tag,
+                        solid=magnet.solid,
+                        expected_volume=float(magnet.solid.Volume()),
+                    )
                 )
 
-            self._material_tags.extend(magnet_mat_tags)
-
+        self.component_ledger = tuple(sorted(records, key=component_sort_key))
+        solids = [record.solid for record in self.component_ledger]
+        self._material_tags = [
+            record.material_tag for record in self.component_ledger
+        ]
+        if (
+            not len(solids)
+            == len(self._material_tags)
+            == len(self.component_ledger)
+        ):
+            raise AssertionError(
+                "CAD-to-DAGMC solid, material-tag, and component counts differ"
+            )
         self._geometry = cq.Compound.makeCompound(solids)
+
+    def export_port_visual_validation(self, output_dir, **kwargs):
+        """Export a human-visible validation package for finalized ports."""
+        return export_port_visual_validation(self, output_dir, **kwargs)
+
+    def export_port_local_validation(self, output_dir, **kwargs):
+        """Export aperture-loop views in a surface-anchored port frame."""
+        return export_port_local_validation(self, output_dir, **kwargs)
 
     def export_cad_to_dagmc(
         self,
@@ -733,6 +1052,28 @@ class Stellarator(object):
                 50).
         """
 
+        native_port_assembly = bool(
+            self.invessel_build
+            and getattr(self.invessel_build, "ports", ())
+            and self.invessel_build.use_pydagmc
+        )
+        graveyard_margin = float(kwargs.pop("graveyard_margin", 50.0))
+        aperture_chord_tolerance = float(
+            kwargs.pop("aperture_chord_tolerance", 0.05)
+        )
+        vertex_merge_tolerance = float(
+            kwargs.pop("vertex_merge_tolerance", 1.0e-9)
+        )
+        if native_port_assembly and self.magnet_set:
+            # The standalone IVB model normally owns a graveyard. Rebuild only
+            # its ledger/senses without that nonphysical volume so all physical
+            # submodels can be closed together after combination.
+            self.invessel_build.generate_components_pydagmc(
+                include_graveyard=False,
+                aperture_chord_tolerance=aperture_chord_tolerance,
+                vertex_merge_tolerance=vertex_merge_tolerance,
+            )
+
         if self.magnet_set:
             if magnet_exporter == "cubit":
                 self.build_cubit_model()
@@ -761,9 +1102,44 @@ class Stellarator(object):
                 )
             magnet_mbc = core.Core()
             magnet_mbc.load_file(str(self.magnet_model_path))
+            ivb_model = self.invessel_build.dag_model
+            magnet_model = pydagmc.Model(magnet_mbc)
+            if native_port_assembly:
+                assert_no_graveyard(ivb_model, label="In-vessel submodel")
+                assert_no_graveyard(magnet_model, label="Magnet submodel")
             self.pydagmc_model = combine_dagmc_models(
-                [self.invessel_build.dag_model.mb, magnet_mbc]
+                [ivb_model.mb, magnet_mbc]
             )
+            if native_port_assembly:
+                physical_volumes = sorted(
+                    self.pydagmc_model.volumes, key=lambda volume: volume.id
+                )
+                magnet_volumes = physical_volumes[len(ivb_model.volumes) :]
+                magnet_records = tuple(
+                    record
+                    for record in self.component_ledger
+                    if record.kind in {"magnet_conductor", "magnet_casing"}
+                )
+                if len(magnet_volumes) != len(magnet_records):
+                    raise ValueError(
+                        "Combined magnet volume count does not match the stable "
+                        "component ledger: "
+                        f"{len(magnet_volumes)} != {len(magnet_records)}"
+                    )
+                self.magnet_volume_ids = {}
+                for volume, record in zip(magnet_volumes, magnet_records):
+                    tag_volume_component(
+                        self.pydagmc_model, volume, record.name
+                    )
+                    self.magnet_volume_ids[record.name] = int(volume.id)
+                ensure_geometry_names(self.pydagmc_model)
+                self.global_graveyard = close_with_graveyard(
+                    self.pydagmc_model, margin=graveyard_margin
+                )
+                self.pydagmc_validation = audit_dagmc_model(
+                    self.pydagmc_model,
+                    vertex_tolerance=vertex_merge_tolerance,
+                )
         else:
             self.pydagmc_model = self.invessel_build.dag_model
 

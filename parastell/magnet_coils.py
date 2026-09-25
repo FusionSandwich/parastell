@@ -1,4 +1,5 @@
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 from abc import ABC
 
@@ -24,6 +25,17 @@ from .cubit_utils import (
 # modified by calls to the imported functions
 from . import cubit_utils
 from .utils import read_yaml_config, filter_kwargs, reorder_loop, m2cm
+
+
+@dataclass(frozen=True)
+class MagnetSolidRecord:
+    """Identified in-memory magnet solid used for collision checks."""
+
+    coil_id: int
+    region_kind: str
+    mat_tag: str
+    solid: object
+
 
 export_allowed_kwargs = ["step_filename", "export_mesh", "mesh_filename"]
 
@@ -69,6 +81,41 @@ class MagnetSet(ABC):
     @property
     def all_coil_solids(self):
         return [solid for solids in self.coil_solids for solid in solids]
+
+    def iter_coil_solids(self):
+        """Yield identified conductor/casing solids without flattening metadata."""
+        if not hasattr(self, "coil_solids"):
+            raise NotImplementedError(
+                "Port–magnet collision checking is unavailable for this "
+                "magnet representation."
+            )
+        for coil_id, group in enumerate(self.coil_solids):
+            solids = (
+                list(group)
+                if isinstance(group, (list, tuple, np.ndarray))
+                else [group]
+            )
+            for region_index, solid in enumerate(solids):
+                if self.has_casing:
+                    region_kind = (
+                        "outer_casing"
+                        if region_index == 0
+                        else "inner_conductor"
+                    )
+                else:
+                    region_kind = "inner_conductor"
+                if isinstance(self.mat_tag, (list, tuple)):
+                    mat_tag = self.mat_tag[
+                        min(region_index, len(self.mat_tag) - 1)
+                    ]
+                else:
+                    mat_tag = self.mat_tag
+                yield MagnetSolidRecord(
+                    coil_id=coil_id,
+                    region_kind=region_kind,
+                    mat_tag=mat_tag,
+                    solid=solid,
+                )
 
     def import_geom_cubit(self):
         """Import geometry file for magnet set into Coreform Cubit."""

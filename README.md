@@ -10,6 +10,9 @@
 
 ---
 
+Engineering port and duct configuration is documented in
+[`docs/ports.md`](docs/ports.md).
+
 Open-source Python package featuring a parametric, 3-D, medium-fidelity modeling toolset for stellarator fusion devices. ParaStell has the following core capabilities:
 
 - Model in-vessel components of uniform or non-uniform thickness using plasma equilibrium VMEC data or custom first wall data, and a user-defined radial build
