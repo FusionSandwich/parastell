@@ -5,6 +5,9 @@ This document distinguishes implemented code, retained evidence, and unfinished
 physical qualification. It is intended for a later Codex or ChatGPT Pro session
 starting from the GitHub branches named below.
 
+GitHub checkpoints: [integrated port branch](https://github.com/FusionSandwich/parastell/tree/JS/port-feature-integration-20260925)
+and [PLC classifier hardening branch](https://github.com/FusionSandwich/parastell/tree/JS-plc-diagnostic-fail-closed).
+
 ## Branch and commit ledger
 
 | Item | Identity | State |
@@ -111,3 +114,19 @@ timeout. Its terminal result was not yet available when this handoff was
 written. The machine had 31.9 GB RAM with about 8.2 GB free while another
 local Python geometry process was active. A fresh six-case Gmsh matrix, which
 previously used a 6 GB/4 CPU limit, was not started concurrently.
+
+## Suggested continuation prompt
+
+> Continue the ParaStell port feature from the
+> `JS/port-feature-integration-20260925` branch of
+> `FusionSandwich/parastell`. Read
+> `docs/PORT_FEATURE_HANDOFF_2026-09-25.md` and
+> `docs/PORT_FEATURE_INTEGRATION_2026-09-25.md` first. Verify remote branch
+> SHAs and current main, then independently review the separate
+> `JS-plc-diagnostic-fail-closed` commit before transplanting it. Preserve
+> uncommitted in-situ work only with its owner's review; never copy the
+> ignored private YAML into Git. Re-run focused tests, then the actual
+> six-case PLC matrix if local resources permit. Treat physical magnet
+> overlap, exterior topology, and OpenMC transport as open gates. Record
+> hashes and failed attempts, and do not claim full-reactor transport
+> qualification from the translated fixture or from a PLC PASS.
