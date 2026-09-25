@@ -35,17 +35,22 @@
   "openmc_candidate": {
     "branch": "JS/fes-ii-dagmc-geometry-debug-neighbor-20260925",
     "base_sha": "1d75981dbf3fd78962e516c12b550d034f2e7daa",
-    "candidate_commit": "92a3ccdaf4adbbf7ee644f3a99d65d3451149dc0",
+    "candidate_commit": "43ce5bbe77a76646c2dfa324ffad57d2a61af3a5",
     "candidate_commits": [
       "56eddcf6878d30055f265c756fcb55e3fc3e8cab",
-      "92a3ccdaf4adbbf7ee644f3a99d65d3451149dc0"
+      "92a3ccdaf4adbbf7ee644f3a99d65d3451149dc0",
+      "095db1a9179071ba3b8e57e5181c07c9452bb69a",
+      "43ce5bbe77a76646c2dfa324ffad57d2a61af3a5"
     ],
     "pushed_to_fusion_fork": true,
     "changed_files": [
       "src/geometry.cpp",
       "tests/regression_tests/dagmc/legacy/test.py"
     ],
-    "patch_sha256": "175e2b433b447c525134ce94bf17b28ff27f2fb1456f80dd80c7c7b779513548",
+    "patch_sha256": "6f400835e678691bec154412b61b65210eae0614c92778f1cd96da400d201617",
+    "cpp_added_lines": 13,
+    "cpp_format_18_status": "PASS",
+    "cpp_format_18_run": "https://github.com/FusionSandwich/openmc/actions/runs/36157164939",
     "classification": "PR_READY_FOR_USER_REVIEW_AND_SUBMISSION"
   },
   "current_develop_runtime": {
@@ -54,8 +59,8 @@
     "openmc_commit": "1d75981dbf3fd78962e516c12b550d034f2e7daa",
     "dagmc_version": "3.2.4",
     "binary_sha256": "be8a2477688265bcd04ccef248350708e90844d6ec786640cc276f4e093b248c",
-    "libopenmc_sha256": "11d17bb159e56dbe213d4c87891212360eb055b55cfb6032f370a0d7182e9840",
-    "geometry_cpp_sha256": "bde76b014e7a6a1ff673e7c7d0f5fd9fc7f4c585765b61b82cd3317c2553c790",
+    "libopenmc_sha256": "08cab527e2ed9345336a17610ec93066da02948efc2fc50cc8c3fccf877d6c53",
+    "geometry_cpp_sha256": "f8539cc30e09f8a74405c171419b4dda2394056b87ca8b1dc9b35e23a7db9a1e",
     "runtime_receipt_sha256": "7b2b3d691135b1c6ba0619551442c5db0d705ddf9bb2a5410f97ebf513215cfd",
     "build_wall_seconds": 139.09,
     "build_maximum_rss_kib": 366592,
@@ -65,29 +70,28 @@
     "dynamic_link_pass": true
   },
   "final_candidate_controls": {
-    "root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-final-controls-v2-20260925T180000Z",
+    "root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-final-controls-v4-20260925T193000Z",
     "status": "PASS",
-    "receipt_sha256": "8bc8974ba6e20a1dcc17a9b1d4ced762a5055fef284689f908dbe7b3409e7463",
-    "hash_manifest_sha256": "61fd8bdf2f971e44221df0186ba758e2f681bad4e1d39cf0cab535c12845738e",
-    "shared_face_log_sha256": "ea962ca48218bce6688ae49155c5c9c15e28e6a6a618f98ce973700b31209ee9",
-    "physical_overlap_log_sha256": "30c7be79bd7db76d7e666c2bb54593f164ecc90246999620d5351994bc409e24",
+    "receipt_sha256": "0320b011a0bec1de671c0d43a10a7eca1736e08b390247d39525713de520d612",
+    "hash_manifest_sha256": "df5da619b1714da5fc68a891c0df0ef63d1ffa247db071c7bbd49c9772a0833d",
+    "shared_face_log_sha256": "86dba188ba5ac579c05f35ee60f544793fdc674af0ea5fcfae2a1d4c6386e7c1",
+    "physical_overlap_log_sha256": "9394e945d6b3cf2382ceef77c83003437b5ca76da0e4fadc976f47a39715a1ab",
     "wistell_seed_log_sha256": {
-      "8310101": "fd40f8f0340ef7e857010b42dc262d054598eb144e711ec126f971d21bf8b4ab",
-      "8310102": "9fdc93b53383826d3352e4a95556cc397b2311abc9d1963a434279f309f0c487"
+      "8310101": "4416be80a497400b3667837ca6018864c5d2df3a603d96f7468571055273b4ee",
+      "8310102": "5f41884c30d6ce17762c232284fb70627017c4c6cf03c3b0bedfbd994c3f6f68"
     },
-    "surface_source_log_sha256": "240aec767640a319e9be1aaf3ea13d4ac653c81a60c1394b45f01e11df35ac3f",
-    "surface_source_sha256": "2e310456088c8f5ca45877638f8b317528593b04ce8405175e305e397c7b0df1",
-    "quarantined_predecessor": "final-controls-v1 omitted OPENMC_CROSS_SECTIONS and failed before transport"
+    "surface_source_log_sha256": "868fae06c773a26b70340ae88b0df4b0f8ef2ee7a71c340dd6742ce941a2372e",
+    "surface_source_sha256": "3acd8d12edd346f9452875b2b55e15d9e18a542ac90199d94de9cf1fa6844b56",
+    "quarantined_predecessor": "final-controls-v3 compared one-based next_cell output directly to a zero-based model index"
   },
   "final_candidate_incremental_build": {
-    "evidence_root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-polish-v1-20260925T170000Z",
+    "evidence_root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-minimal-v2-20260925T191500Z",
     "cores": 4,
     "memory_limit_bytes": 8589934592,
     "swap_limit_bytes": 0,
-    "wall_seconds": 48.14,
-    "maximum_rss_kib": 282624,
-    "resource_receipt_sha256": "2de4681f7ef975e8e53787883cc3f41ebf5323b727b1a53c786b6a3c3160b945",
-    "artifact_hash_manifest_sha256": "e416467f2a236cb2577e098efccff9d8f9581768ea7180df156d52131a6d18a3",
+    "wall_seconds": 50.02,
+    "resource_receipt_sha256": "c52cd899740c833a4ec04ee78703695e81f56b5a1d37c93684dd8cde1f83d455",
+    "artifact_hash_manifest_sha256": "8bbdef4f5a406dc9ccc2ad93ca17b06f5f01f981b4084d516a0847416068727d",
     "version_receipt_sha256": "1001ed4a95f72fcdd3507da0af9fb036c9c2c6a23633394472d04a78945084b6"
   },
   "runtime_controls": {
@@ -131,12 +135,16 @@
     "v4": "UWUW requested against a DAGMC build without UWUW; no compile",
     "v5": "compile reached final link; quarantined transport OpenSSL path caused ABI mismatch",
     "v6": "interrupted upload; no build",
-    "v7": "launcher environment did not propagate through systemd-run; no build"
+    "v7": "launcher environment did not propagate through systemd-run; no build",
+    "final_controls_v1": "OPENMC_CROSS_SECTIONS was omitted; failed before transport",
+    "minimal_controls_v3": "one-based next_cell output was compared to a zero-based model index; shared-face control rejected the implementation"
   },
-  "clang_format_18_available": false,
+  "clang_format_18_local_available": false,
+  "clang_format_18_github_workflow_pass": true,
   "independent_review_status": "PASS",
   "independent_review_polish_applied": [
-    "helper has anonymous-namespace internal linkage",
+    "removed the new helper and reused OpenMC next_cell",
+    "preserved OpenMC's existing one-based-to-zero-based DAGMC cell conversion",
     "DAGMC topology is queried only for contained non-current candidates"
   ],
   "pr_created": false,

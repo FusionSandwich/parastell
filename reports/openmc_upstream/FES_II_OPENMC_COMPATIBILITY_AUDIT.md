@@ -102,7 +102,9 @@ JS/fes-ii-dagmc-geometry-debug-neighbor-20260925
 base: 1d75981dbf3fd78962e516c12b550d034f2e7daa
 candidate commits:
   56eddcf6878d30055f265c756fcb55e3fc3e8cab
-  92a3ccdaf4adbbf7ee644f3a99d65d3451149dc0 (final)
+  92a3ccdaf4adbbf7ee644f3a99d65d3451149dc0
+  095db1a9179071ba3b8e57e5181c07c9452bb69a
+  43ce5bbe77a76646c2dfa324ffad57d2a61af3a5 (final)
 ```
 
 The change makes `check_cell_overlap` exempt only the candidate DAGMC volume
@@ -115,15 +117,17 @@ failed this same model with `Overlapping cells detected: 1, 2 on universe 1`.
 The candidate patch applies cleanly to live `develop`. A final fetch on
 2026-09-25 reconfirmed that the official tip remains
 `1d75981dbf3fd78962e516c12b550d034f2e7daa`. The staged patch SHA-256 is
-`175e2b433b447c525134ce94bf17b28ff27f2fb1456f80dd80c7c7b779513548`.
+`6f400835e678691bec154412b61b65210eae0614c92778f1cd96da400d201617`.
 Python syntax and diff checks pass. The candidate branch is pushed to the
 user-owned `FusionSandwich/openmc` fork. No pull request or draft pull request
 was created, and the fork has no CI run for this branch.
 
-An independent Sol review classified the change `PASS` with no correctness
-blocker. Its two polish suggestions were incorporated in the final commit:
-the helper now has internal linkage, and native DAGMC topology is queried only
-after a candidate has contained the point and differs from the current cell.
+An independent Sol review classified the original narrow implementation
+`PASS` with no correctness blocker. The subsequent cleanup removed that new
+helper entirely and reused OpenMC's existing `next_cell` DAGMC topology helper,
+including the same one-based-to-zero-based conversion already used in
+`particle.cpp`. This reduced the final production diff from 47 added C++ lines
+to 13 without changing the accepted behavior.
 
 ## Current-develop runtime acceptance
 
@@ -132,12 +136,11 @@ system HDF5, OpenMP, no MPI, and no UWUW. The executable reports OpenMC
 `0.16.1-dev46` and exact commit `1d75981db`; its SHA-256 is
 `be8a2477688265bcd04ccef248350708e90844d6ec786640cc276f4e093b248c`.
 The final candidate `libopenmc.so` SHA-256 is
-`11d17bb159e56dbe213d4c87891212360eb055b55cfb6032f370a0d7182e9840`.
+`08cab527e2ed9345336a17610ec93066da02948efc2fc50cc8c3fccf877d6c53`.
 The bounded build used eight of 256 physical cores, a 16 GiB hard memory cap,
 and disabled swap. Compilation completed in 2:19 with 358 MiB maximum RSS.
 The review-polish incremental rebuild used four cores, an 8 GiB hard memory
-cap, disabled swap, completed in 48.14 seconds, and reached 276 MiB maximum
-RSS.
+cap, disabled swap, and completed in 50.02 seconds.
 
 Runtime controls:
 
@@ -158,9 +161,9 @@ Runtime controls:
 4. A regular (non-geometry-debug) DAGMC transport wrote a 100-record
    `surface_source.h5` bank. Every record was reconstructed on selected
    surface 1 at radius 7 cm, and the statepoint was written successfully.
-5. Python compilation and `git diff --check` pass. The host does not provide
-   clang-format 18, so the final automated C++ formatting check is deferred to
-   upstream CI; the two-file diff was manually checked against OpenMC style.
+5. Python compilation and `git diff --check` pass. The exact final commit also
+   passes OpenMC's GitHub clang-format 18 workflow:
+   `https://github.com/FusionSandwich/openmc/actions/runs/36157164939`.
 
 The original full-build runtime receipt is
 `/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-compat-v8-20260925T145100Z/output/runtime-qualification-receipt.env`
@@ -175,30 +178,34 @@ the negative-control log SHA-256 is
 and the surface-source file SHA-256 is
 `85aa4e9479f73270debbff336366f871a015c7e96679de0f137d79ee19d67fc6`.
 
-The exact final commit was then rerun in a fresh combined control root:
-`/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-final-controls-v2-20260925T180000Z`.
+The exact final minimized commit was rerun in a fresh combined control root:
+`/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-final-controls-v4-20260925T193000Z`.
 Its receipt SHA-256 is
-`8bc8974ba6e20a1dcc17a9b1d4ced762a5055fef284689f908dbe7b3409e7463`.
+`0320b011a0bec1de671c0d43a10a7eca1736e08b390247d39525713de520d612`.
 The shared-face regression, physical-overlap rejection, both WISTELL-D seeds,
 and the 100-record surface-source reconstruction all passed. The immediately
-preceding `final-controls-v1` wrapper was quarantined after failing before
-transport because its cross-section environment variable was omitted.
+preceding minimized `final-controls-v3` attempt was quarantined because it
+compared OpenMC's one-based `next_cell` result directly to a zero-based model
+cell index; the accepted change applies the same `- 1` conversion already used
+by OpenMC particle transport.
 
-The only remaining pre-submission checks are the user review requested here
-and upstream CI, including OpenMC's clang-format 18 check, which is unavailable
-on the audited local/Bateman runtimes. This candidate is diagnostic
-infrastructure only; it is not authorization for production transport.
+The remaining pre-submission step is the user review requested here. The exact
+final commit already passes the fork's OpenMC clang-format 18 workflow; the
+full upstream CI matrix will run when the user authorizes PR submission. This
+candidate is diagnostic infrastructure only; it is not authorization for
+production transport.
 
 ## Proposed PR text
 
 **Title:** Fix false geometry-debug overlaps at shared DAGMC boundaries
 
-**Summary:** During a DAGMC surface crossing, `next_vol` has already selected
-the topological destination volume while the particle remains exactly on the
-shared facet. The generic overlap checker can therefore see both legitimate
-neighbors as containing the point and report a false overlap. This change
-skips only the neighbor proven by DAGMC topology across the crossed surface;
-all other DAGMC and CSG candidates remain checked.
+**Summary:** During a DAGMC surface crossing, the existing `next_cell` helper
+identifies the topological destination volume while the particle remains
+exactly on the shared facet. The generic overlap checker can therefore see
+both legitimate neighbors as containing the point and report a false overlap.
+This change skips only that topology-proven neighbor after applying OpenMC's
+existing one-based-to-zero-based cell-index conversion; all other DAGMC and
+CSG candidates remain checked.
 
 **Regression:** Extend the existing legacy DAGMC regression model to run with
 `geometry_debug=True`. The test fails on the unpatched behavior at the first
