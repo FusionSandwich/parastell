@@ -5,7 +5,7 @@ Base: verified `origin/main` at `de7d2978ff314b060ca2e6b10745a034e8b2a3c4`.
 Source: `ports/actual-plc-repair-20260824` at
 `b9d672764a804ea97fa311a45ce820a610dcb5e8`.
 
-The port source is the linear 19-commit sequence from `3a0ce81` through
+The port source is the linear 20-commit sequence from `3a0ce81` through
 `b9d6727` after `e223061`. Both `origin/main` and `e223061` are shallow
 boundaries in this clone; `git merge-base` finds no provable common ancestor.
 The source base differs from main only in `README.md` and
