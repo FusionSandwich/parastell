@@ -37,7 +37,7 @@ radial_build_dict = {
         )
     },
     "back_wall": {"thickness_matrix": uniform_unit_thickness * 5},
-    "shield": {"thickness_matrix": uniform_unit_thickness * 50},
+    "shield": {"thickness_matrix": uniform_unit_thickness * 40},
     "vacuum_vessel": {
         "thickness_matrix": uniform_unit_thickness * 10,
         "mat_tag": "vac_vessel",
