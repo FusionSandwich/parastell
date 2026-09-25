@@ -317,6 +317,23 @@ def test_strict_audit_accepts_current_openmc_development_version(
     assert result["statepoint"]["openmc_version"] == "0.16.1"
 
 
+def test_strict_audit_rejects_terminal_statepoint_version_mismatch(
+    monkeypatch, tmp_path
+):
+    artifacts, request, envelope = _fixture(
+        tmp_path,
+        runtime_version="0.16.1-dev46",
+        statepoint_version=(0, 16, 0),
+    )
+    _patch_single_magnet_group(monkeypatch, envelope)
+    with pytest.raises(ValueError, match="versions disagree"):
+        audit_openmc16_surface_run(
+            artifacts,
+            envelope_requests=[request],
+            required_particles=["neutron"],
+        )
+
+
 def test_mpi_capacity_is_proved_below_cap_and_fails_at_cap():
     below = _capacity_proof(
         [{"record_count": 9}],

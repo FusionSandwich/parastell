@@ -21,6 +21,7 @@ from .magnet_boundary_envelope import classify_crossing_bank
 from .magnet_boundary_envelope import write_handoff
 from .openmc16 import PDG_PARTICLES
 from .openmc_compat import openmc_version_supported
+from .openmc_compat import parse_openmc_version
 from .openmc_compat import statepoint_version_supported
 
 
@@ -1275,6 +1276,12 @@ def audit_openmc16_surface_run(
         model["dagmc_declared_filename"],
         statepoint_path,
     )
+    if parse_openmc_version(log["openmc_version"]) != parse_openmc_version(
+        statepoint["openmc_version"]
+    ):
+        raise ValueError(
+            "terminal log and statepoint OpenMC versions disagree"
+        )
     compared_rows, integrity = _bank_tally_integrity_rows(
         records,
         envelopes,

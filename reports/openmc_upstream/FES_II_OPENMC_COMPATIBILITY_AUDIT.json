@@ -17,35 +17,128 @@
   },
   "parastell_compatibility": {
     "accepted_range": ">=0.16.0,<0.17.0",
-    "focused_tests_passed": 189,
+    "focused_tests_passed": 190,
     "focused_tests_skipped": 1,
-    "broad_dependency_available_tests_passed": 736,
+    "broad_dependency_available_tests_passed": 737,
     "broad_dependency_available_tests_skipped": 4,
     "dependency_bound_modules_excluded": 8,
     "compileall_pass": true,
+    "import_pass": true,
+    "cli_help_status": "DEPENDENCY_BOUND_MISSING_CAD_TO_DAGMC",
     "black_pass": true,
     "diff_check_pass": true,
     "package_build_no_isolation_pass": true,
-    "wheel_nested_build_entries": 0
+    "wheel_nested_build_entries": 0,
+    "wheel_sha256": "2a78385d6cff97ef86dffd33e31671c4747f3f7f18d6e0e451ba349677aa5125",
+    "sdist_sha256": "cd7bb23d32702a5e11cbf75d79aa68081cd8ce2067f7ac266ac923b8629ba5ae"
   },
   "openmc_candidate": {
     "branch": "JS/fes-ii-dagmc-geometry-debug-neighbor-20260925",
     "base_sha": "1d75981dbf3fd78962e516c12b550d034f2e7daa",
-    "candidate_commit": "56eddcf6878d30055f265c756fcb55e3fc3e8cab",
+    "candidate_commit": "92a3ccdaf4adbbf7ee644f3a99d65d3451149dc0",
+    "candidate_commits": [
+      "56eddcf6878d30055f265c756fcb55e3fc3e8cab",
+      "92a3ccdaf4adbbf7ee644f3a99d65d3451149dc0"
+    ],
     "pushed_to_fusion_fork": true,
     "changed_files": [
       "src/geometry.cpp",
       "tests/regression_tests/dagmc/legacy/test.py"
     ],
-    "patch_sha256": "14663dff13781f054a259930da0d8ed83cfbeea0399092f49eaac24657a777ed",
-    "classification": "PR_CANDIDATE_RUNTIME_VALIDATION_PENDING"
+    "patch_sha256": "175e2b433b447c525134ce94bf17b28ff27f2fb1456f80dd80c7c7b779513548",
+    "classification": "PR_READY_FOR_USER_REVIEW_AND_SUBMISSION"
   },
-  "remote_attempt": {
-    "root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-compat-v1-20260925T135255Z",
-    "build_started": false,
-    "transport_started": false,
-    "blocker": "shared Bateman persistent SSH channel closed after bounded staging"
+  "current_develop_runtime": {
+    "root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-compat-v8-20260925T145100Z",
+    "openmc_version": "0.16.1-dev46",
+    "openmc_commit": "1d75981dbf3fd78962e516c12b550d034f2e7daa",
+    "dagmc_version": "3.2.4",
+    "binary_sha256": "be8a2477688265bcd04ccef248350708e90844d6ec786640cc276f4e093b248c",
+    "libopenmc_sha256": "11d17bb159e56dbe213d4c87891212360eb055b55cfb6032f370a0d7182e9840",
+    "geometry_cpp_sha256": "bde76b014e7a6a1ff673e7c7d0f5fd9fc7f4c585765b61b82cd3317c2553c790",
+    "runtime_receipt_sha256": "7b2b3d691135b1c6ba0619551442c5db0d705ddf9bb2a5410f97ebf513215cfd",
+    "build_wall_seconds": 139.09,
+    "build_maximum_rss_kib": 366592,
+    "memory_limit_bytes": 17179869184,
+    "swap_limit_bytes": 0,
+    "build_pass": true,
+    "dynamic_link_pass": true
   },
+  "final_candidate_controls": {
+    "root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-final-controls-v2-20260925T180000Z",
+    "status": "PASS",
+    "receipt_sha256": "8bc8974ba6e20a1dcc17a9b1d4ced762a5055fef284689f908dbe7b3409e7463",
+    "hash_manifest_sha256": "61fd8bdf2f971e44221df0186ba758e2f681bad4e1d39cf0cab535c12845738e",
+    "shared_face_log_sha256": "ea962ca48218bce6688ae49155c5c9c15e28e6a6a618f98ce973700b31209ee9",
+    "physical_overlap_log_sha256": "30c7be79bd7db76d7e666c2bb54593f164ecc90246999620d5351994bc409e24",
+    "wistell_seed_log_sha256": {
+      "8310101": "fd40f8f0340ef7e857010b42dc262d054598eb144e711ec126f971d21bf8b4ab",
+      "8310102": "9fdc93b53383826d3352e4a95556cc397b2311abc9d1963a434279f309f0c487"
+    },
+    "surface_source_log_sha256": "240aec767640a319e9be1aaf3ea13d4ac653c81a60c1394b45f01e11df35ac3f",
+    "surface_source_sha256": "2e310456088c8f5ca45877638f8b317528593b04ce8405175e305e397c7b0df1",
+    "quarantined_predecessor": "final-controls-v1 omitted OPENMC_CROSS_SECTIONS and failed before transport"
+  },
+  "final_candidate_incremental_build": {
+    "evidence_root": "/home/apollon/josma/data/codex-parastell/openmc-develop-fesii-polish-v1-20260925T170000Z",
+    "cores": 4,
+    "memory_limit_bytes": 8589934592,
+    "swap_limit_bytes": 0,
+    "wall_seconds": 48.14,
+    "maximum_rss_kib": 282624,
+    "resource_receipt_sha256": "2de4681f7ef975e8e53787883cc3f41ebf5323b727b1a53c786b6a3c3160b945",
+    "artifact_hash_manifest_sha256": "e416467f2a236cb2577e098efccff9d8f9581768ea7180df156d52131a6d18a3",
+    "version_receipt_sha256": "1001ed4a95f72fcdd3507da0af9fb036c9c2c6a23633394472d04a78945084b6"
+  },
+  "runtime_controls": {
+    "unpatched_current_develop_shared_face": {
+      "status": "EXPECTED_FAILURE_REPRODUCED",
+      "error": "Overlapping cells detected: 1, 2 on universe 1"
+    },
+    "patched_current_develop_shared_face": {
+      "status": "PASS",
+      "histories": 500,
+      "log_sha256": "b2d253ca6c0b4e00924d6f440c5c67f61a5c15339b18a61730fa08262e8a4c1d"
+    },
+    "nonadjacent_physical_overlap": {
+      "status": "PASS_REJECTED_AS_REQUIRED",
+      "h5m_sha256": "8741dd48fded42e8411816e56e3e5e10a29db26ddb785b4a389f8a38b09707a0",
+      "error": "Overlapping cells detected: 26, 4 on universe 1",
+      "log_sha256": "098eeff366c7c89a92f2592a09417f3343cb3b01a28e1b2ad93de2f82c1d2839"
+    },
+    "wistell_d_geometry_debug": {
+      "status": "PASS",
+      "h5m_sha256": "d31ea04e4d2fda78870db1688d6cc9215079e20408393c5f5bd374d58f43eaf3",
+      "seeds": [8310101, 8310102],
+      "histories_per_seed": 400,
+      "lost_particles": 0,
+      "navigation_errors": 0,
+      "receipt_sha256": "cfbb16dbd2f42d743b1cb3ca71199d2b24ad35a477d61558bee448e0b1ef83aa"
+    },
+    "regular_surface_source": {
+      "status": "PASS",
+      "records": 100,
+      "surface_id": 1,
+      "radius_cm": 7.0,
+      "surface_source_sha256": "85aa4e9479f73270debbff336366f871a015c7e96679de0f137d79ee19d67fc6",
+      "statepoint_sha256": "ee2faf891fe63d45071628aa6a2f4d03cfb6641323e66b7683b84d7b165d00d1"
+    }
+  },
+  "quarantined_remote_attempts": {
+    "v1": "incomplete source upload; no build",
+    "v2": "rootless archive strip mismatch; no build",
+    "v3": "CRLF patch mismatch; no build",
+    "v4": "UWUW requested against a DAGMC build without UWUW; no compile",
+    "v5": "compile reached final link; quarantined transport OpenSSL path caused ABI mismatch",
+    "v6": "interrupted upload; no build",
+    "v7": "launcher environment did not propagate through systemd-run; no build"
+  },
+  "clang_format_18_available": false,
+  "independent_review_status": "PASS",
+  "independent_review_polish_applied": [
+    "helper has anonymous-namespace internal linkage",
+    "DAGMC topology is queried only for contained non-current candidates"
+  ],
   "pr_created": false,
   "production_runtime_authorized": false
 }

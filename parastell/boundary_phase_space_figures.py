@@ -1097,9 +1097,9 @@ def write_phase_space_figures(
             "kind": "fixed_source_run",
             "run_id": strict["model"]["sha256"],
             "source_histories": histories,
-            "openmc_version": strict["statepoint"].get(
+            "openmc_version": strict["terminal_log"].get(
                 "openmc_version",
-                strict["terminal_log"].get("openmc_version", "0.16.0"),
+                strict["statepoint"].get("openmc_version", "0.16.0"),
             ),
             "settings_payload_path": str(model_path),
             "settings_payload_sha256": _sha256(model_path),
