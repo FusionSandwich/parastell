@@ -695,6 +695,7 @@ def _valid_mesh_audit(audit):
     if (
         not isinstance(regions, dict)
         or not regions
+        or any(not isinstance(region, str) or not region.strip() for region in regions)
         or not _nonnegative_integer(total)
         or total == 0
         or any(
@@ -825,7 +826,8 @@ def terminal_classification(case_results, expected_repository_sha=None):
             or item.get("port_geometry_present") is not expected.port
             or item.get("radial_diagonal") != expected.radial_diagonal
             or item.get("repository_sha") != expected_repository_sha
-            or item.get("process_return_code") != 0
+            or not _nonnegative_integer(item.get("process_return_code"))
+            or item["process_return_code"] != 0
             or item.get("passed") is not True
             or item.get("classification") != "PASS_NO_REPRODUCIBLE_PLC_FAILURE"
             or not _nonnegative_integer(item.get("intersection_count"))
