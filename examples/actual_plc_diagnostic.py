@@ -401,10 +401,16 @@ def run_matrix(args):
         payload_path = case_dir / "case_result.json"
         pre_gmsh_path = case_dir / "pre_gmsh_result.json"
         payload = None
-        if payload_path.exists():
-            payload = json.loads(payload_path.read_text())
-        elif pre_gmsh_path.exists():
-            payload = json.loads(pre_gmsh_path.read_text())
+        try:
+            if payload_path.exists():
+                payload = json.loads(payload_path.read_text())
+            elif pre_gmsh_path.exists():
+                payload = json.loads(pre_gmsh_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            payload = None
+        if not isinstance(payload, dict):
+            payload = None
+        if payload is not None and not payload_path.exists():
             failure = process_failure_record(
                 completed.returncode, completed.stderr
             )
@@ -429,6 +435,10 @@ def run_matrix(args):
             )
             write_json(payload_path, payload)
         if payload is not None:
+            # Record the observed parent-side status, even when the child wrote
+            # a nominally successful payload before exiting unsuccessfully.
+            payload["process_return_code"] = completed.returncode
+            write_json(payload_path, payload)
             case_results.append(payload)
         receipt = {
             "schema_version": "1.0",
@@ -476,33 +486,45 @@ def run_matrix(args):
                 else []
             ),
         }
+        case_dir.mkdir(parents=True, exist_ok=True)
         receipt_path = write_json(case_dir / "case_receipt.json", receipt)
         receipts.append(file_record(receipt_path))
         if payload is None and case.name == "A0":
             break
 
-    primary = terminal_classification(case_results)
-    if len(case_results) != len(CASE_MATRIX):
-        primary = "BLOCKED_ENVIRONMENT_OR_INPUT_IDENTITY"
+    primary = terminal_classification(case_results, head)
     matrix = [
         {
-            "case": item["case"]["name"],
-            "port": item["case"]["port"],
-            "resolution": item["case"]["resolution"],
-            "intersection_count": item["intersection_count"],
+            "case": (
+                item["case"].get("name")
+                if isinstance(item.get("case"), dict)
+                else None
+            ),
+            "port": (
+                item["case"].get("port")
+                if isinstance(item.get("case"), dict)
+                else None
+            ),
+            "resolution": (
+                item["case"].get("resolution")
+                if isinstance(item.get("case"), dict)
+                else None
+            ),
+            "intersection_count": item.get("intersection_count"),
             "downstream_exception_type": (
-                item["downstream_error"]["type"]
-                if item["downstream_error"]
+                item["downstream_error"].get("type")
+                if isinstance(item.get("downstream_error"), dict)
                 else None
             ),
             "downstream_message": (
-                item["downstream_error"]["message"]
-                if item["downstream_error"]
+                item["downstream_error"].get("message")
+                if isinstance(item.get("downstream_error"), dict)
                 else None
             ),
-            "classification": item["classification"],
+            "classification": item.get("classification"),
         }
         for item in case_results
+        if isinstance(item, dict)
     ]
     summary = {
         "schema_version": "1.0",
@@ -517,7 +539,12 @@ def run_matrix(args):
         output_dir / "plc_diagnostic_summary.json", summary
     )
     intersection_cases = [
-        item for item in case_results if item["intersection_count"]
+        item
+        for item in case_results
+        if isinstance(item, dict)
+        and isinstance(item.get("intersection_count"), int)
+        and not isinstance(item.get("intersection_count"), bool)
+        and item["intersection_count"] > 0
     ]
     if intersection_cases:
         aggregate = {
@@ -527,8 +554,8 @@ def run_matrix(args):
             "cases": [
                 {
                     "case": item["case"],
-                    "report": item["intersection_report"],
-                    "minimal_vtk": item["minimal_vtk"],
+                    "report": item.get("intersection_report"),
+                    "minimal_vtk": item.get("minimal_vtk"),
                     "intersection_count": item["intersection_count"],
                 }
                 for item in intersection_cases
