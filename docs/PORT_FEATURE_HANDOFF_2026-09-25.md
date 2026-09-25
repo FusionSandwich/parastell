@@ -14,7 +14,7 @@ and [PLC classifier hardening branch](https://github.com/FusionSandwich/parastel
 | --- | --- | --- |
 | Current target | `origin/main` at `de7d2978ff314b060ca2e6b10745a034e8b2a3c4` | No port modules at this commit |
 | Integrated port stack | `JS/port-feature-integration-20260925`, first commit `ad09aa3c104c6280d1915ad3d26982916bb936e6` | Clean local integration of the 20 port commits from `3a0ce81` through `b9d6727` |
-| PLC classifier hardening | `JS-plc-diagnostic-fail-closed` at `7bfa1273590ad85c4be4052296c7ddf3a044fc02` | Separate clean local commit; review and transplant onto integration branch |
+| PLC classifier hardening | `JS-plc-diagnostic-fail-closed` at `296b9f3` | Published separately; both fixes were transplanted onto integration as `4b4c49a` and `4ec392d` |
 | In-situ aperture investigation | Source `ports/actual-plc-repair-20260824` at `b9d672764a804ea97fa311a45ce820a610dcb5e8` | Local work in progress; uncommitted geometry changes and tests must be reviewed before publication |
 
 The local checkout is shallow at `main` and `e223061`; it cannot establish
@@ -58,12 +58,17 @@ malformed or duplicated zero-intersection payloads could previously produce
 `PASS_NO_REPRODUCIBLE_PLC_FAILURE` without valid mesh results, and a child
 could exit nonzero after writing a nominal payload. The dedicated branch
 requires exact case/source identity, successful child exit, and a nonempty
-clean mesh audit before a terminal PASS. Its code and tests still need
-independent final acceptance and transplant onto the integration branch.
-The `JS-plc-diagnostic-fail-closed` branch was pushed to `origin`;
-`tests/test_plc_diagnostic.py` passed locally (22 tests) in the existing WSL
-runtime. Publication of this branch is a review checkpoint, not acceptance
-of a full geometry model.
+clean mesh audit before a terminal PASS. An independent Sol review found two
+further malformed-payload counterexamples: blank region tags and a boolean
+false child exit code. Both now classify as blocked. The separate branch was
+pushed to `origin`, and its two commits were cherry-picked onto integration.
+The corrected focused suite passed 25 tests in the existing WSL runtime.
+The same 25 tests passed after both commits were added to the integrated
+branch. Applying that classifier to the six retained real case results and
+their recorded child exit codes returned
+`PASS_NO_REPRODUCIBLE_PLC_FAILURE`. This is a historical receipt check; the
+actual matrix has not been rerun at the integrated branch tip.
+These tests accept the diagnostic classifier, not a full geometry model.
 
 ## Attempts that did not establish physical validation
 
@@ -84,20 +89,17 @@ of a full geometry model.
 
 ## Next actions and acceptance gates
 
-1. Independently review `7bfa127`, test the fail-closed classifier against
-   malformed and retained real receipts, then transplant it onto the
-   integration branch and rerun focused tests.
-2. Finish and review the in-situ aperture patch. Verify the real-VMEC endpoint,
+1. Finish and review the in-situ aperture patch. Verify the real-VMEC endpoint,
    every inner and outer aperture ray, ordered non-self-intersecting loops,
    patch/liner topology, and counterexamples. Publish only reviewed code and
    public test inputs.
-3. Rerun the six-case actual radial PLC matrix on the integrated branch with
+2. Rerun the six-case actual radial PLC matrix on the integrated branch with
    per-case diagonal policies and fresh output directories; verify process
    exits, source/input hashes, all mesh audit fields, and the terminal summary.
-4. For the physical 40-coil model, qualify port/magnet clearance, actual
+3. For the physical 40-coil model, qualify port/magnet clearance, actual
    overlaps, assembled DAGMC senses, interstitial/exterior behavior,
    `check_watertight`, and `overlap_check`.
-5. Only then run OpenMC geometry-debug and bounded fixed-source transport with
+4. Only then run OpenMC geometry-debug and bounded fixed-source transport with
    the real cross-section library. Require zero lost/navigation errors and a
    nonzero downstream tally before any full-reactor transport claim.
 
@@ -126,8 +128,8 @@ concurrently.
 > `FusionSandwich/parastell`. Read
 > `docs/PORT_FEATURE_HANDOFF_2026-09-25.md` and
 > `docs/PORT_FEATURE_INTEGRATION_2026-09-25.md` first. Verify remote branch
-> SHAs and current main, then independently review the separate
-> `JS-plc-diagnostic-fail-closed` commit before transplanting it. Preserve
+> SHAs and current main, then inspect the integrated PLC classifier hardening
+> and its negative tests. Preserve
 > uncommitted in-situ work only with its owner's review; never copy the
 > ignored private YAML into Git. Re-run focused tests, then the actual
 > six-case PLC matrix if local resources permit. Treat physical magnet
